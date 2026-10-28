@@ -10,11 +10,23 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Carbon;
 use Mozex\Campaigns\Database\Factories\TestSendFactory;
 
 /**
  * A test email, kept apart from the campaign's messages so it never counts in
  * the campaign's numbers. Its links open the real pages but change nothing.
+ *
+ * @property int $id
+ * @property string $uuid
+ * @property int $campaign_id
+ * @property string $email
+ * @property ?string $locale
+ * @property string $token_hash
+ * @property ?string $provider_message_id
+ * @property ?Carbon $sent_at
+ * @property ?Carbon $created_at
+ * @property ?Carbon $updated_at
  */
 #[UseFactory(TestSendFactory::class)]
 class TestSend extends Model

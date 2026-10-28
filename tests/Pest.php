@@ -57,6 +57,9 @@ function useDatabase(string $driver): void
         ...config("database.connections.{$driver}"),
         ...$server,
         'database' => $database,
+        // A DB_URL in the environment would otherwise win over the host and
+        // database above, and every table there would be dropped.
+        'url' => null,
     ]);
     config()->set('database.default', $driver);
     DB::purge($driver);

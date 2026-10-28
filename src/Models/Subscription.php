@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Attributes\UseFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Carbon;
 use Mozex\Campaigns\Database\Factories\SubscriptionFactory;
 use Mozex\Campaigns\Enums\ConsentBasis;
 use Mozex\Campaigns\Enums\SubscriptionStatus;
@@ -15,6 +16,19 @@ use Mozex\Campaigns\Enums\SubscriptionStatus;
 /**
  * A subscriber's place on one list. Only the hash of a double opt-in token
  * is stored; the raw token exists only in the email that carries it.
+ *
+ * @property int $id
+ * @property int $list_id
+ * @property int $subscriber_id
+ * @property SubscriptionStatus $status
+ * @property ConsentBasis $basis
+ * @property string $source
+ * @property ?string $confirm_token_hash
+ * @property ?Carbon $subscribed_at
+ * @property ?Carbon $confirmed_at
+ * @property ?Carbon $unsubscribed_at
+ * @property ?Carbon $created_at
+ * @property ?Carbon $updated_at
  */
 #[UseFactory(SubscriptionFactory::class)]
 class Subscription extends Model

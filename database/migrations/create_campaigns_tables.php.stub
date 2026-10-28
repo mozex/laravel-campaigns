@@ -9,12 +9,20 @@ use Illuminate\Support\Facades\Schema;
 
 /*
  * Every string column has an explicit length: apps often shorten Laravel's
- * default string length, and an email address can be 254 characters.
+ * default string length, and an email address can be 254 characters. Every
+ * foreign key gets its own index, which PostgreSQL doesn't add by itself.
  */
 return new class extends Migration
 {
     public function up(): void
     {
+        // MySQL's default collations treat "josé" and "jose" as one value, so
+        // the unique address index compares bytes there instead. Addresses are
+        // stored lower-cased, so nothing else changes.
+        $binary = in_array(Schema::getConnection()->getDriverName(), ['mysql', 'mariadb'], true)
+            ? 'utf8mb4_bin'
+            : null;
+
         Schema::create('campaign_lists', function (Blueprint $table): void {
             $table->id();
             $table->string('key', 125)->unique();
@@ -27,9 +35,9 @@ return new class extends Migration
             $table->timestamps();
         });
 
-        Schema::create('campaign_subscribers', function (Blueprint $table): void {
+        Schema::create('campaign_subscribers', function (Blueprint $table) use ($binary): void {
             $table->id();
-            $table->string('email', 254)->unique();
+            $table->string('email', 254)->collation($binary)->unique();
             $table->string('subscribable_type', 255)->nullable();
 
             // The app decides whether its keys are integers, UUIDs or ULIDs.
@@ -44,7 +52,7 @@ return new class extends Migration
             $table->string('locale', 35)->nullable();
             $table->string('timezone', 64)->nullable();
             $table->string('country', 2)->nullable();
-            $table->json('custom_fields')->nullable();
+            $table->jsonb('custom_fields')->nullable();
             $table->timestamp('last_opened_at')->nullable();
             $table->timestamp('last_clicked_at')->nullable();
             $table->timestamp('last_active_at')->nullable();
@@ -55,13 +63,15 @@ return new class extends Migration
             $table->unsignedSmallInteger('soft_bounces')->default(0);
             $table->timestamps();
 
-            $table->unique(['subscribable_type', 'subscribable_id']);
+            // One subscriber per app record. A short name, since apps with a
+            // table prefix lengthen the generated one past MySQL's 64.
+            $table->unique(['subscribable_type', 'subscribable_id'], 'campaign_subscribers_subscribable_unique');
         });
 
         Schema::create('campaign_list_subscriptions', function (Blueprint $table): void {
             $table->id();
             $table->foreignId('list_id')->constrained('campaign_lists')->cascadeOnDelete();
-            $table->foreignId('subscriber_id')->constrained('campaign_subscribers')->cascadeOnDelete();
+            $table->foreignId('subscriber_id')->index()->constrained('campaign_subscribers')->cascadeOnDelete();
             $table->string('status', 32);
             $table->string('basis', 32);
             $table->string('source', 125);
@@ -81,15 +91,15 @@ return new class extends Migration
         Schema::create('campaign_consent_records', function (Blueprint $table): void {
             $table->id();
             $table->foreignId('subscriber_id')->nullable()->constrained('campaign_subscribers')->nullOnDelete();
-            $table->foreignId('list_id')->nullable()->constrained('campaign_lists')->nullOnDelete();
+            $table->foreignId('list_id')->nullable()->index()->constrained('campaign_lists')->nullOnDelete();
             $table->string('action', 32);
             $table->string('basis', 32)->nullable();
             $table->string('source', 125)->nullable();
             $table->string('notice_version', 64)->nullable();
             $table->string('ip_address', 45)->nullable();
             $table->text('user_agent')->nullable();
-            $table->json('meta')->nullable();
-            $table->timestamp('occurred_at');
+            $table->jsonb('meta')->nullable();
+            $table->timestamp('occurred_at')->useCurrent();
 
             $table->index(['subscriber_id', 'occurred_at']);
         });
@@ -106,14 +116,14 @@ return new class extends Migration
             $table->string('tag', 125);
             $table->boolean('track_opens')->default(true);
             $table->boolean('track_clicks')->default(true);
-            $table->json('utm')->nullable();
-            $table->json('target_lists')->nullable();
-            $table->json('audience')->nullable();
-            $table->json('pace')->nullable();
-            $table->json('thresholds')->nullable();
+            $table->jsonb('utm')->nullable();
+            $table->jsonb('target_lists')->nullable();
+            $table->jsonb('audience')->nullable();
+            $table->jsonb('pace')->nullable();
+            $table->jsonb('thresholds')->nullable();
             $table->unsignedInteger('recipient_count')->nullable();
-            $table->string('pause_reason', 255)->nullable();
-            $table->json('report')->nullable();
+            $table->text('pause_reason')->nullable();
+            $table->jsonb('report')->nullable();
             $table->timestamp('started_at')->nullable();
             $table->timestamp('paused_at')->nullable();
             $table->timestamp('completed_at')->nullable();
@@ -122,14 +132,15 @@ return new class extends Migration
         });
 
         // One row per campaign and subscriber, written when the campaign
-        // starts. The address and locale are what the email went to; a
-        // deleted subscriber leaves the row for the campaign's numbers.
+        // starts. The address and locale are what the email went to. A
+        // deleted subscriber's rows stay for the campaign's numbers, with
+        // their address cleared.
         Schema::create('campaign_messages', function (Blueprint $table): void {
             $table->id();
             $table->uuid('uuid')->unique();
             $table->foreignId('campaign_id')->constrained('campaigns')->cascadeOnDelete();
-            $table->foreignId('subscriber_id')->nullable()->constrained('campaign_subscribers')->nullOnDelete();
-            $table->json('list_ids')->nullable();
+            $table->foreignId('subscriber_id')->nullable()->index()->constrained('campaign_subscribers')->nullOnDelete();
+            $table->jsonb('list_ids')->nullable();
             $table->string('email', 254)->nullable();
             $table->string('locale', 35)->nullable();
             $table->unsignedInteger('position');
@@ -159,7 +170,7 @@ return new class extends Migration
         Schema::create('campaign_test_sends', function (Blueprint $table): void {
             $table->id();
             $table->uuid('uuid')->unique();
-            $table->foreignId('campaign_id')->constrained('campaigns')->cascadeOnDelete();
+            $table->foreignId('campaign_id')->index()->constrained('campaigns')->cascadeOnDelete();
             $table->string('email', 254);
             $table->string('locale', 35)->nullable();
             $table->string('token_hash', 64)->unique();
@@ -175,12 +186,12 @@ return new class extends Migration
             $table->id();
             $table->string('provider_event_id', 255)->unique();
             $table->string('signature_token_hash', 64)->nullable()->unique();
-            $table->foreignId('message_id')->nullable()->constrained('campaign_messages')->nullOnDelete();
-            $table->foreignId('test_send_id')->nullable()->constrained('campaign_test_sends')->nullOnDelete();
+            $table->foreignId('message_id')->nullable()->index()->constrained('campaign_messages')->nullOnDelete();
+            $table->foreignId('test_send_id')->nullable()->index()->constrained('campaign_test_sends')->nullOnDelete();
             $table->string('type', 32);
             $table->boolean('is_bot')->default(false);
-            $table->json('payload')->nullable();
-            $table->timestamp('occurred_at')->index();
+            $table->jsonb('payload')->nullable();
+            $table->timestamp('occurred_at')->useCurrent()->index();
             $table->timestamp('created_at')->nullable();
         });
 

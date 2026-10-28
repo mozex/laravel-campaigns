@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Mozex\Campaigns\Tests;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Schema\Builder;
 use Illuminate\Foundation\Application;
 use Orchestra\Testbench\Concerns\WithWorkbench;
 use Orchestra\Testbench\TestCase as Orchestra;
@@ -15,8 +16,11 @@ class TestCase extends Orchestra
 
     protected function setUp(): void
     {
-        // Apps commonly run strict models, so the package must work under them.
+        // Apps commonly run strict models and a shorter default string length,
+        // so the package must work under both. The short default also makes
+        // an unsized column fail the column-length test.
         Model::shouldBeStrict();
+        Builder::defaultStringLength(125);
 
         parent::setUp();
     }

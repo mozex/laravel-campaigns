@@ -9,11 +9,24 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Carbon;
 use Mozex\Campaigns\Database\Factories\CampaignListFactory;
 use Mozex\Campaigns\Enums\ConsentBasis;
 use Mozex\Campaigns\Enums\ListKind;
 use Mozex\Campaigns\Enums\SubscriptionStatus;
 
+/**
+ * @property int $id
+ * @property string $key
+ * @property string $name
+ * @property ?string $description
+ * @property ListKind $kind
+ * @property bool $double_opt_in
+ * @property SubscriptionStatus $default_status
+ * @property ConsentBasis $default_basis
+ * @property ?Carbon $created_at
+ * @property ?Carbon $updated_at
+ */
 #[UseFactory(CampaignListFactory::class)]
 class CampaignList extends Model
 {

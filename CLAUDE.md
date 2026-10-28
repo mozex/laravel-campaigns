@@ -31,14 +31,18 @@ vendor/bin/pest --filter="test name here"   # one test
 ## Key design decisions
 
 - **`laravel/framework`, not the `illuminate/*` components.** The package is shaped like an app (routes, views, mail, queued jobs, the scheduler, signed links), and its jobs, events and pages need the foundation's helpers and traits. Checkers that prefer the split components flag it; it is deliberate.
+- **MySQL, MariaDB, PostgreSQL and SQLite.** SQL Server isn't supported: its unique indexes allow a single NULL, and several nullable columns here are unique.
 - **One migration stub, no `down()`.** Until the first version is tagged, schema changes edit `create_campaigns_tables.php.stub` in place. After that, every change is a new, additive stub, since apps have already published and run the old one.
-- **Every string column has an explicit length** (addresses 254, user agents `text`): apps often lower Laravel's default string length, and a 254-character address must fit. The column-length test runs on MySQL and PostgreSQL, where a short column fails.
+- **Every string column has an explicit length** (addresses 254, user agents `text`): apps often lower Laravel's default string length, and a 254-character address must fit. Tests run with a default length of 125, so an unsized column fails the column-length test on MySQL and PostgreSQL.
+- **Every foreign key has its own index**, since PostgreSQL adds none, and JSON columns are `jsonb` (`json` on MySQL), since PostgreSQL can't compare plain `json` in a `DISTINCT`.
+- **The subscriber's address compares bytes on MySQL and MariaDB** (`utf8mb4_bin`): their default collations make `josé@` and `jose@` one value, which would break the unique index. Addresses are stored lower-cased, so case needs no help from the collation.
+- **One subscriber per app record**: the `subscribable` morph pair is unique, so an address change that moves an account to an existing subscriber unlinks the old row first. The morph id column follows the app's `Schema::morphUsingUuids()` or `morphUsingUlids()`, which must be called before the migration runs.
 - **`custom_fields`, not `attributes`,** for a subscriber's free-form data: a column called `attributes` collides with Eloquent's own `$attributes` property inside the model.
 - **Morph aliases carry a `campaigns.` prefix** and are registered with `Relation::morphMap()`, never `enforceMorphMap()`: apps that enforce a morph map need the aliases, and enforcing is the app's decision.
-- **Records outlive their subscriber.** Consent records and campaign messages keep their row with `subscriber_id` nulled when a subscriber is deleted, so what someone agreed to and a campaign's numbers survive; list subscriptions cascade.
+- **Records outlive their subscriber.** Consent records and campaign messages keep their row with `subscriber_id` nulled when a subscriber is deleted, so what someone agreed to and a campaign's numbers survive; list subscriptions cascade. The address on those messages is personal data, so the code that deletes a subscriber must clear it too.
 - **Tokens are stored as SHA-256 hashes only** (`token_hash`, `confirm_token_hash`, `signature_token_hash`) and are `$hidden` on their models; the raw token exists only in the email or response that carries it.
 - **Sending is off by default** (`campaigns.enabled`): an app installs the package, records consent and builds its lists before anything can send.
-- **A message only moves forward** through `MessageStatus`, and a campaign holds one message per subscriber (a unique index on the pair).
+- **A message never moves back from `sending`**, since the provider may already have the email; the one step back is `queued` to `pending`, for a claim whose job never ran (`MessageStatus`). A campaign holds one message per subscriber (a unique index on the pair).
 
 ## Extension points
 
@@ -55,4 +59,6 @@ vendor/bin/pest --filter="test name here"   # one test
 
 - `CHANGELOG.md` is generated from GitHub releases by the changelog workflow. Never edit it by hand.
 - The PHP floor is 8.2: no typed class constants (`public const string X`) and no `new Foo()->bar()` without wrapping parentheses. PHPStan's `type_coverage.constant` is 0 for that reason.
+- Larastan reads columns only from `.php` migrations, never the `.php.stub`, so each model lists its columns as `@property` lines. A new column gets its line in the same change, or code reading it fails PHPStan.
+- Read `campaigns.domain_daily_caps` as a whole map: its keys are domains, and the dots in them make `config('campaigns.domain_daily_caps.'.$domain)` find nothing.
 - Eloquent's `Table`, `Fillable` and `Hidden` attributes don't exist on the Laravel 12 floor, so models set `$table`, `$fillable` and `$hidden` as properties. `UseFactory` does exist there.

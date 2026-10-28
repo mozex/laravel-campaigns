@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace Mozex\Campaigns\Enums;
 
 /**
- * A message only ever moves forward: pending, queued, sending, sent,
- * delivered; or it ends failed, skipped or unknown.
+ * A message moves pending, queued, sending, sent, delivered, or ends failed,
+ * skipped or unknown. The one step back is queued to pending, for a claim
+ * whose job never ran; nothing ever moves back from sending, since the
+ * provider may already have the email.
  */
 enum MessageStatus: string
 {

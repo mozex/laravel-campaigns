@@ -9,9 +9,37 @@ use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Carbon;
 use Mozex\Campaigns\Database\Factories\CampaignFactory;
 use Mozex\Campaigns\Enums\CampaignStatus;
 
+/**
+ * @property int $id
+ * @property string $uuid
+ * @property string $key
+ * @property string $name
+ * @property CampaignStatus $status
+ * @property ?string $from_name
+ * @property string $from_email
+ * @property ?string $reply_to
+ * @property string $tag
+ * @property bool $track_opens
+ * @property bool $track_clicks
+ * @property ?array<string, string> $utm
+ * @property ?list<int> $target_lists
+ * @property ?array<string, mixed> $audience
+ * @property ?array<string, mixed> $pace
+ * @property ?array<string, mixed> $thresholds
+ * @property ?int $recipient_count
+ * @property ?string $pause_reason
+ * @property ?array<string, mixed> $report
+ * @property ?Carbon $started_at
+ * @property ?Carbon $paused_at
+ * @property ?Carbon $completed_at
+ * @property ?Carbon $canceled_at
+ * @property ?Carbon $created_at
+ * @property ?Carbon $updated_at
+ */
 #[UseFactory(CampaignFactory::class)]
 class Campaign extends Model
 {

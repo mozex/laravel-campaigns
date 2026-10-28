@@ -3,6 +3,7 @@ parameters:
     paths:
         - src
         - config
+        - database/factories
     reportUnmatchedIgnoredErrors: true
     type_coverage:
         # Typed class constants need PHP 8.3; the package supports 8.2.

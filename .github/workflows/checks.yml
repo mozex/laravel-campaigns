@@ -53,8 +53,8 @@ jobs:
 
     # Sending claims rows with queries that differ per database (PostgreSQL
     # has no UPDATE ... LIMIT), so the database tests run against real MySQL
-    # and PostgreSQL servers as well as SQLite. They skip themselves when no
-    # server answers.
+    # and PostgreSQL servers as well as SQLite. Locally they skip when no
+    # server answers; here they fail, since a missing server is a broken run.
     services:
       mysql:
         image: mysql:8.4

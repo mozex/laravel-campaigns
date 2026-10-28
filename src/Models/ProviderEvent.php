@@ -8,12 +8,24 @@ use Illuminate\Database\Eloquent\Attributes\UseFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Carbon;
 use Mozex\Campaigns\Database\Factories\ProviderEventFactory;
 use Mozex\Campaigns\Enums\FeedbackType;
 
 /**
  * Something the sending provider reported about an email (delivered, failed,
  * opened, clicked, a spam report), stored once by the provider's event id.
+ *
+ * @property int $id
+ * @property string $provider_event_id
+ * @property ?string $signature_token_hash
+ * @property ?int $message_id
+ * @property ?int $test_send_id
+ * @property FeedbackType $type
+ * @property bool $is_bot
+ * @property ?array<string, mixed> $payload
+ * @property Carbon $occurred_at
+ * @property ?Carbon $created_at
  */
 #[UseFactory(ProviderEventFactory::class)]
 class ProviderEvent extends Model

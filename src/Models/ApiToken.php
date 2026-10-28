@@ -7,11 +7,20 @@ namespace Mozex\Campaigns\Models;
 use Illuminate\Database\Eloquent\Attributes\UseFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Carbon;
 use Mozex\Campaigns\Database\Factories\ApiTokenFactory;
 
 /**
  * A named token an agent signs in with. Only its hash is stored; the token
  * itself is shown once, when it is made.
+ *
+ * @property int $id
+ * @property string $name
+ * @property string $token_hash
+ * @property ?Carbon $last_used_at
+ * @property ?Carbon $revoked_at
+ * @property ?Carbon $created_at
+ * @property ?Carbon $updated_at
  */
 #[UseFactory(ApiTokenFactory::class)]
 class ApiToken extends Model

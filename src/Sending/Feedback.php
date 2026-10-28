@@ -11,6 +11,9 @@ use Mozex\Campaigns\Enums\FeedbackType;
  * One event the provider reported about one email, in the package's terms.
  * messageUuid is the id the package sent with the message, when the provider
  * echoed it back; bot names the machine that opened or clicked, if any.
+ * replayKey is the one-time value a signed webhook carries, stored with the
+ * event so the same request can't be processed twice; events read from the
+ * provider's logs have none.
  */
 readonly class Feedback
 {
@@ -29,6 +32,7 @@ readonly class Feedback
         public ?int $code = null,
         public ?string $bot = null,
         public ?string $url = null,
+        public ?string $replayKey = null,
         public array $payload = [],
     ) {}
 }

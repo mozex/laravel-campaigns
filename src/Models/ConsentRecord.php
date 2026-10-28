@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Attributes\UseFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Carbon;
 use Mozex\Campaigns\Database\Factories\ConsentRecordFactory;
 use Mozex\Campaigns\Enums\ConsentAction;
 use Mozex\Campaigns\Enums\ConsentBasis;
@@ -16,6 +17,18 @@ use Mozex\Campaigns\Enums\ConsentBasis;
  * One entry in the append-only consent ledger: what changed, on what basis,
  * from where, under which notice, and, when a person acted, their IP and
  * user agent. Entries are written once and never updated.
+ *
+ * @property int $id
+ * @property ?int $subscriber_id
+ * @property ?int $list_id
+ * @property ConsentAction $action
+ * @property ?ConsentBasis $basis
+ * @property ?string $source
+ * @property ?string $notice_version
+ * @property ?string $ip_address
+ * @property ?string $user_agent
+ * @property ?array<string, mixed> $meta
+ * @property Carbon $occurred_at
  */
 #[UseFactory(ConsentRecordFactory::class)]
 class ConsentRecord extends Model

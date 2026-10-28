@@ -10,12 +10,40 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Carbon;
 use Mozex\Campaigns\Database\Factories\CampaignMessageFactory;
 use Mozex\Campaigns\Enums\MessageStatus;
 
 /**
  * One campaign's email to one subscriber. Its uuid travels to the provider
  * with the message, so the provider's events and logs lead back to it.
+ *
+ * @property int $id
+ * @property string $uuid
+ * @property int $campaign_id
+ * @property ?int $subscriber_id
+ * @property ?list<int> $list_ids
+ * @property ?string $email
+ * @property ?string $locale
+ * @property int $position
+ * @property MessageStatus $status
+ * @property ?string $claim_id
+ * @property ?string $token_hash
+ * @property ?string $provider_message_id
+ * @property ?Carbon $claimed_at
+ * @property ?Carbon $sending_at
+ * @property ?Carbon $sent_at
+ * @property ?Carbon $delivered_at
+ * @property ?Carbon $opened_at
+ * @property ?Carbon $clicked_at
+ * @property ?Carbon $unsubscribed_at
+ * @property ?Carbon $complained_at
+ * @property ?Carbon $failed_at
+ * @property ?string $failure_severity
+ * @property ?string $failure_reason
+ * @property ?int $failure_code
+ * @property ?Carbon $created_at
+ * @property ?Carbon $updated_at
  */
 #[UseFactory(CampaignMessageFactory::class)]
 class CampaignMessage extends Model

@@ -30,6 +30,15 @@ it('stores the longest address and user agent the columns allow', function (stri
         ->and(ConsentRecord::query()->sole()->user_agent)->toHaveLength(400);
 })->with('databases');
 
+it('keeps addresses that differ only by an accent apart', function (string $driver): void {
+    useDatabase($driver);
+
+    Subscriber::factory()->create(['email' => 'jose@example.com']);
+    Subscriber::factory()->create(['email' => 'josé@example.com']);
+
+    expect(Subscriber::query()->where('email', 'josé@example.com')->sole()->email)->toBe('josé@example.com');
+})->with('databases');
+
 it('builds the whole model graph and resolves every relation', function (string $driver): void {
     useDatabase($driver);
 

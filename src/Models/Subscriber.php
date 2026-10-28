@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
+use Illuminate\Support\Carbon;
 use Mozex\Campaigns\Database\Factories\SubscriberFactory;
 use Mozex\Campaigns\Enums\BlockReason;
 
@@ -21,6 +22,27 @@ use Mozex\Campaigns\Enums\BlockReason;
  * The free-form data the app keeps per subscriber lives in custom_fields, not
  * a column called attributes, which would collide with Eloquent's own
  * $attributes property inside the model.
+ *
+ * @property int $id
+ * @property string $email
+ * @property ?string $subscribable_type
+ * @property int|string|null $subscribable_id
+ * @property ?string $name
+ * @property ?string $first_name
+ * @property ?string $locale
+ * @property ?string $timezone
+ * @property ?string $country
+ * @property ?array<string, mixed> $custom_fields
+ * @property ?Carbon $last_opened_at
+ * @property ?Carbon $last_clicked_at
+ * @property ?Carbon $last_active_at
+ * @property ?Carbon $silent_since
+ * @property ?Carbon $opted_out_at
+ * @property ?Carbon $blocked_at
+ * @property ?BlockReason $blocked_reason
+ * @property int $soft_bounces
+ * @property ?Carbon $created_at
+ * @property ?Carbon $updated_at
  */
 #[UseFactory(SubscriberFactory::class)]
 class Subscriber extends Model
