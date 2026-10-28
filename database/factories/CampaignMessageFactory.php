@@ -26,7 +26,9 @@ class CampaignMessageFactory extends Factory
             'campaign_id' => Campaign::factory(),
             'subscriber_id' => Subscriber::factory(),
             'list_ids' => null,
-            'email' => fn (array $attributes): ?string => Subscriber::query()->whereKey($attributes['subscriber_id'])->first()?->email,
+            'email' => fn (array $attributes): ?string => Subscriber::query()
+                ->whereKey($attributes['subscriber_id'])
+                ->first()?->email,
             'locale' => 'en',
             'position' => $this->faker->unique()->numberBetween(1, 1_000_000),
             'status' => MessageStatus::Pending,
