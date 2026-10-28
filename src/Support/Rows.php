@@ -16,7 +16,9 @@ class Rows
      * loser's insert fails on the unique index and it reads the winner's
      * row with a locking read: inside a transaction MySQL's plain read
      * returns the snapshot taken before that row existed, so Laravel's own
-     * createOrFirst() finds nothing there and throws.
+     * createOrFirst() finds nothing there and throws. The read takes a
+     * shared lock, the one the failed insert already holds: two losers
+     * asking for exclusive locks would deadlock each other.
      *
      * @template TModel of Model
      *
@@ -38,7 +40,7 @@ class Rows
             // transaction usable.
             return $query->getConnection()->transaction(fn (): Model => (clone $query)->create([...$attributes, ...$values]));
         } catch (UniqueConstraintViolationException $exception) {
-            return (clone $query)->where($attributes)->lockForUpdate()->first() ?? throw $exception;
+            return (clone $query)->where($attributes)->sharedLock()->first() ?? throw $exception;
         }
     }
 }

@@ -78,9 +78,9 @@ class ListSourceObserver
      * writes and leaves the app's own transaction usable.
      *
      * A deadlock or lock timeout inside the app's transaction is the one
-     * failure passed on: Laravel rolls nothing back to the savepoint then,
-     * and the database has already ended (MySQL) or aborted (PostgreSQL) the
-     * whole transaction, so the app has to know.
+     * failure passed on: Laravel rolls nothing back to the savepoint then, and
+     * a deadlock has already ended (MySQL) or aborted (PostgreSQL) the whole
+     * transaction, so the app has to know.
      *
      * @param  Closure(): mixed  $callback
      */

@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Illuminate\Contracts\Container\BindingResolutionException;
+use Illuminate\Database\DeadlockException;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
@@ -26,6 +27,17 @@ class MemberListWithPhone extends MemberList
     public function fields(Model $record): array
     {
         return [...parent::fields($record), 'phone' => '555'];
+    }
+}
+
+/**
+ * Fails the way a deadlock does: Laravel recognises one by its message.
+ */
+class MemberListThatDeadlocks extends MemberList
+{
+    public function name(): string
+    {
+        throw new RuntimeException('Deadlock found when trying to get lock; try restarting transaction');
     }
 }
 
@@ -231,3 +243,20 @@ it('rolls a failure back to its own savepoint, leaving the app\'s transaction us
 
     Exceptions::assertReported(QueryException::class);
 })->with('databases');
+
+it('passes a deadlock on to the app\'s transaction, and only reports one outside it', function (): void {
+    config()->set('campaigns.list_sources', ['members' => MemberListThatDeadlocks::class]);
+    Exceptions::fake();
+
+    expect(fn (): Member => DB::transaction(fn (): Member => Member::query()->create(['email' => 'jane@example.com'])))
+        ->toThrow(DeadlockException::class)
+        ->and(Member::query()->count())->toBe(0);
+
+    Exceptions::assertNothingReported();
+
+    Member::query()->create(['email' => 'john@example.com']);
+
+    expect(Member::query()->count())->toBe(1);
+
+    Exceptions::assertReported(DeadlockException::class);
+});

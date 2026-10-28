@@ -64,7 +64,7 @@ class SyncRecordAction
             $list = $this->campaigns->list($listKey);
             $subscriber = Subscriber::findFor($record);
             $changes = [];
-            $problem = $address === null ? 'no valid email address' : null;
+            $problem = $address === null ? 'It has no email address that can be mailed.' : null;
 
             if ($subscriber === null && ! $eligible && ! $choice) {
                 return new SyncResult;
@@ -74,8 +74,8 @@ class SyncRecordAction
                 try {
                     $subscriber = $this->changeEmail->execute($subscriber, $address, $context ?? new ConsentContext('sync'));
                     $changes[] = SyncChange::EmailChanged;
-                } catch (CampaignsException) {
-                    $problem = 'its address belongs to another record';
+                } catch (CampaignsException $exception) {
+                    $problem = $exception->getMessage();
                 }
             }
 
@@ -85,8 +85,8 @@ class SyncRecordAction
                 if ($subscriber->subscribable_type === null) {
                     $subscriber->subscribable()->associate($record);
                     $changes[] = $subscriber->wasRecentlyCreated ? SyncChange::Created : SyncChange::Linked;
-                } else {
-                    $problem = 'its address belongs to another record';
+                } elseif (! $this->linksTo($subscriber, $record)) {
+                    $problem = CampaignsException::addressTaken()->getMessage();
                     $subscriber = null;
                 }
             }
@@ -213,6 +213,16 @@ class SyncRecordAction
         $value = trim((string) $value);
 
         return $value === '' ? null : mb_substr($value, 0, $length);
+    }
+
+    /**
+     * Whether the subscriber is already the record's own, linked a moment ago
+     * by another request syncing the same record.
+     */
+    protected function linksTo(Subscriber $subscriber, Model $record): bool
+    {
+        return $subscriber->subscribable_type === $record->getMorphClass()
+            && (string) $subscriber->subscribable_id === (string) $record->getKey();
     }
 
     protected function isTrashed(Model $record): bool

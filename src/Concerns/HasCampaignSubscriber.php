@@ -49,6 +49,10 @@ trait HasCampaignSubscriber
      *         fn () => User::create($attributes),
      *     );
      *
+     * The choice is recorded on the record's subscriber, so a record made
+     * without an address that can be mailed, or with one another record
+     * holds, has nowhere to keep it.
+     *
      * @template TReturn
      *
      * @param  Closure(): TReturn  $callback

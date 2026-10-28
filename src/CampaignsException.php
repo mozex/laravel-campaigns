@@ -36,7 +36,7 @@ class CampaignsException extends RuntimeException
 
     public static function dynamicList(string $key): self
     {
-        return new self("The list \"{$key}\" follows the app's records, so nobody is taken off it by hand. Opt the person out, or make the record ineligible.");
+        return new self("The list \"{$key}\" follows the app's records, so nobody is added to it or taken off it by hand. Opt the person out, or change the record.");
     }
 
     public static function notDynamic(string $key): self

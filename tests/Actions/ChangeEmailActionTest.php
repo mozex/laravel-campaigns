@@ -108,6 +108,17 @@ it('deletes the old row when it held nothing to keep', function (): void {
         ->and(ConsentRecord::query()->sole()->subscriber_id)->toBe($contact->id);
 });
 
+it('decides from the row as it is now, not from a stale copy', function (): void {
+    $stale = Subscriber::factory()->create(['email' => 'old@example.com']);
+    Subscriber::query()->sole()->forceFill(['blocked_at' => now(), 'blocked_reason' => BlockReason::HardBounce])->save();
+
+    $result = changeEmail($stale, 'new@example.com');
+
+    expect($result->is($stale))->toBeFalse()
+        ->and(Subscriber::findByEmail('old@example.com')?->blocked_reason)->toBe(BlockReason::HardBounce)
+        ->and(Subscriber::findByEmail('new@example.com')?->blocked_at)->toBeNull();
+});
+
 it('refuses an address another record holds, or one that cannot be mailed', function (string $email): void {
     Member::query()->create(['email' => 'held@example.com']);
     $subscriber = Subscriber::factory()->create(['email' => 'mine@example.com']);

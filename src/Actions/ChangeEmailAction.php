@@ -59,6 +59,11 @@ class ChangeEmailAction
             $current = Subscriber::query()->lockForUpdate()->find($subscriber->id) ?? throw CampaignsException::subscriberGone();
             $subscriber->setRawAttributes($current->getAttributes(), true);
 
+            // Another request moved it there a moment ago.
+            if ($subscriber->email === $address) {
+                return $subscriber;
+            }
+
             $existing = Subscriber::query()->where('email', $address)->lockForUpdate()->first();
 
             if ($existing?->subscribable_type !== null) {
@@ -137,9 +142,12 @@ class ChangeEmailAction
 
     protected function moveSubscriptions(Subscriber $from, Subscriber $to): void
     {
-        $theirs = Subscription::query()->where('subscriber_id', $to->id)->get()->keyBy('list_id');
+        // Locking reads: a plain read inside an app's MySQL transaction can miss
+        // a subscription made after its snapshot, and moving onto it would
+        // break the unique pair.
+        $theirs = Subscription::query()->where('subscriber_id', $to->id)->lockForUpdate()->get()->keyBy('list_id');
 
-        foreach (Subscription::query()->where('subscriber_id', $from->id)->get() as $subscription) {
+        foreach (Subscription::query()->where('subscriber_id', $from->id)->lockForUpdate()->get() as $subscription) {
             $existing = $theirs->get($subscription->list_id);
 
             if ($existing === null) {

@@ -22,7 +22,7 @@ use Mozex\Campaigns\Models\Subscription;
 use Mozex\Campaigns\Support\ConsentContext;
 
 it('subscribes once, with the list\'s defaults, and records how', function (): void {
-    $list = CampaignList::factory()->dynamic()->create();
+    $list = CampaignList::factory()->create(['default_basis' => ConsentBasis::SoftOptIn]);
     $subscriber = Subscriber::factory()->create();
     $context = new ConsentContext('newsletter-form', noticeVersion: 'v2', ipAddress: '203.0.113.9', userAgent: 'Browser/1.0', meta: ['page' => 'home']);
 
@@ -93,7 +93,7 @@ it('waits for a double opt-in, and confirming it clears an earlier opt-out', fun
 });
 
 it('records an unticked sign-up box as one decline that opts the person out', function (): void {
-    $list = CampaignList::factory()->dynamic()->create();
+    $list = CampaignList::factory()->create();
     $subscriber = Subscriber::factory()->create();
 
     $subscription = app(DeclineAction::class)->execute($subscriber, $list, new ConsentContext('registration', noticeVersion: 'v1', accepted: false));
@@ -150,10 +150,13 @@ it('takes a subscriber off a list, and adding them again starts afresh', functio
         ->and(consentActions($subscriber))->toBe(['subscribe', 'unsubscribe', 'subscribe']);
 });
 
-it('refuses to take anyone off a dynamic list by hand', function (): void {
+it('refuses to add a contact to a dynamic list, or take anyone off one, by hand', function (): void {
     $subscription = Subscription::factory()->for(CampaignList::factory()->dynamic(), 'list')->create();
+    $context = new ConsentContext('agent');
 
-    expect(fn (): bool => app(RemoveFromListAction::class)->execute($subscription->subscriber, $subscription->list, new ConsentContext('agent')))
+    expect(fn (): bool => app(RemoveFromListAction::class)->execute($subscription->subscriber, $subscription->list, $context))
+        ->toThrow(CampaignsException::class, 'follows the app\'s records')
+        ->and(fn (): Subscription => app(SubscribeAction::class)->execute(Subscriber::factory()->create(), $subscription->list, $context))
         ->toThrow(CampaignsException::class, 'follows the app\'s records')
         ->and(Subscription::query()->count())->toBe(1);
 });

@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Mozex\Campaigns\Actions;
 
+use Mozex\Campaigns\CampaignsException;
 use Mozex\Campaigns\Enums\ConsentAction;
+use Mozex\Campaigns\Enums\ListKind;
 use Mozex\Campaigns\Enums\SubscriptionStatus;
 use Mozex\Campaigns\Models\CampaignList;
 use Mozex\Campaigns\Models\ConsentRecord;
@@ -49,9 +51,17 @@ class SubscribeAction
     /**
      * The subscriber's place on the list, made with the list's defaults when
      * there is none.
+     *
+     * @throws CampaignsException for a dynamic list and a subscriber no app record stands behind
      */
     public function join(Subscriber $subscriber, CampaignList $list, ConsentContext $context): Subscription
     {
+        // A dynamic list holds the app's records only, and nothing could take
+        // a contact added by hand off it again.
+        if ($list->kind === ListKind::Dynamic && $subscriber->subscribable_type === null) {
+            throw CampaignsException::dynamicList($list->key);
+        }
+
         $status = $list->default_status;
 
         return Rows::firstOrCreate(Subscription::query(), [

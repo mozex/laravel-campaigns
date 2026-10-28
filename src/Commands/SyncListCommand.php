@@ -54,24 +54,30 @@ class SyncListCommand extends Command
         $records = $unchanged = $suppressed = 0;
         $problems = [];
 
-        $query->chunkById(500, function (Collection $chunk) use ($sync, $key, $dryRun, &$counts, &$records, &$unchanged, &$suppressed, &$problems): void {
-            foreach ($chunk as $record) {
-                $result = $this->syncRecord($sync, $key, $record, $dryRun);
-                $records++;
+        try {
+            $query->chunkById(500, function (Collection $chunk) use ($sync, $key, $dryRun, &$counts, &$records, &$unchanged, &$suppressed, &$problems): void {
+                foreach ($chunk as $record) {
+                    $result = $this->syncRecord($sync, $key, $record, $dryRun);
+                    $records++;
 
-                foreach ($result->changes as $change) {
-                    $counts[$change->value]++;
+                    foreach ($result->changes as $change) {
+                        $counts[$change->value]++;
+                    }
+
+                    if ($result->problem !== null) {
+                        $problems[] = "Record {$record->getKey()}: {$result->problem}";
+                    } elseif ($result->changes === []) {
+                        $unchanged++;
+                    }
+
+                    $suppressed += $result->suppressed ? 1 : 0;
                 }
+            });
+        } catch (CampaignsException $exception) {
+            $this->error($exception->getMessage());
 
-                if ($result->problem !== null) {
-                    $problems[] = "Record {$record->getKey()}: {$result->problem}";
-                } elseif ($result->changes === []) {
-                    $unchanged++;
-                }
-
-                $suppressed += $result->suppressed ? 1 : 0;
-            }
-        });
+            return self::FAILURE;
+        }
 
         if ($dryRun) {
             $this->warn('Dry run: nothing was written. Run it again with --force to make these changes.');
@@ -95,8 +101,10 @@ class SyncListCommand extends Command
     /**
      * One record per transaction, so a dry run rolls back what the real run
      * would write and holds its locks only briefly. Its counts match the
-     * real run's, except that two records sharing an address both count as
-     * new until the first is really written.
+     * real run's, except where one record's change would make room for
+     * another's, since the first change is rolled back: two records sharing
+     * an address both count as new, and a record moving to an address
+     * another record is leaving counts as not synced.
      */
     protected function syncRecord(SyncRecordAction $sync, string $key, Model $record, bool $dryRun): SyncResult
     {

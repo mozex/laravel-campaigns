@@ -27,10 +27,10 @@ enum SyncChange: string
     /** The record's address changed, and the person moved with it. */
     case EmailChanged = 'email_changed';
 
-    /** The record stopped being eligible and left the list. */
+    /** The record stopped being eligible, or lost an address that can be synced, and left the list. */
     case Removed = 'removed';
 
-    /** The record is eligible again and is back on the list. */
+    /** The record can be on the list again (eligible, with an address that syncs) and is back on it. */
     case Restored = 'restored';
 
     public function label(): string
@@ -42,8 +42,8 @@ enum SyncChange: string
             self::Declined => 'Added, opted out at sign-up',
             self::Updated => 'Details updated',
             self::EmailChanged => 'Address changed',
-            self::Removed => 'Taken off, not eligible',
-            self::Restored => 'Put back, eligible again',
+            self::Removed => 'Taken off (not eligible, or no address to sync)',
+            self::Restored => 'Put back on the list',
         };
     }
 }

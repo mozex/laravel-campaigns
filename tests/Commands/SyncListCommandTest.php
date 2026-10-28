@@ -55,7 +55,7 @@ it('brings existing records onto the list as legacy, writing nothing on a dry ru
         ->toMatch('/Added to the list\s*\|\s*2\s/')
         ->toMatch('/Unchanged\s*\|\s*1\s/')
         ->toMatch('/Opted out or blocked, so never mailed\s*\|\s*1\s/')
-        ->toContain("Record {$broken->id}: no valid email address")
+        ->toContain("Record {$broken->id}: It has no email address that can be mailed.")
         ->and($forced)
         ->not->toContain('Dry run')
         ->toMatch('/Added to the list\s*\|\s*2\s/')
