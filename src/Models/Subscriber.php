@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Mozex\Campaigns\Models;
 
 use Illuminate\Database\Eloquent\Attributes\UseFactory;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -13,6 +14,7 @@ use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Illuminate\Support\Carbon;
 use Mozex\Campaigns\Database\Factories\SubscriberFactory;
 use Mozex\Campaigns\Enums\BlockReason;
+use Mozex\Campaigns\Support\EmailAddress;
 
 /**
  * One email address in the app, optionally linked to the app record it
@@ -86,6 +88,44 @@ class Subscriber extends Model
             'blocked_reason' => BlockReason::class,
             'soft_bounces' => 'integer',
         ];
+    }
+
+    /**
+     * The subscriber with this address, written in any case and with any
+     * surrounding spaces.
+     */
+    public static function findByEmail(string $email): ?self
+    {
+        return static::query()->where('email', EmailAddress::clean($email))->first();
+    }
+
+    /**
+     * The subscriber linked to an app record, if it has one.
+     */
+    public static function findFor(Model $record): ?self
+    {
+        return static::query()->whereMorphedTo('subscribable', $record)->first();
+    }
+
+    /**
+     * Whether the address must keep its row when the person behind it
+     * leaves: a block is a fact about the address, and an opt-out keeps a
+     * later import from bringing the address back.
+     */
+    public function isSuppressed(): bool
+    {
+        return $this->blocked_at !== null || $this->opted_out_at !== null;
+    }
+
+    /**
+     * Every address is stored trimmed and lower-cased, whichever code
+     * writes it.
+     *
+     * @return Attribute<string, string>
+     */
+    protected function email(): Attribute
+    {
+        return Attribute::set(fn (string $value): string => EmailAddress::clean($value));
     }
 
     /** @return MorphTo<Model, $this> */

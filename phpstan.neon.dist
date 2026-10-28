@@ -4,6 +4,9 @@ parameters:
         - src
         - config
         - database/factories
+        # The fixtures use the package's traits, which PHPStan analyses only
+        # through a class that uses them.
+        - tests/Fixtures
     reportUnmatchedIgnoredErrors: true
     type_coverage:
         # Typed class constants need PHP 8.3; the package supports 8.2.

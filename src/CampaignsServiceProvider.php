@@ -8,6 +8,7 @@ use Illuminate\Config\Repository;
 use Illuminate\Contracts\Foundation\CachesConfiguration;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Support\Facades\Process;
+use Mozex\Campaigns\Commands\SyncListCommand;
 use Mozex\Campaigns\Models\ApiToken;
 use Mozex\Campaigns\Models\Campaign;
 use Mozex\Campaigns\Models\CampaignList;
@@ -32,6 +33,7 @@ class CampaignsServiceProvider extends PackageServiceProvider
             ->name('laravel-campaigns')
             ->hasConfigFile()
             ->hasMigration('create_campaigns_tables')
+            ->hasCommand(SyncListCommand::class)
             ->hasInstallCommand(function (InstallCommand $command): void {
                 $command
                     ->publishConfigFile()
@@ -67,6 +69,10 @@ class CampaignsServiceProvider extends PackageServiceProvider
      */
     public function packageRegistered(): void
     {
+        // Scoped, so a consent context can never carry over to the next
+        // request or queued job in a long-running worker.
+        $this->app->scoped(Campaigns::class);
+
         if ($this->app instanceof CachesConfiguration && $this->app->configurationIsCached()) {
             return;
         }

@@ -2,7 +2,7 @@
 
 Lets AI agents run a Laravel app's email marketing on the app's own server. The app keeps its lists (dynamic ones fed from its own users, static ones for other contacts), its subscribers and an append-only record of every consent change; campaigns go out one message at a time through Mailgun on the app's own queue, at a pace set per campaign; and the provider's feedback stops addresses that bounce, complain or unsubscribe. Agents reach it through an MCP server the package adds to the app. There are no screens: every operation is a package action, so a later UI can call the same code.
 
-The package is still being built. Today it has the config, the data model and the provider interface; the actions, sending, feedback, pages and the MCP server come next.
+The package is still being built. Today it has the config, the data model, the provider interface, and subscriptions: the consent actions, the consent records, dynamic lists kept in step with the app's records, and the sync command. Sending, feedback, the pages and the MCP server come next.
 
 ## Commands
 
@@ -26,6 +26,11 @@ vendor/bin/pest --filter="test name here"   # one test
 - `src/Models/`: `CampaignList` and `Subscription` (a subscriber's place on a list), `Subscriber` (one address, optionally linked to an app record through the `subscribable` morph), `ConsentRecord` (the ledger), `Campaign`, `CampaignMessage` (one campaign's email to one subscriber), `TestSend`, `ProviderEvent` (what the provider reported) and `ApiToken`.
 - `src/Enums/`: the statuses, kinds, bases, actions and reasons the models cast to.
 - `src/Contracts/CampaignProvider.php`: the sending provider (send one message, verify and parse webhooks, fetch logged events and suppressions), with its value objects in `src/Sending/`.
+- `src/Actions/`: every change to a subscriber, one class each, each writing its consent record: `SubscribeAction` (also the resubscribe, when the person asked), `DeclineAction` (an unticked sign-up box), `ConfirmSubscriptionAction`, `RemoveFromListAction`, `OptOutAction` (what an unsubscribe does), `OptInAction`, `BlockAction`, `UnblockAction`, `ChangeEmailAction`, `ForgetSubscriberAction` (a deleted record) and `SyncRecordAction` (one record onto its dynamic list). A later UI or MCP tool calls these; it never writes the models itself.
+- `src/Support/ConsentContext.php`: who changed someone's consent and how (source, basis, notice version, the person's choice, IP and browser), passed to every action. `src/Support/EmailAddress.php`: the one place an address is cleaned and validated.
+- `src/Contracts/ListSource.php`, `src/Concerns/HasCampaignSubscriber.php`, `src/Observers/ListSourceObserver.php`: an app record behind a dynamic list (configured in `campaigns.list_sources`), the trait its model uses, and the events that keep the list in step.
+- `src/Campaigns.php` (facade `Facades\Campaigns`): the list sources, the dynamic list rows, the consent context a record is created under, and `recordActivity()`.
+- `src/Commands/SyncListCommand.php`: `campaigns:sync-list <list>`, a dry run unless `--force`, `--id` for one record.
 - `database/factories/`: a factory per model, autoloaded with `src/` so apps can use them in their own tests.
 
 ## Key design decisions
@@ -43,10 +48,23 @@ vendor/bin/pest --filter="test name here"   # one test
 - **Tokens are stored as SHA-256 hashes only** (`token_hash`, `confirm_token_hash`, `signature_token_hash`) and are `$hidden` on their models; the raw token exists only in the email or response that carries it.
 - **Sending is off by default** (`campaigns.enabled`): an app installs the package, records consent and builds its lists before anything can send.
 - **A message never moves back from `sending`**, since the provider may already have the email; the one step back is `queued` to `pending`, for a claim whose job never ran (`MessageStatus`). A campaign holds one message per subscriber (a unique index on the pair).
+- **One app-wide opt-out.** A person's unsubscribe (and an unticked sign-up box) sets the subscriber's `opted_out_at`, which stops all marketing whatever lists they are on; their list subscriptions stay, for targeting and history. A block (`blocked_at`) is a fact about the address, never cleared by anything but `UnblockAction`.
+- **Only the person clears an opt-out**: a context with `accepted: true` (a ticked box, the switch, subscribing again) or a confirmed double opt-in. A sync, an import or an agent adding a contact never does: `SubscribeAction` leaves an existing subscription and the opt-out as they are.
+- **List statuses**: `pending` waits for a double opt-in; `unsubscribed` means a dynamic list's record isn't eligible right now (it flips back when it is, with no consent record, since eligibility isn't consent). An agent taking someone off a list deletes the row, so adding them again starts afresh.
+- **Every state change is a conditional update** (`whereNull('opted_out_at')` and so on), and its consent record is written only when the update changed a row, so two requests racing never record one change twice.
+- **Leaving keeps a suppressed address.** A deleted record, or an address the person moved away from, keeps its row stripped to the address when it is blocked or opted out, so a later import can't mail it again; any other address is deleted. Either way the person's details, IPs, browsers and the addresses on their sent mail go, and their pending mail is skipped (`ForgetSubscriberAction`).
+- **An address change moves the person, not the block** (`ChangeEmailAction`): in place when the old row holds nothing to keep; otherwise the person moves to the new address's row (made, or one that exists, the stricter list status winning), their consent records follow them except block and unblock, and the old row is forgotten. The record link moves first, since the morph pair is unique.
+- **The observer never throws.** A failure syncing a record is reported and rolled back to its own savepoint, so an app's sign-up can't fail because of its marketing list; `campaigns:sync-list` repairs what was missed.
+- **A consent context is scoped** to one model class and one callback (`Model::withCampaignConsent()`), restored in `finally`, and the manager is a scoped binding, so it can't leak into the next record, request or job. A record made without one counts as made by staff.
+- **Records older than their list are legacy.** The dynamic list's row is created the first time it is needed, and the sync gives records created before it the `legacy` basis.
+- **The sync's dry run is the real run rolled back**, one transaction per record, so its counts are exactly what `--force` would do.
 
 ## Extension points
 
-- `Mozex\Campaigns\Contracts\CampaignProvider`: the one swap point so far. Mailgun is the planned driver.
+- `Mozex\Campaigns\Contracts\CampaignProvider`: the sending provider. Mailgun is the planned driver.
+- `Mozex\Campaigns\Contracts\ListSource`: an app model as a dynamic list (`campaigns.list_sources`), with `isEligible()` for the app's own rule and `fields()` for the details kept in step.
+- `Campaigns::recordActivity($record)`: the app's sign-ins, purchases and the like, as engagement.
+- The actions resolve through the container, so an app can bind a subclass.
 
 ## Testing
 
@@ -54,6 +72,7 @@ vendor/bin/pest --filter="test name here"   # one test
 - `useDatabase($driver)` in `tests/Pest.php`, with the `databases` dataset (`sqlite`, `mysql`, `pgsql`), moves a test onto a real server's `campaigns_testing` database: it creates that database if needed, drops every table in it and runs the stub. Locally it skips when no server answers; on GitHub Actions it fails instead, since CI starts both servers. The defaults match CI's service containers; `CAMPAIGNS_TEST_MYSQL_*` and `CAMPAIGNS_TEST_PGSQL_*` (`HOST`, `PORT`, `USERNAME`, `PASSWORD`) point at others.
 - Anything database-specific (claims, locks, column lengths, JSON) gets the `databases` dataset.
 - The install tests delete the config and migration files they publish into Testbench's app, before and after each test.
+- `tests/Fixtures/Member` (a `members` table, created in `TestCase::runMigrations()` so the real-server runs get it too) and `MemberList` stand in for an app's accounts and their list source; PHPStan analyses the fixtures, since it checks a trait only through a class that uses it.
 
 ## Development notes
 

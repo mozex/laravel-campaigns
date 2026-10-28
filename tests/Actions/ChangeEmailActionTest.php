@@ -1,0 +1,117 @@
+<?php
+
+declare(strict_types=1);
+
+use Mozex\Campaigns\Actions\ChangeEmailAction;
+use Mozex\Campaigns\Actions\SubscribeAction;
+use Mozex\Campaigns\CampaignsException;
+use Mozex\Campaigns\Enums\BlockReason;
+use Mozex\Campaigns\Enums\ConsentAction;
+use Mozex\Campaigns\Enums\MessageStatus;
+use Mozex\Campaigns\Enums\SubscriptionStatus;
+use Mozex\Campaigns\Models\CampaignList;
+use Mozex\Campaigns\Models\CampaignMessage;
+use Mozex\Campaigns\Models\ConsentRecord;
+use Mozex\Campaigns\Models\Subscriber;
+use Mozex\Campaigns\Models\Subscription;
+use Mozex\Campaigns\Support\ConsentContext;
+use Mozex\Campaigns\Tests\Fixtures\Member;
+
+function changeEmail(Subscriber $subscriber, string $email): Subscriber
+{
+    return app(ChangeEmailAction::class)->execute($subscriber, $email, new ConsentContext('sync'));
+}
+
+it('changes the address in place when nothing has to stay with the old one', function (): void {
+    $subscriber = Subscriber::factory()->create(['email' => 'old@example.com']);
+    Subscription::factory()->for($subscriber)->create();
+    $pending = CampaignMessage::factory()->for($subscriber)->create();
+    $sent = CampaignMessage::factory()->for($subscriber)->create(['status' => MessageStatus::Sent]);
+
+    $result = changeEmail($subscriber, ' New@Example.com');
+
+    expect($result->is($subscriber))->toBeTrue()
+        ->and(Subscriber::query()->sole()->email)->toBe('new@example.com')
+        ->and(Subscription::query()->sole()->subscriber_id)->toBe($subscriber->id)
+        ->and($pending->fresh()?->status)->toBe(MessageStatus::Skipped)
+        ->and($sent->fresh()?->status)->toBe(MessageStatus::Sent);
+});
+
+it('moves the person to a new row and leaves a block with the old address', function (): void {
+    $member = Member::query()->create(['email' => 'old@example.com', 'name' => 'Jane Doe']);
+    $old = Subscriber::findFor($member);
+    $old?->forceFill(['blocked_at' => now(), 'blocked_reason' => BlockReason::HardBounce, 'custom_fields' => ['plan' => 'pro']])->save();
+    ConsentRecord::record($old, ConsentAction::Block, new ConsentContext('webhook'));
+
+    $new = changeEmail($old, 'new@example.com');
+
+    expect($new->is($old))->toBeFalse()
+        ->and($new)
+        ->email->toBe('new@example.com')
+        ->name->toBe('Jane Doe')
+        ->custom_fields->toBe(['plan' => 'pro'])
+        ->blocked_at->toBeNull()
+        ->and($new->subscribable?->is($member))->toBeTrue()
+        ->and(Subscription::query()->sole()->subscriber_id)->toBe($new->id)
+        ->and($old->fresh())
+        ->email->toBe('old@example.com')
+        ->blocked_reason->toBe(BlockReason::HardBounce)
+        ->subscribable_type->toBeNull()
+        ->name->toBeNull()
+        ->custom_fields->toBeNull()
+        ->and(ConsentRecord::query()->where('subscriber_id', $new->id)->sole()->action)->toBe(ConsentAction::Subscribe)
+        ->and(ConsentRecord::query()->where('subscriber_id', $old->id)->sole()->action)->toBe(ConsentAction::Block);
+});
+
+it('joins an address that already has a row, the stricter state winning', function (string $driver): void {
+    useDatabase($driver);
+
+    $member = Member::query()->create(['email' => 'old@example.com']);
+    $old = Subscriber::findFor($member);
+    $old?->forceFill(['opted_out_at' => now()])->save();
+    $shared = CampaignList::factory()->create();
+    $own = CampaignList::factory()->create();
+    Subscription::factory()->for($old)->for($shared, 'list')->pending()->create();
+    Subscription::factory()->for($old)->for($own, 'list')->create();
+    $contact = Subscriber::factory()->create(['email' => 'new@example.com']);
+    app(SubscribeAction::class)->execute($contact, $shared, new ConsentContext('import'));
+
+    $result = changeEmail($old, 'new@example.com');
+
+    expect($result->is($contact))->toBeTrue()
+        ->and($result->fresh())
+        ->opted_out_at->not->toBeNull()
+        ->and($result->fresh()?->subscribable?->is($member))->toBeTrue()
+        ->and(Subscription::query()->where('subscriber_id', $contact->id)->whereIn('list_id', [$shared->id, $own->id])->orderBy('list_id')->pluck('status', 'list_id')->all())->toBe([
+            $shared->id => SubscriptionStatus::Pending,
+            $own->id => SubscriptionStatus::Subscribed,
+        ])
+        ->and($old->fresh())
+        ->email->toBe('old@example.com')
+        ->opted_out_at->not->toBeNull()
+        ->subscribable_type->toBeNull()
+        ->and(Subscription::query()->where('subscriber_id', $old->id)->count())->toBe(0)
+        ->and(ConsentRecord::query()->where('subscriber_id', $old->id)->sole())
+        ->action->toBe(ConsentAction::OptOut)
+        ->meta->toBe(['moved_to_subscriber_id' => $contact->id]);
+})->with('databases');
+
+it('deletes the old row when it held nothing to keep', function (): void {
+    $member = Member::query()->create(['email' => 'old@example.com']);
+    $old = Subscriber::findFor($member);
+    $contact = Subscriber::factory()->create(['email' => 'new@example.com']);
+
+    changeEmail($old, 'new@example.com');
+
+    expect(Subscriber::query()->pluck('email')->all())->toBe(['new@example.com'])
+        ->and($contact->fresh()?->subscribable?->is($member))->toBeTrue()
+        ->and(ConsentRecord::query()->sole()->subscriber_id)->toBe($contact->id);
+});
+
+it('refuses an address another record holds, or one that cannot be mailed', function (string $email): void {
+    Member::query()->create(['email' => 'held@example.com']);
+    $subscriber = Subscriber::factory()->create(['email' => 'mine@example.com']);
+
+    expect(fn (): Subscriber => changeEmail($subscriber, $email))->toThrow(CampaignsException::class)
+        ->and($subscriber->fresh()?->email)->toBe('mine@example.com');
+})->with(['held@example.com', 'not an address']);

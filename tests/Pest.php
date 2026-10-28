@@ -4,11 +4,28 @@ declare(strict_types=1);
 
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Mozex\Campaigns\Models\ConsentRecord;
+use Mozex\Campaigns\Models\Subscriber;
 use Mozex\Campaigns\Tests\TestCase;
 
 uses(TestCase::class)->in(__DIR__);
 
 dataset('databases', ['sqlite', 'mysql', 'pgsql']);
+
+/**
+ * The actions in a subscriber's consent records, oldest first.
+ *
+ * @return list<string>
+ */
+function consentActions(?Subscriber $subscriber): array
+{
+    return ConsentRecord::query()
+        ->where('subscriber_id', $subscriber?->id)
+        ->orderBy('id')
+        ->get()
+        ->map(fn (ConsentRecord $record): string => $record->action->value)
+        ->all();
+}
 
 /**
  * Moves the running test from the in-memory SQLite database to a scratch

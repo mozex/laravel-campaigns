@@ -12,6 +12,7 @@ use Illuminate\Support\Carbon;
 use Mozex\Campaigns\Database\Factories\ConsentRecordFactory;
 use Mozex\Campaigns\Enums\ConsentAction;
 use Mozex\Campaigns\Enums\ConsentBasis;
+use Mozex\Campaigns\Support\ConsentContext;
 
 /**
  * One entry in the append-only consent ledger: what changed, on what basis,
@@ -64,6 +65,36 @@ class ConsentRecord extends Model
             'meta' => 'array',
             'occurred_at' => 'datetime',
         ];
+    }
+
+    /**
+     * Writes one entry. The context's meta and the entry's own meta are
+     * kept together.
+     *
+     * @param  array<string, mixed>  $meta
+     */
+    public static function record(
+        Subscriber $subscriber,
+        ConsentAction $action,
+        ConsentContext $context,
+        ?CampaignList $list = null,
+        ?ConsentBasis $basis = null,
+        array $meta = [],
+    ): self {
+        $meta = [...$context->meta, ...$meta];
+
+        return static::query()->create([
+            'subscriber_id' => $subscriber->id,
+            'list_id' => $list?->id,
+            'action' => $action,
+            'basis' => $basis ?? $context->basis,
+            'source' => $context->source,
+            'notice_version' => $context->noticeVersion,
+            'ip_address' => $context->ipAddress,
+            'user_agent' => $context->userAgent,
+            'meta' => $meta === [] ? null : $meta,
+            'occurred_at' => now(),
+        ]);
     }
 
     /** @return BelongsTo<Subscriber, $this> */

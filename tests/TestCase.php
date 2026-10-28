@@ -5,8 +5,11 @@ declare(strict_types=1);
 namespace Mozex\Campaigns\Tests;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Database\Schema\Builder;
 use Illuminate\Foundation\Application;
+use Illuminate\Support\Facades\Schema;
+use Mozex\Campaigns\Tests\Fixtures\MemberList;
 use Orchestra\Testbench\Concerns\WithWorkbench;
 use Orchestra\Testbench\TestCase as Orchestra;
 
@@ -35,6 +38,7 @@ class TestCase extends Orchestra
     protected function defineEnvironment($app): void
     {
         $app['config']->set('database.connections.testing.foreign_key_constraints', true);
+        $app['config']->set('campaigns.list_sources', ['members' => MemberList::class]);
     }
 
     protected function defineDatabaseMigrations(): void
@@ -49,5 +53,17 @@ class TestCase extends Orchestra
     public static function runMigrations(): void
     {
         (require __DIR__.'/../database/migrations/create_campaigns_tables.php.stub')->up();
+
+        // The app's own accounts, behind the members list.
+        Schema::create('members', function (Blueprint $table): void {
+            $table->id();
+            $table->string('email', 254)->nullable();
+            $table->string('name', 255)->nullable();
+            $table->string('locale', 35)->nullable();
+            $table->string('country', 2)->nullable();
+            $table->timestamp('banned_at')->nullable();
+            $table->softDeletes();
+            $table->timestamps();
+        });
     }
 }

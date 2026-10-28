@@ -20,6 +20,16 @@ return [
     'url' => env('CAMPAIGNS_URL'),
 
     /*
+     * The dynamic lists fed from the app's own records, keyed by the list's
+     * key: ['accounts' => App\Campaigns\AccountList::class]. Each class
+     * implements Mozex\Campaigns\Contracts\ListSource, and its model uses the
+     * Mozex\Campaigns\Concerns\HasCampaignSubscriber trait. Run
+     * `php artisan campaigns:sync-list <key>` once to bring in the records
+     * that already exist.
+     */
+    'list_sources' => [],
+
+    /*
      * Where the send jobs and webhook processing run. A null connection uses
      * the app's default queue connection. Give this queue its own worker
      * (one or two processes), with a job timeout below the worker's and the
