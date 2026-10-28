@@ -19,6 +19,11 @@ class CampaignsException extends RuntimeException
         return new self('That address already belongs to another record, so it can\'t be linked to this one.');
     }
 
+    public static function subscriberGone(): self
+    {
+        return new self('The subscriber was deleted before its address could change.');
+    }
+
     public static function unknownList(string $key): self
     {
         return new self("No list source is configured for the list \"{$key}\". Add it to campaigns.list_sources.");
@@ -27,6 +32,16 @@ class CampaignsException extends RuntimeException
     public static function invalidListSource(string $key, string $class): self
     {
         return new self("The list source for \"{$key}\" ({$class}) must implement ".ListSource::class.'.');
+    }
+
+    public static function dynamicList(string $key): self
+    {
+        return new self("The list \"{$key}\" follows the app's records, so nobody is taken off it by hand. Opt the person out, or make the record ineligible.");
+    }
+
+    public static function notDynamic(string $key): self
+    {
+        return new self("A static list already uses the key \"{$key}\". Give the list source in campaigns.list_sources another key.");
     }
 
     public static function unknownField(string $class, string $field): self

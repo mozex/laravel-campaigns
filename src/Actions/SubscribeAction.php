@@ -11,6 +11,7 @@ use Mozex\Campaigns\Models\ConsentRecord;
 use Mozex\Campaigns\Models\Subscriber;
 use Mozex\Campaigns\Models\Subscription;
 use Mozex\Campaigns\Support\ConsentContext;
+use Mozex\Campaigns\Support\Rows;
 
 /**
  * Puts a subscriber on a list, subscribed, or waiting to confirm on a double
@@ -18,9 +19,9 @@ use Mozex\Campaigns\Support\ConsentContext;
  * sync or an import never changes what someone chose.
  *
  * When the person asked for it themselves (the context's accepted is true)
- * this is also the resubscribe: it clears an earlier opt-out once the
- * subscription is active. On a double opt-in list that waits for the
- * confirmation. A block is never cleared.
+ * this is also the resubscribe: it clears an earlier opt-out, except while a
+ * double opt-in waits for its confirmation, which clears it instead. A block
+ * is never cleared.
  */
 class SubscribeAction
 {
@@ -35,8 +36,10 @@ class SubscribeAction
                 ConsentRecord::record($subscriber, ConsentAction::Subscribe, $context, $list, $subscription->basis);
             }
 
-            if ($context->accepted === true && $subscription->status === SubscriptionStatus::Subscribed) {
-                $this->optIn->execute($subscriber, $context);
+            if ($context->accepted === true && $subscription->status !== SubscriptionStatus::Pending) {
+                // A new subscription's basis is the sign-up's; an existing
+                // one's is older than this act, which is consent.
+                $this->optIn->execute($subscriber, $context, $subscription->wasRecentlyCreated ? $subscription->basis : null);
             }
 
             return $subscription;
@@ -45,13 +48,13 @@ class SubscribeAction
 
     /**
      * The subscriber's place on the list, made with the list's defaults when
-     * there is none. Safe when two requests add the same address at once.
+     * there is none.
      */
-    public static function join(Subscriber $subscriber, CampaignList $list, ConsentContext $context): Subscription
+    public function join(Subscriber $subscriber, CampaignList $list, ConsentContext $context): Subscription
     {
         $status = $list->default_status;
 
-        return Subscription::query()->firstOrCreate([
+        return Rows::firstOrCreate(Subscription::query(), [
             'list_id' => $list->id,
             'subscriber_id' => $subscriber->id,
         ], [

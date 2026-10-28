@@ -82,7 +82,7 @@ class SyncListCommand extends Command
             ...array_map(fn (SyncChange $change): array => [$change->label(), $counts[$change->value]], SyncChange::cases()),
             ['Unchanged', $unchanged],
             ['Not synced (see below)', count($problems)],
-            ['On the list but never mailed (opted out or blocked)', $suppressed],
+            ['Opted out or blocked, so never mailed', $suppressed],
         ]);
 
         foreach ($problems as $problem) {
@@ -93,8 +93,10 @@ class SyncListCommand extends Command
     }
 
     /**
-     * One record per transaction, so a dry run rolls back exactly what the
-     * real run would write and holds its locks only briefly.
+     * One record per transaction, so a dry run rolls back what the real run
+     * would write and holds its locks only briefly. Its counts match the
+     * real run's, except that two records sharing an address both count as
+     * new until the first is really written.
      */
     protected function syncRecord(SyncRecordAction $sync, string $key, Model $record, bool $dryRun): SyncResult
     {

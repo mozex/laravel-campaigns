@@ -17,7 +17,10 @@ use Mozex\Campaigns\Support\ConsentContext;
 /**
  * One entry in the append-only consent ledger: what changed, on what basis,
  * from where, under which notice, and, when a person acted, their IP and
- * user agent. Entries are written once and never updated.
+ * user agent. What an entry says is never rewritten. Two things touch it
+ * afterwards: a person's entries follow them to a new address (all but
+ * blocks, which belong to the old one), and forgetting a person clears the
+ * IP and user agent.
  *
  * @property int $id
  * @property ?int $subscriber_id

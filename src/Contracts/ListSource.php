@@ -23,6 +23,8 @@ interface ListSource
      * Every record of the model, for the sync command to walk, with whatever
      * fields() and isEligible() read eager-loaded. Leave eligibility out of
      * the query: the model's own changes are checked with isEligible() alone.
+     * Select whole rows: the sync reads the created and deleted timestamps,
+     * which strict models refuse when they weren't selected.
      *
      * @return Builder<covariant Model>
      */

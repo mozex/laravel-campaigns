@@ -10,6 +10,7 @@ use Mozex\Campaigns\Actions\OptOutAction;
 use Mozex\Campaigns\Actions\RemoveFromListAction;
 use Mozex\Campaigns\Actions\SubscribeAction;
 use Mozex\Campaigns\Actions\UnblockAction;
+use Mozex\Campaigns\CampaignsException;
 use Mozex\Campaigns\Enums\BlockReason;
 use Mozex\Campaigns\Enums\ConsentAction;
 use Mozex\Campaigns\Enums\ConsentBasis;
@@ -49,19 +50,25 @@ it('clears an opt-out only when the person asked, and never a block', function (
     $list = CampaignList::factory()->create();
     $optedOut = Subscriber::factory()->optedOut()->create();
     $blocked = Subscriber::factory()->optedOut()->blocked()->create();
+    $offTheList = Subscriber::factory()->optedOut()->create();
+    Subscription::factory()->for($offTheList)->for($list, 'list')->unsubscribed()->create();
+    $switch = new ConsentContext('account-switch', accepted: true);
 
     app(SubscribeAction::class)->execute($optedOut, $list, new ConsentContext('import'));
     $stillOptedOut = $optedOut->fresh()?->opted_out_at;
 
-    app(SubscribeAction::class)->execute($optedOut, $list, new ConsentContext('account-switch', accepted: true));
-    app(SubscribeAction::class)->execute($blocked, $list, new ConsentContext('account-switch', accepted: true));
+    app(SubscribeAction::class)->execute($optedOut, $list, $switch);
+    app(SubscribeAction::class)->execute($blocked, $list, $switch);
+    app(SubscribeAction::class)->execute($offTheList, $list, $switch);
 
     expect($stillOptedOut)->not->toBeNull()
         ->and($optedOut->fresh()?->opted_out_at)->toBeNull()
         ->and(consentActions($optedOut))->toBe(['subscribe', 'opt_in'])
+        ->and(ConsentRecord::query()->where('subscriber_id', $optedOut->id)->where('action', ConsentAction::OptIn)->sole()->basis)->toBe(ConsentBasis::Consent)
         ->and($blocked->fresh())
         ->opted_out_at->toBeNull()
-        ->blocked_at->not->toBeNull();
+        ->blocked_at->not->toBeNull()
+        ->and($offTheList->fresh()?->opted_out_at)->toBeNull();
 });
 
 it('waits for a double opt-in, and confirming it clears an earlier opt-out', function (): void {
@@ -141,4 +148,12 @@ it('takes a subscriber off a list, and adding them again starts afresh', functio
         ->and($again)->toBeFalse()
         ->and($readded->wasRecentlyCreated)->toBeTrue()
         ->and(consentActions($subscriber))->toBe(['subscribe', 'unsubscribe', 'subscribe']);
+});
+
+it('refuses to take anyone off a dynamic list by hand', function (): void {
+    $subscription = Subscription::factory()->for(CampaignList::factory()->dynamic(), 'list')->create();
+
+    expect(fn (): bool => app(RemoveFromListAction::class)->execute($subscription->subscriber, $subscription->list, new ConsentContext('agent')))
+        ->toThrow(CampaignsException::class, 'follows the app\'s records')
+        ->and(Subscription::query()->count())->toBe(1);
 });

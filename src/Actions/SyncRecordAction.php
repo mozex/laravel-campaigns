@@ -17,12 +17,13 @@ use Mozex\Campaigns\Models\Subscriber;
 use Mozex\Campaigns\Models\Subscription;
 use Mozex\Campaigns\Support\ConsentContext;
 use Mozex\Campaigns\Support\EmailAddress;
+use Mozex\Campaigns\Support\Rows;
 
 /**
  * Brings one app record's subscriber and its place on a dynamic list in
  * step with the record: links or makes the subscriber, updates its details,
  * follows an address change, and takes the record off the list while it
- * isn't eligible.
+ * isn't eligible or has no address of its own to sync.
  *
  * Joining the list goes through SubscribeAction, so a subscription that
  * exists is never changed and an opt-out or a block is never cleared,
@@ -54,38 +55,50 @@ class SyncRecordAction
         $eligible = ! $this->isTrashed($record) && $source->isEligible($record);
         $address = EmailAddress::normalize($fields['email'] ?? null);
 
-        return (new Subscriber)->getConnection()->transaction(function () use ($listKey, $record, $context, $fields, $eligible, $address): SyncResult {
+        // A record created with the person's choice records it even when the
+        // record can't join its list yet, so a later sync never subscribes
+        // someone who left the box unticked.
+        $choice = $context?->accepted !== null;
+
+        return (new Subscriber)->getConnection()->transaction(function () use ($listKey, $record, $context, $fields, $eligible, $address, $choice): SyncResult {
             $list = $this->campaigns->list($listKey);
             $subscriber = Subscriber::findFor($record);
             $changes = [];
+            $problem = $address === null ? 'no valid email address' : null;
 
-            if ($subscriber === null && ! $eligible) {
+            if ($subscriber === null && ! $eligible && ! $choice) {
                 return new SyncResult;
             }
 
-            if ($address === null) {
-                return new SyncResult(problem: 'no valid email address');
-            }
-
-            if ($subscriber !== null && $subscriber->email !== $address) {
+            if ($problem === null && $subscriber !== null && $subscriber->email !== $address) {
                 try {
                     $subscriber = $this->changeEmail->execute($subscriber, $address, $context ?? new ConsentContext('sync'));
+                    $changes[] = SyncChange::EmailChanged;
                 } catch (CampaignsException) {
-                    return new SyncResult(problem: 'its address belongs to another record');
+                    $problem = 'its address belongs to another record';
                 }
-
-                $changes[] = SyncChange::EmailChanged;
             }
 
-            if ($subscriber === null) {
-                $subscriber = Subscriber::query()->firstOrCreate(['email' => $address]);
+            if ($problem === null && $subscriber === null) {
+                $subscriber = Rows::firstOrCreate(Subscriber::query(), ['email' => $address]);
 
-                if ($subscriber->subscribable_type !== null) {
-                    return new SyncResult(problem: 'its address belongs to another record');
+                if ($subscriber->subscribable_type === null) {
+                    $subscriber->subscribable()->associate($record);
+                    $changes[] = $subscriber->wasRecentlyCreated ? SyncChange::Created : SyncChange::Linked;
+                } else {
+                    $problem = 'its address belongs to another record';
+                    $subscriber = null;
+                }
+            }
+
+            // The subscriber still holds an address the record no longer
+            // has, so it leaves the list until the record can be synced.
+            if ($problem !== null) {
+                if ($subscriber !== null && $this->takeOff($subscriber, $list)) {
+                    $changes[] = SyncChange::Removed;
                 }
 
-                $subscriber->subscribable()->associate($record);
-                $changes[] = $subscriber->wasRecentlyCreated ? SyncChange::Created : SyncChange::Linked;
+                return new SyncResult($changes, $problem, $subscriber?->isSuppressed() ?? false);
             }
 
             $details = $this->details($fields, $subscriber);
@@ -97,22 +110,15 @@ class SyncRecordAction
 
             $subscriber->save();
 
-            $subscription = Subscription::query()
-                ->where('list_id', $list->id)
-                ->where('subscriber_id', $subscriber->id)
-                ->first();
-
-            if (! $eligible) {
-                if ($subscription !== null && $subscription->status !== SubscriptionStatus::Unsubscribed) {
-                    $subscription->update(['status' => SubscriptionStatus::Unsubscribed, 'unsubscribed_at' => now()]);
+            if (! $eligible && ! $choice) {
+                if ($this->takeOff($subscriber, $list)) {
                     $changes[] = SyncChange::Removed;
                 }
 
                 return new SyncResult($changes, suppressed: $subscriber->isSuppressed());
             }
 
-            if ($subscription?->status === SubscriptionStatus::Unsubscribed) {
-                $subscription->update(['status' => SubscriptionStatus::Subscribed, 'unsubscribed_at' => null]);
+            if ($eligible && $this->putBack($subscriber, $list)) {
                 $changes[] = SyncChange::Restored;
             }
 
@@ -126,8 +132,35 @@ class SyncRecordAction
                 $changes[] = $context->accepted === false ? SyncChange::Declined : SyncChange::Added;
             }
 
+            // The choice is recorded; the record joins once it is eligible.
+            if (! $eligible) {
+                $this->takeOff($subscriber, $list);
+            }
+
             return new SyncResult($changes, suppressed: $subscriber->isSuppressed());
         });
+    }
+
+    /**
+     * Takes the subscriber off a dynamic list while its record can't be on
+     * it. Not a consent change, so no consent record.
+     */
+    protected function takeOff(Subscriber $subscriber, CampaignList $list): bool
+    {
+        return Subscription::query()
+            ->where('list_id', $list->id)
+            ->where('subscriber_id', $subscriber->id)
+            ->where('status', '!=', SubscriptionStatus::Unsubscribed)
+            ->update(['status' => SubscriptionStatus::Unsubscribed, 'unsubscribed_at' => now(), 'updated_at' => now()]) > 0;
+    }
+
+    protected function putBack(Subscriber $subscriber, CampaignList $list): bool
+    {
+        return Subscription::query()
+            ->where('list_id', $list->id)
+            ->where('subscriber_id', $subscriber->id)
+            ->where('status', SubscriptionStatus::Unsubscribed)
+            ->update(['status' => SubscriptionStatus::Subscribed, 'unsubscribed_at' => null, 'updated_at' => now()]) > 0;
     }
 
     /**

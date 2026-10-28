@@ -2,7 +2,10 @@
 
 declare(strict_types=1);
 
+use Illuminate\Contracts\Container\BindingResolutionException;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\QueryException;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Exceptions;
 use Mozex\Campaigns\Actions\OptOutAction;
 use Mozex\Campaigns\Actions\SubscribeAction;
@@ -23,6 +26,28 @@ class MemberListWithPhone extends MemberList
     public function fields(Model $record): array
     {
         return [...parent::fields($record), 'phone' => '555'];
+    }
+}
+
+/**
+ * Fails after a write, inside the sync's transaction, the way a database
+ * error would.
+ */
+class MemberListThatFails extends MemberList
+{
+    public function name(): string
+    {
+        DB::table('campaign_lists')->insert([
+            'key' => 'written-before-the-failure',
+            'name' => 'Written before the failure',
+            'kind' => 'static',
+            'default_status' => 'subscribed',
+            'default_basis' => 'consent',
+        ]);
+
+        DB::select('select * from a_table_that_does_not_exist');
+
+        return parent::name();
     }
 }
 
@@ -92,7 +117,42 @@ it('clears an earlier unsubscribe when the box is ticked at sign-up', function (
         ->opted_out_at->toBeNull()
         ->name->toBe('Jane Doe')
         ->and($contact->fresh()?->subscribable?->is($member))->toBeTrue()
-        ->and(consentActions($contact))->toBe(['subscribe', 'opt_in']);
+        ->and(consentActions($contact))->toBe(['subscribe', 'opt_in'])
+        ->and(ConsentRecord::query()->where('action', ConsentAction::OptIn)->sole()->basis)->toBe(ConsentBasis::SoftOptIn);
+});
+
+it('records the choice of a record that cannot join its list yet', function (): void {
+    $member = Member::withCampaignConsent(
+        new ConsentContext('registration', accepted: false),
+        fn (): Member => Member::query()->create(['email' => 'jane@example.com', 'banned_at' => now()]),
+    );
+    $subscriber = Subscriber::findFor($member);
+    $whileBanned = Subscription::query()->sole()->status;
+
+    $member->update(['banned_at' => null]);
+
+    expect($whileBanned)->toBe(SubscriptionStatus::Unsubscribed)
+        ->and(Subscription::query()->sole()->status)->toBe(SubscriptionStatus::Subscribed)
+        ->and($subscriber?->fresh()?->opted_out_at)->not->toBeNull()
+        ->and(consentActions($subscriber))->toBe(['decline'])
+        ->and(ConsentRecord::query()->sole()->source)->toBe('registration');
+});
+
+it('takes a record off its list while its address cannot be synced', function (): void {
+    $jane = Member::query()->create(['email' => 'jane@example.com']);
+    $john = Member::query()->create(['email' => 'john@example.com']);
+    $johnsRow = Subscriber::findFor($john);
+
+    $jane->update(['email' => null]);
+    $john->update(['email' => 'jane@example.com']);
+    $whileBroken = Subscription::query()->orderBy('id')->pluck('status')->all();
+
+    $jane->update(['email' => 'jane@example.org']);
+    $john->update(['name' => 'John Doe']);
+
+    expect($whileBroken)->toBe([SubscriptionStatus::Unsubscribed, SubscriptionStatus::Unsubscribed])
+        ->and(Subscription::query()->orderBy('id')->pluck('status')->all())->toBe([SubscriptionStatus::Subscribed, SubscriptionStatus::Subscribed])
+        ->and($johnsRow?->fresh()?->email)->toBe('jane@example.com');
 });
 
 it('keeps the subscriber\'s details and address in step with the record', function (): void {
@@ -141,8 +201,8 @@ it('takes a soft-deleted record off its list, and forgets the person once it is 
         ->and(ConsentRecord::query()->sole()->subscriber_id)->toBeNull();
 });
 
-it('reports a failure instead of failing the app\'s own save', function (): void {
-    config()->set('campaigns.list_sources', ['members' => MemberListWithPhone::class]);
+it('reports a failure instead of failing the app\'s own save', function (string $broken): void {
+    config()->set('campaigns.list_sources', ['members' => $broken, 'other' => 'Missing\\ListSource']);
     Exceptions::fake();
 
     $member = Member::query()->create(['email' => 'jane@example.com']);
@@ -150,5 +210,24 @@ it('reports a failure instead of failing the app\'s own save', function (): void
     expect($member->exists)->toBeTrue()
         ->and(Subscriber::query()->count())->toBe(0);
 
+    Exceptions::assertReported(fn (BindingResolutionException $exception): bool => str_contains($exception->getMessage(), 'Missing\\ListSource'));
     Exceptions::assertReported(CampaignsException::class);
-});
+})->with([MemberListWithPhone::class, Member::class]);
+
+it('rolls a failure back to its own savepoint, leaving the app\'s transaction usable', function (string $driver): void {
+    useDatabase($driver);
+    config()->set('campaigns.list_sources', ['members' => MemberListThatFails::class]);
+    Exceptions::fake();
+
+    $member = DB::transaction(function (): Member {
+        $member = Member::query()->create(['email' => 'jane@example.com']);
+        $member->update(['name' => 'Jane Doe']);
+
+        return $member;
+    });
+
+    expect($member->fresh()?->name)->toBe('Jane Doe')
+        ->and(CampaignList::query()->count())->toBe(0);
+
+    Exceptions::assertReported(QueryException::class);
+})->with('databases');

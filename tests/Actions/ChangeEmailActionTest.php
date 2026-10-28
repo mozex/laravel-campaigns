@@ -93,7 +93,7 @@ it('joins an address that already has a row, the stricter state winning', functi
         ->and(Subscription::query()->where('subscriber_id', $old->id)->count())->toBe(0)
         ->and(ConsentRecord::query()->where('subscriber_id', $old->id)->sole())
         ->action->toBe(ConsentAction::OptOut)
-        ->meta->toBe(['moved_to_subscriber_id' => $contact->id]);
+        ->meta->toBe(['address_changed' => true]);
 })->with('databases');
 
 it('deletes the old row when it held nothing to keep', function (): void {

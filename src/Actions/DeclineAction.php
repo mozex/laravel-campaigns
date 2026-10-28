@@ -20,10 +20,12 @@ use Mozex\Campaigns\Support\ConsentContext;
  */
 class DeclineAction
 {
+    public function __construct(protected SubscribeAction $subscribe) {}
+
     public function execute(Subscriber $subscriber, CampaignList $list, ConsentContext $context): Subscription
     {
         return $subscriber->getConnection()->transaction(function () use ($subscriber, $list, $context): Subscription {
-            $subscription = SubscribeAction::join($subscriber, $list, $context);
+            $subscription = $this->subscribe->join($subscriber, $list, $context);
 
             $now = now();
 

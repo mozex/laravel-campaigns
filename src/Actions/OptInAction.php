@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Mozex\Campaigns\Actions;
 
 use Mozex\Campaigns\Enums\ConsentAction;
+use Mozex\Campaigns\Enums\ConsentBasis;
 use Mozex\Campaigns\Models\ConsentRecord;
 use Mozex\Campaigns\Models\Subscriber;
 use Mozex\Campaigns\Support\ConsentContext;
@@ -19,10 +20,12 @@ class OptInAction
 {
     /**
      * Returns false when the person hadn't opted out.
+     *
+     * @param  ?ConsentBasis  $basis  The basis to record, such as a sign-up's; otherwise the context's, or consent, since the person asked.
      */
-    public function execute(Subscriber $subscriber, ConsentContext $context): bool
+    public function execute(Subscriber $subscriber, ConsentContext $context, ?ConsentBasis $basis = null): bool
     {
-        return $subscriber->getConnection()->transaction(function () use ($subscriber, $context): bool {
+        return $subscriber->getConnection()->transaction(function () use ($subscriber, $context, $basis): bool {
             $changed = Subscriber::query()
                 ->whereKey($subscriber->id)
                 ->whereNotNull('opted_out_at')
@@ -35,7 +38,7 @@ class OptInAction
             $subscriber->opted_out_at = null;
             $subscriber->syncOriginalAttribute('opted_out_at');
 
-            ConsentRecord::record($subscriber, ConsentAction::OptIn, $context);
+            ConsentRecord::record($subscriber, ConsentAction::OptIn, $context, basis: $basis ?? $context->basis ?? ConsentBasis::Consent);
 
             return true;
         });

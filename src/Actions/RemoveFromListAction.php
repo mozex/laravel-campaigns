@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Mozex\Campaigns\Actions;
 
+use Mozex\Campaigns\CampaignsException;
 use Mozex\Campaigns\Enums\ConsentAction;
+use Mozex\Campaigns\Enums\ListKind;
 use Mozex\Campaigns\Models\CampaignList;
 use Mozex\Campaigns\Models\ConsentRecord;
 use Mozex\Campaigns\Models\Subscriber;
@@ -21,9 +23,16 @@ class RemoveFromListAction
 {
     /**
      * Returns false when the subscriber wasn't on the list.
+     *
+     * @throws CampaignsException for a dynamic list, which the app's records decide
      */
     public function execute(Subscriber $subscriber, CampaignList $list, ConsentContext $context): bool
     {
+        // The record's next save would only put the subscriber back.
+        if ($list->kind === ListKind::Dynamic) {
+            throw CampaignsException::dynamicList($list->key);
+        }
+
         return $subscriber->getConnection()->transaction(function () use ($subscriber, $list, $context): bool {
             $removed = Subscription::query()
                 ->where('list_id', $list->id)

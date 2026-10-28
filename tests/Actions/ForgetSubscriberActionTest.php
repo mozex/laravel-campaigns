@@ -12,9 +12,14 @@ use Mozex\Campaigns\Models\Subscriber;
 use Mozex\Campaigns\Models\Subscription;
 use Mozex\Campaigns\Tests\Fixtures\Member;
 
-it('deletes an address nobody blocked or opted out, keeping its records and the campaigns\' numbers', function (string $driver): void {
-    useDatabase($driver);
-
+/**
+ * A subscriber on a list, with a consent record carrying an IP, a pending
+ * message, and a delivered one whose event names the address.
+ *
+ * @return array{Subscriber, CampaignMessage, CampaignMessage, ProviderEvent}
+ */
+function subscriberWithHistory(): array
+{
     $subscriber = Subscriber::factory()->create();
     Subscription::factory()->for($subscriber)->create();
     ConsentRecord::factory()->for($subscriber)->create(['ip_address' => '203.0.113.9', 'user_agent' => 'Browser/1.0']);
@@ -22,11 +27,29 @@ it('deletes an address nobody blocked or opted out, keeping its records and the 
     $sent = CampaignMessage::factory()->for($subscriber)->create(['status' => MessageStatus::Delivered]);
     $event = ProviderEvent::factory()->for($sent, 'message')->create(['payload' => ['recipient' => $subscriber->email]]);
 
+    return [$subscriber, $pending, $sent, $event];
+}
+
+it('deletes an address nobody blocked or opted out, keeping its records and the campaigns\' numbers', function (string $driver): void {
+    useDatabase($driver);
+
+    [$subscriber, $pending, $sent, $event] = subscriberWithHistory();
+    [$bystander, $bystanderPending, $bystanderSent, $bystanderEvent] = subscriberWithHistory();
+    $bystanderRecord = ConsentRecord::query()->where('subscriber_id', $bystander->id)->sole();
+
     app(ForgetSubscriberAction::class)->execute($subscriber);
 
-    expect(Subscriber::query()->count())->toBe(0)
-        ->and(Subscription::query()->count())->toBe(0)
-        ->and(ConsentRecord::query()->sole())
+    expect(Subscriber::query()->sole()->is($bystander))->toBeTrue()
+        ->and(Subscription::query()->sole()->subscriber_id)->toBe($bystander->id)
+        ->and($bystanderRecord->fresh())
+        ->ip_address->toBe('203.0.113.9')
+        ->user_agent->toBe('Browser/1.0')
+        ->and($bystanderPending->fresh())
+        ->status->toBe(MessageStatus::Pending)
+        ->email->toBe($bystander->email)
+        ->and($bystanderSent->fresh()?->email)->toBe($bystander->email)
+        ->and($bystanderEvent->fresh()?->payload)->toBe(['recipient' => $bystander->email])
+        ->and(ConsentRecord::query()->whereNull('subscriber_id')->sole())
         ->action->toBe(ConsentAction::Subscribe)
         ->subscriber_id->toBeNull()
         ->ip_address->toBeNull()

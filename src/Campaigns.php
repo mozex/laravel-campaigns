@@ -15,6 +15,8 @@ use Mozex\Campaigns\Enums\SubscriptionStatus;
 use Mozex\Campaigns\Models\CampaignList;
 use Mozex\Campaigns\Models\Subscriber;
 use Mozex\Campaigns\Support\ConsentContext;
+use Mozex\Campaigns\Support\Rows;
+use Throwable;
 
 class Campaigns
 {
@@ -59,23 +61,6 @@ class Campaigns
         return $this->consents[$record::class] ?? null;
     }
 
-    /**
-     * @return array<string, ListSource>
-     */
-    public function listSources(): array
-    {
-        /** @var array<string, class-string> $classes */
-        $classes = config('campaigns.list_sources', []);
-
-        $sources = [];
-
-        foreach (array_keys($classes) as $key) {
-            $sources[$key] = $this->listSource($key);
-        }
-
-        return $sources;
-    }
-
     public function listSource(string $key): ListSource
     {
         /** @var ?class-string $class */
@@ -95,34 +80,58 @@ class Campaigns
     }
 
     /**
-     * The sources whose model the record is, keyed by list.
+     * The sources whose model the record is, keyed by list. A source that
+     * can't be resolved is reported and skipped, so one mistake in the
+     * config can't stop the app's models from saving.
      *
      * @return array<string, ListSource>
      */
     public function listSourcesFor(Model $record): array
     {
-        return array_filter(
-            $this->listSources(),
-            fn (ListSource $source): bool => $source->query()->getModel()::class === $record::class,
-        );
+        $sources = [];
+
+        foreach (array_keys((array) config('campaigns.list_sources', [])) as $key) {
+            try {
+                $source = $this->listSource((string) $key);
+                $model = $source->query()->getModel();
+            } catch (Throwable $exception) {
+                report($exception);
+
+                continue;
+            }
+
+            if ($model::class === $record::class) {
+                $sources[(string) $key] = $source;
+            }
+        }
+
+        return $sources;
     }
 
     /**
      * The dynamic list a source feeds, created the first time it is needed.
      * Its creation time marks when the app started recording consent, so
      * records older than it count as legacy.
+     *
+     * @throws CampaignsException when a static list already has the key
      */
     public function list(string $key): CampaignList
     {
         $source = $this->listSource($key);
 
-        return CampaignList::query()->firstOrCreate(['key' => $key], [
+        $list = Rows::firstOrCreate(CampaignList::query(), ['key' => $key], [
             'name' => $source->name(),
             'kind' => ListKind::Dynamic,
             'double_opt_in' => false,
             'default_status' => SubscriptionStatus::Subscribed,
             'default_basis' => ConsentBasis::SoftOptIn,
         ]);
+
+        if ($list->kind !== ListKind::Dynamic) {
+            throw CampaignsException::notDynamic($key);
+        }
+
+        return $list;
     }
 
     /**

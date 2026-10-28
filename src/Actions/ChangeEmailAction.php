@@ -13,6 +13,7 @@ use Mozex\Campaigns\Models\Subscriber;
 use Mozex\Campaigns\Models\Subscription;
 use Mozex\Campaigns\Support\ConsentContext;
 use Mozex\Campaigns\Support\EmailAddress;
+use Mozex\Campaigns\Support\Rows;
 
 /**
  * Moves a person to a new address. Their choices go with them (their lists,
@@ -53,6 +54,11 @@ class ChangeEmailAction
         }
 
         return $subscriber->getConnection()->transaction(function () use ($subscriber, $address, $context): Subscriber {
+            // Whether the address can simply change depends on a block or an
+            // opt-out landing at this moment, so read them under a lock.
+            $current = Subscriber::query()->lockForUpdate()->find($subscriber->id) ?? throw CampaignsException::subscriberGone();
+            $subscriber->setRawAttributes($current->getAttributes(), true);
+
             $existing = Subscriber::query()->where('email', $address)->lockForUpdate()->first();
 
             if ($existing?->subscribable_type !== null) {
@@ -70,7 +76,11 @@ class ChangeEmailAction
                 return $subscriber;
             }
 
-            $target = $existing ?? Subscriber::query()->create(['email' => $address]);
+            $target = $existing ?? Rows::firstOrCreate(Subscriber::query(), ['email' => $address]);
+
+            if ($target->subscribable_type !== null) {
+                throw CampaignsException::addressTaken();
+            }
 
             $this->movePerson($subscriber, $target);
             $this->moveSubscriptions($subscriber, $target);
@@ -83,9 +93,10 @@ class ChangeEmailAction
                 ->update(['subscriber_id' => $target->id]);
 
             // The old address stays opted out, so it isn't mailed if it comes
-            // back through an import; this entry is its record of why.
+            // back through an import; this entry is its record of why. It
+            // names no row, so two kept addresses can't be tied to one person.
             if ($subscriber->opted_out_at !== null) {
-                ConsentRecord::record($subscriber, ConsentAction::OptOut, $context, meta: ['moved_to_subscriber_id' => $target->id]);
+                ConsentRecord::record($subscriber, ConsentAction::OptOut, $context, meta: ['address_changed' => true]);
             }
 
             $this->forget->execute($subscriber);

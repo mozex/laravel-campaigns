@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Mozex\Campaigns\Observers;
 
 use Closure;
+use Illuminate\Database\DeadlockException;
 use Illuminate\Database\Eloquent\Model;
 use Mozex\Campaigns\Actions\ForgetSubscriberAction;
 use Mozex\Campaigns\Actions\SyncRecordAction;
@@ -76,12 +77,26 @@ class ListSourceObserver
      * Runs the work in its own savepoint, so a failure rolls back only its
      * writes and leaves the app's own transaction usable.
      *
+     * A deadlock or lock timeout inside the app's transaction is the one
+     * failure passed on: Laravel rolls nothing back to the savepoint then,
+     * and the database has already ended (MySQL) or aborted (PostgreSQL) the
+     * whole transaction, so the app has to know.
+     *
      * @param  Closure(): mixed  $callback
      */
     protected function safely(Closure $callback): void
     {
+        $connection = (new Subscriber)->getConnection();
+        $insideTransaction = $connection->transactionLevel() > 0;
+
         try {
-            (new Subscriber)->getConnection()->transaction($callback);
+            $connection->transaction($callback);
+        } catch (DeadlockException $exception) {
+            if ($insideTransaction) {
+                throw $exception;
+            }
+
+            report($exception);
         } catch (Throwable $exception) {
             report($exception);
         }
