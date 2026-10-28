@@ -6,7 +6,17 @@ namespace Mozex\Campaigns;
 
 use Illuminate\Config\Repository;
 use Illuminate\Contracts\Foundation\CachesConfiguration;
+use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Support\Facades\Process;
+use Mozex\Campaigns\Models\ApiToken;
+use Mozex\Campaigns\Models\Campaign;
+use Mozex\Campaigns\Models\CampaignList;
+use Mozex\Campaigns\Models\CampaignMessage;
+use Mozex\Campaigns\Models\ConsentRecord;
+use Mozex\Campaigns\Models\ProviderEvent;
+use Mozex\Campaigns\Models\Subscriber;
+use Mozex\Campaigns\Models\Subscription;
+use Mozex\Campaigns\Models\TestSend;
 use Spatie\LaravelPackageTools\Commands\InstallCommand;
 use Spatie\LaravelPackageTools\Package;
 use Spatie\LaravelPackageTools\PackageServiceProvider;
@@ -21,11 +31,33 @@ class CampaignsServiceProvider extends PackageServiceProvider
         $package
             ->name('laravel-campaigns')
             ->hasConfigFile()
+            ->hasMigration('create_campaigns_tables')
             ->hasInstallCommand(function (InstallCommand $command): void {
                 $command
                     ->publishConfigFile()
+                    ->publishMigrations()
                     ->endWith(fn (InstallCommand $command) => $this->askToStar($command));
             });
+    }
+
+    /**
+     * Aliases keep the package's class names out of polymorphic columns and
+     * let apps that enforce a morph map use the package. They carry a prefix
+     * so they can't collide with an app's own aliases.
+     */
+    public function packageBooted(): void
+    {
+        Relation::morphMap([
+            'campaigns.list' => CampaignList::class,
+            'campaigns.subscriber' => Subscriber::class,
+            'campaigns.subscription' => Subscription::class,
+            'campaigns.consent_record' => ConsentRecord::class,
+            'campaigns.campaign' => Campaign::class,
+            'campaigns.message' => CampaignMessage::class,
+            'campaigns.test_send' => TestSend::class,
+            'campaigns.provider_event' => ProviderEvent::class,
+            'campaigns.api_token' => ApiToken::class,
+        ]);
     }
 
     /**

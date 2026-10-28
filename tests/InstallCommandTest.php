@@ -10,12 +10,21 @@ const STAR_QUESTION = 'Would you like to show some love by starring laravel-camp
 beforeEach(function (): void {
     Process::fake();
 
-    @unlink($this->app->configPath('campaigns.php'));
+    removePublishedFiles();
 });
 
 afterEach(function (): void {
-    @unlink($this->app->configPath('campaigns.php'));
+    removePublishedFiles();
 });
+
+function removePublishedFiles(): void
+{
+    @unlink(app()->configPath('campaigns.php'));
+
+    foreach (glob(app()->databasePath('migrations/*_create_campaigns_tables.php')) ?: [] as $migration) {
+        unlink($migration);
+    }
+}
 
 function assertOpenedRepository(): void
 {
@@ -31,6 +40,17 @@ it('publishes the config file', function (): void {
 
     expect(file_get_contents($this->app->configPath('campaigns.php')))
         ->toBe(file_get_contents(__DIR__.'/../config/campaigns.php'));
+});
+
+it('publishes the migration once', function (): void {
+    $this->artisan('campaigns:install')->expectsConfirmation(STAR_QUESTION, 'no')->assertSuccessful();
+    $this->artisan('campaigns:install')->expectsConfirmation(STAR_QUESTION, 'no')->assertSuccessful();
+
+    $published = glob($this->app->databasePath('migrations/*_create_campaigns_tables.php'));
+
+    expect($published)->toHaveCount(1)
+        ->and(file_get_contents($published[0]))
+        ->toBe(file_get_contents(__DIR__.'/../database/migrations/create_campaigns_tables.php.stub'));
 });
 
 it('leaves an existing config file alone', function (): void {

@@ -1,0 +1,196 @@
+<?php
+
+declare(strict_types=1);
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Database\Schema\Builder;
+use Illuminate\Support\Facades\Schema;
+
+/*
+ * Every string column has an explicit length: apps often shorten Laravel's
+ * default string length, and an email address can be 254 characters.
+ */
+return new class extends Migration
+{
+    public function up(): void
+    {
+        Schema::create('campaign_lists', function (Blueprint $table): void {
+            $table->id();
+            $table->string('key', 125)->unique();
+            $table->string('name', 255);
+            $table->text('description')->nullable();
+            $table->string('kind', 32);
+            $table->boolean('double_opt_in')->default(false);
+            $table->string('default_status', 32);
+            $table->string('default_basis', 32);
+            $table->timestamps();
+        });
+
+        Schema::create('campaign_subscribers', function (Blueprint $table): void {
+            $table->id();
+            $table->string('email', 254)->unique();
+            $table->string('subscribable_type', 255)->nullable();
+
+            // The app decides whether its keys are integers, UUIDs or ULIDs.
+            match (Builder::$defaultMorphKeyType) {
+                'uuid' => $table->uuid('subscribable_id')->nullable(),
+                'ulid' => $table->ulid('subscribable_id')->nullable(),
+                default => $table->unsignedBigInteger('subscribable_id')->nullable(),
+            };
+
+            $table->string('name', 255)->nullable();
+            $table->string('first_name', 255)->nullable();
+            $table->string('locale', 35)->nullable();
+            $table->string('timezone', 64)->nullable();
+            $table->string('country', 2)->nullable();
+            $table->json('custom_fields')->nullable();
+            $table->timestamp('last_opened_at')->nullable();
+            $table->timestamp('last_clicked_at')->nullable();
+            $table->timestamp('last_active_at')->nullable();
+            $table->timestamp('silent_since')->nullable();
+            $table->timestamp('opted_out_at')->nullable();
+            $table->timestamp('blocked_at')->nullable();
+            $table->string('blocked_reason', 32)->nullable();
+            $table->unsignedSmallInteger('soft_bounces')->default(0);
+            $table->timestamps();
+
+            $table->unique(['subscribable_type', 'subscribable_id']);
+        });
+
+        Schema::create('campaign_list_subscriptions', function (Blueprint $table): void {
+            $table->id();
+            $table->foreignId('list_id')->constrained('campaign_lists')->cascadeOnDelete();
+            $table->foreignId('subscriber_id')->constrained('campaign_subscribers')->cascadeOnDelete();
+            $table->string('status', 32);
+            $table->string('basis', 32);
+            $table->string('source', 125);
+            $table->string('confirm_token_hash', 64)->nullable()->unique();
+            $table->timestamp('subscribed_at')->nullable();
+            $table->timestamp('confirmed_at')->nullable();
+            $table->timestamp('unsubscribed_at')->nullable();
+            $table->timestamps();
+
+            $table->unique(['list_id', 'subscriber_id']);
+            $table->index(['list_id', 'status']);
+        });
+
+        // Append-only. A row outlives its subscriber (a deleted account keeps
+        // the record of what it agreed to), so the keys are nulled, not
+        // cascaded.
+        Schema::create('campaign_consent_records', function (Blueprint $table): void {
+            $table->id();
+            $table->foreignId('subscriber_id')->nullable()->constrained('campaign_subscribers')->nullOnDelete();
+            $table->foreignId('list_id')->nullable()->constrained('campaign_lists')->nullOnDelete();
+            $table->string('action', 32);
+            $table->string('basis', 32)->nullable();
+            $table->string('source', 125)->nullable();
+            $table->string('notice_version', 64)->nullable();
+            $table->string('ip_address', 45)->nullable();
+            $table->text('user_agent')->nullable();
+            $table->json('meta')->nullable();
+            $table->timestamp('occurred_at');
+
+            $table->index(['subscriber_id', 'occurred_at']);
+        });
+
+        Schema::create('campaigns', function (Blueprint $table): void {
+            $table->id();
+            $table->uuid('uuid')->unique();
+            $table->string('key', 125)->unique();
+            $table->string('name', 255);
+            $table->string('status', 32);
+            $table->string('from_name', 255)->nullable();
+            $table->string('from_email', 254);
+            $table->string('reply_to', 254)->nullable();
+            $table->string('tag', 125);
+            $table->boolean('track_opens')->default(true);
+            $table->boolean('track_clicks')->default(true);
+            $table->json('utm')->nullable();
+            $table->json('target_lists')->nullable();
+            $table->json('audience')->nullable();
+            $table->json('pace')->nullable();
+            $table->json('thresholds')->nullable();
+            $table->unsignedInteger('recipient_count')->nullable();
+            $table->string('pause_reason', 255)->nullable();
+            $table->json('report')->nullable();
+            $table->timestamp('started_at')->nullable();
+            $table->timestamp('paused_at')->nullable();
+            $table->timestamp('completed_at')->nullable();
+            $table->timestamp('canceled_at')->nullable();
+            $table->timestamps();
+        });
+
+        // One row per campaign and subscriber, written when the campaign
+        // starts. The address and locale are what the email went to; a
+        // deleted subscriber leaves the row for the campaign's numbers.
+        Schema::create('campaign_messages', function (Blueprint $table): void {
+            $table->id();
+            $table->uuid('uuid')->unique();
+            $table->foreignId('campaign_id')->constrained('campaigns')->cascadeOnDelete();
+            $table->foreignId('subscriber_id')->nullable()->constrained('campaign_subscribers')->nullOnDelete();
+            $table->json('list_ids')->nullable();
+            $table->string('email', 254)->nullable();
+            $table->string('locale', 35)->nullable();
+            $table->unsignedInteger('position');
+            $table->string('status', 32);
+            $table->uuid('claim_id')->nullable();
+            $table->string('token_hash', 64)->nullable()->unique();
+            $table->string('provider_message_id', 255)->nullable()->index();
+            $table->timestamp('claimed_at')->nullable();
+            $table->timestamp('sending_at')->nullable();
+            $table->timestamp('sent_at')->nullable();
+            $table->timestamp('delivered_at')->nullable();
+            $table->timestamp('opened_at')->nullable();
+            $table->timestamp('clicked_at')->nullable();
+            $table->timestamp('unsubscribed_at')->nullable();
+            $table->timestamp('complained_at')->nullable();
+            $table->timestamp('failed_at')->nullable();
+            $table->string('failure_severity', 32)->nullable();
+            $table->string('failure_reason', 64)->nullable();
+            $table->unsignedSmallInteger('failure_code')->nullable();
+            $table->timestamps();
+
+            $table->unique(['campaign_id', 'subscriber_id']);
+            $table->index(['campaign_id', 'status', 'position']);
+            $table->index(['status', 'claim_id']);
+        });
+
+        Schema::create('campaign_test_sends', function (Blueprint $table): void {
+            $table->id();
+            $table->uuid('uuid')->unique();
+            $table->foreignId('campaign_id')->constrained('campaigns')->cascadeOnDelete();
+            $table->string('email', 254);
+            $table->string('locale', 35)->nullable();
+            $table->string('token_hash', 64)->unique();
+            $table->string('provider_message_id', 255)->nullable()->index();
+            $table->timestamp('sent_at')->nullable();
+            $table->timestamps();
+        });
+
+        // A webhook's signature token is stored with its event, unique, so a
+        // replayed request can't be processed twice. Events fetched from the
+        // provider's logs carry no token.
+        Schema::create('campaign_provider_events', function (Blueprint $table): void {
+            $table->id();
+            $table->string('provider_event_id', 255)->unique();
+            $table->string('signature_token_hash', 64)->nullable()->unique();
+            $table->foreignId('message_id')->nullable()->constrained('campaign_messages')->nullOnDelete();
+            $table->foreignId('test_send_id')->nullable()->constrained('campaign_test_sends')->nullOnDelete();
+            $table->string('type', 32);
+            $table->boolean('is_bot')->default(false);
+            $table->json('payload')->nullable();
+            $table->timestamp('occurred_at')->index();
+            $table->timestamp('created_at')->nullable();
+        });
+
+        Schema::create('campaign_api_tokens', function (Blueprint $table): void {
+            $table->id();
+            $table->string('name', 125);
+            $table->string('token_hash', 64)->unique();
+            $table->timestamp('last_used_at')->nullable();
+            $table->timestamp('revoked_at')->nullable();
+            $table->timestamps();
+        });
+    }
+};
