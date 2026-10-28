@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Mozex\Campaigns;
 
+use Illuminate\Config\Repository;
+use Illuminate\Contracts\Foundation\CachesConfiguration;
 use Illuminate\Support\Facades\Process;
 use Spatie\LaravelPackageTools\Commands\InstallCommand;
 use Spatie\LaravelPackageTools\Package;
@@ -24,6 +26,55 @@ class CampaignsServiceProvider extends PackageServiceProvider
                     ->publishConfigFile()
                     ->endWith(fn (InstallCommand $command) => $this->askToStar($command));
             });
+    }
+
+    /**
+     * Laravel merges a published config with a shallow array_merge, so a
+     * published file that predates a key we add to a nested group (pace,
+     * stop_loss) would lose that key. Re-merge after the shallow pass.
+     */
+    public function packageRegistered(): void
+    {
+        if ($this->app instanceof CachesConfiguration && $this->app->configurationIsCached()) {
+            return;
+        }
+
+        /** @var Repository $config */
+        $config = $this->app->make('config');
+
+        /** @var array<string, mixed> $defaults */
+        $defaults = require __DIR__.'/../config/campaigns.php';
+
+        /** @var array<string, mixed> $published */
+        $published = $config->get('campaigns', []);
+
+        $config->set('campaigns', $this->mergeConfig($defaults, $published));
+    }
+
+    /**
+     * Maps merge recursively and lists are replaced, so a published group
+     * fills in from the defaults while a published list stands as written.
+     *
+     * @param  array<string, mixed>  $defaults
+     * @param  array<string, mixed>  $published
+     * @return array<string, mixed>
+     */
+    protected function mergeConfig(array $defaults, array $published): array
+    {
+        foreach ($published as $key => $value) {
+            $recurse = is_array($value) && ! array_is_list($value)
+                && isset($defaults[$key]) && is_array($defaults[$key]) && ! array_is_list($defaults[$key]);
+
+            /** @var array<string, mixed> $default */
+            $default = $recurse ? $defaults[$key] : [];
+
+            /** @var array<string, mixed> $override */
+            $override = $recurse ? $value : [];
+
+            $defaults[$key] = $recurse ? $this->mergeConfig($default, $override) : $value;
+        }
+
+        return $defaults;
     }
 
     /**
