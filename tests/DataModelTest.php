@@ -5,6 +5,7 @@ declare(strict_types=1);
 use Illuminate\Database\Eloquent\Relations\Relation;
 use Mozex\Campaigns\Enums\BlockReason;
 use Mozex\Campaigns\Enums\ConsentAction;
+use Mozex\Campaigns\Enums\FeedbackType;
 use Mozex\Campaigns\Enums\MessageStatus;
 use Mozex\Campaigns\Enums\SubscriptionStatus;
 use Mozex\Campaigns\Models\ApiToken;
@@ -56,6 +57,7 @@ it('builds the whole model graph and resolves every relation', function (string 
         ->and($message->email)->toBe($subscriber->email)
         ->and($message->uuid)->toBeString()->toHaveLength(36)
         ->and($message->events()->sole()->is($event))->toBeTrue()
+        ->and($event->fresh()->type)->toBe(FeedbackType::Delivered)
         ->and($message->campaign->testSends()->sole()->events()->sole()->testSend->is($testSend))->toBeTrue()
         ->and($message->campaign->uuid)->toBeString()->toHaveLength(36);
 })->with('databases');

@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Mozex\Campaigns\Database\Factories\ProviderEventFactory;
+use Mozex\Campaigns\Enums\FeedbackType;
 
 /**
  * Something the sending provider reported about an email (delivered, failed,
@@ -40,11 +41,12 @@ class ProviderEvent extends Model
     ];
 
     /**
-     * @return array{is_bot: 'boolean', payload: 'array', occurred_at: 'datetime'}
+     * @return array{type: class-string<FeedbackType>, is_bot: 'boolean', payload: 'array', occurred_at: 'datetime'}
      */
     protected function casts(): array
     {
         return [
+            'type' => FeedbackType::class,
             'is_bot' => 'boolean',
             'payload' => 'array',
             'occurred_at' => 'datetime',
