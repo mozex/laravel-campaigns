@@ -33,7 +33,6 @@ it('moves activity only forward, and only for a record with a subscriber', funct
     $member = Member::query()->create(['email' => 'jane@example.com']);
     $later = now()->subDay()->startOfSecond();
     $earlier = now()->subWeek()->startOfSecond();
-
     $latest = now()->subHour()->startOfSecond();
 
     $results = [

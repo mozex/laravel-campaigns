@@ -50,7 +50,7 @@ class SyncListCommand extends Command
         }
 
         $dryRun = ! $this->option('force');
-        $counts = array_fill_keys(array_map(fn (SyncChange $change): string => $change->value, SyncChange::cases()), 0);
+        $counts = array_fill_keys(array_column(SyncChange::cases(), 'value'), 0);
         $records = $unchanged = $suppressed = 0;
         $problems = [];
 

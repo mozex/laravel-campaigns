@@ -105,7 +105,8 @@ it('puts a new record on its list under the consent it was created with', functi
 it('records an unticked box as one decline that only the person\'s own act undoes', function (): void {
     $member = signUp('jane@example.com', accepted: false);
     $subscriber = Subscriber::findFor($member);
-    $declined = [$subscriber?->opted_out_at, consentActions($subscriber)];
+    $optOutAtSignUp = $subscriber?->opted_out_at;
+    $actionsAtSignUp = consentActions($subscriber);
 
     $member->update(['name' => 'Jane Smith']);
     app(SubscribeAction::class)->execute($subscriber, CampaignList::factory()->create(), new ConsentContext('import'));
@@ -113,8 +114,8 @@ it('records an unticked box as one decline that only the person\'s own act undoe
 
     app(SubscribeAction::class)->execute($subscriber, CampaignList::query()->where('key', 'members')->sole(), new ConsentContext('account-switch', accepted: true));
 
-    expect($declined[0])->not->toBeNull()
-        ->and($declined[1])->toBe(['decline'])
+    expect($optOutAtSignUp)->not->toBeNull()
+        ->and($actionsAtSignUp)->toBe(['decline'])
         ->and($afterSyncAndImport)->not->toBeNull()
         ->and($subscriber->fresh()?->opted_out_at)->toBeNull()
         ->and(consentActions($subscriber))->toBe(['decline', 'subscribe', 'opt_in']);

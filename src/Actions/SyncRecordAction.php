@@ -124,12 +124,14 @@ class SyncRecordAction
 
             $context ??= new ConsentContext('sync', basis: $this->predatesList($record, $list) ? ConsentBasis::Legacy : null);
 
-            $joined = $context->accepted === false
+            $declined = $context->accepted === false;
+
+            $joined = $declined
                 ? $this->decline->execute($subscriber, $list, $context)
                 : $this->subscribe->execute($subscriber, $list, $context);
 
             if ($joined->wasRecentlyCreated) {
-                $changes[] = $context->accepted === false ? SyncChange::Declined : SyncChange::Added;
+                $changes[] = $declined ? SyncChange::Declined : SyncChange::Added;
             }
 
             // The choice is recorded; the record joins once it is eligible.

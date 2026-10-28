@@ -116,11 +116,11 @@ class ChangeEmailAction
      */
     protected function movePerson(Subscriber $from, Subscriber $to): void
     {
-        $record = $from->subscribable_type === null ? null : [$from->subscribable_type, $from->subscribable_id];
+        if ($from->subscribable_type !== null) {
+            $link = ['subscribable_type' => $from->subscribable_type, 'subscribable_id' => $from->subscribable_id];
 
-        if ($record !== null) {
             $from->forceFill(['subscribable_type' => null, 'subscribable_id' => null])->save();
-            $to->forceFill(['subscribable_type' => $record[0], 'subscribable_id' => $record[1]]);
+            $to->forceFill($link);
         }
 
         foreach (['name', 'first_name', 'locale', 'timezone', 'country'] as $field) {
@@ -156,11 +156,14 @@ class ChangeEmailAction
                 continue;
             }
 
-            if (static::STRICTNESS[$subscription->status->value] > static::STRICTNESS[$existing->status->value]) {
-                $existing->update(['status' => $subscription->status]);
-            }
-
             $subscription->delete();
+
+            // The stricter row's whole state wins, a waiting confirmation's
+            // token included, so the link already sent still confirms. Its
+            // row goes first: the token hash is unique.
+            if (static::STRICTNESS[$subscription->status->value] > static::STRICTNESS[$existing->status->value]) {
+                $existing->update($subscription->only(['status', 'confirm_token_hash', 'subscribed_at', 'confirmed_at', 'unsubscribed_at']));
+            }
         }
     }
 }

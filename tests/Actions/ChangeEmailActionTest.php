@@ -71,7 +71,7 @@ it('joins an address that already has a row, the stricter state winning', functi
     $old?->forceFill(['opted_out_at' => now()])->save();
     $shared = CampaignList::factory()->create();
     $own = CampaignList::factory()->create();
-    Subscription::factory()->for($old)->for($shared, 'list')->pending()->create();
+    $waiting = Subscription::factory()->for($old)->for($shared, 'list')->pending()->create();
     Subscription::factory()->for($old)->for($own, 'list')->create();
     $contact = Subscriber::factory()->create(['email' => 'new@example.com']);
     app(SubscribeAction::class)->execute($contact, $shared, new ConsentContext('import'));
@@ -86,6 +86,7 @@ it('joins an address that already has a row, the stricter state winning', functi
             $shared->id => SubscriptionStatus::Pending,
             $own->id => SubscriptionStatus::Subscribed,
         ])
+        ->and(Subscription::query()->where('subscriber_id', $contact->id)->where('list_id', $shared->id)->sole()->confirm_token_hash)->toBe($waiting->confirm_token_hash)
         ->and($old->fresh())
         ->email->toBe('old@example.com')
         ->opted_out_at->not->toBeNull()

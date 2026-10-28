@@ -76,13 +76,14 @@ it('waits for a double opt-in, and confirming it clears an earlier opt-out', fun
     $subscriber = Subscriber::factory()->optedOut()->create();
 
     $subscription = app(SubscribeAction::class)->execute($subscriber, $list, new ConsentContext('newsletter-form', accepted: true));
-    $waiting = [$subscription->status, $subscriber->fresh()?->opted_out_at];
+    $statusWhileWaiting = $subscription->status;
+    $optOutWhileWaiting = $subscriber->fresh()?->opted_out_at;
 
     $confirmed = app(ConfirmSubscriptionAction::class)->execute($subscription, new ConsentContext('confirmation', ConsentBasis::Consent));
     $again = app(ConfirmSubscriptionAction::class)->execute($subscription, new ConsentContext('confirmation'));
 
-    expect($waiting[0])->toBe(SubscriptionStatus::Pending)
-        ->and($waiting[1])->not->toBeNull()
+    expect($statusWhileWaiting)->toBe(SubscriptionStatus::Pending)
+        ->and($optOutWhileWaiting)->not->toBeNull()
         ->and($confirmed)->toBeTrue()
         ->and($again)->toBeFalse()
         ->and($subscription->fresh())
