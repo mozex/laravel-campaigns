@@ -51,6 +51,35 @@ jobs:
           - laravel: "13.*"
             php: "8.2"
 
+    # Sending claims rows with queries that differ per database (PostgreSQL
+    # has no UPDATE ... LIMIT), so the database tests run against real MySQL
+    # and PostgreSQL servers as well as SQLite. They skip themselves when no
+    # server answers.
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ALLOW_EMPTY_PASSWORD: 'yes'
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping --silent"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -61,7 +90,7 @@ jobs:
         uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
         with:
           php-version: ${{ matrix.php }}
-          extensions: dom, mbstring, zip
+          extensions: dom, mbstring, zip, pdo_mysql, pdo_pgsql, pdo_sqlite
           coverage: none
 
       - name: Require dependencies

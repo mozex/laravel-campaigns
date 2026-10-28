@@ -38,6 +38,12 @@ function useDatabase(string $driver): void
             ? new PDO("pgsql:host={$server['host']};port={$server['port']};dbname=postgres", $server['username'], $server['password'])
             : new PDO("mysql:host={$server['host']};port={$server['port']}", $server['username'], $server['password']);
     } catch (PDOException $exception) {
+        // CI starts both servers, so a missing one there is a broken run,
+        // not a reason to skip.
+        if (env('GITHUB_ACTIONS')) {
+            throw $exception;
+        }
+
         test()->markTestSkipped("No {$driver} server answered: {$exception->getMessage()}");
     }
 
