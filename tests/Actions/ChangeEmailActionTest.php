@@ -109,6 +109,30 @@ it('deletes the old row when it held nothing to keep', function (): void {
         ->and(ConsentRecord::query()->sole()->subscriber_id)->toBe($contact->id);
 });
 
+it('keeps mail sent to the old address with the person, so its unsubscribe link still reaches them', function (): void {
+    $member = Member::query()->create(['email' => 'old@example.com']);
+    $old = Subscriber::findFor($member);
+    $contact = Subscriber::factory()->create(['email' => 'new@example.com']);
+    [$toOld, $token] = sentMessage(['subscriber_id' => $old?->id]);
+    [$bothOld] = sentMessage(['subscriber_id' => $old?->id]);
+    [$bothNew] = sentMessage(['subscriber_id' => $contact->id, 'campaign_id' => $bothOld->campaign_id]);
+
+    changeEmail($old, 'new@example.com');
+    $this->post("/campaigns/u/{$token}", ['List-Unsubscribe' => 'One-Click'])->assertOk();
+
+    expect($toOld->fresh())
+        ->subscriber_id->toBe($contact->id)
+        ->email->toBe('old@example.com')
+        ->unsubscribed_at->not->toBeNull()
+        ->and($contact->fresh()?->opted_out_at)->not->toBeNull()
+        // A campaign holds one email per subscriber, so the one that reached
+        // both rows stays with the old row, which was deleted.
+        ->and($bothOld->fresh())
+        ->subscriber_id->toBeNull()
+        ->email->toBeNull()
+        ->and($bothNew->fresh()?->subscriber_id)->toBe($contact->id);
+});
+
 it('decides from the row as it is now, not from a stale copy', function (): void {
     $stale = Subscriber::factory()->create(['email' => 'old@example.com']);
     Subscriber::query()->sole()->forceFill(['blocked_at' => now(), 'blocked_reason' => BlockReason::HardBounce])->save();

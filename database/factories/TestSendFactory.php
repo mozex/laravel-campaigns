@@ -27,6 +27,7 @@ class TestSendFactory extends Factory
             'token_hash' => hash('sha256', $this->faker->unique()->uuid()),
             'provider_message_id' => null,
             'sent_at' => null,
+            'unsubscribed_at' => null,
         ];
     }
 }

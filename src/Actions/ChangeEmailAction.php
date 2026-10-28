@@ -89,6 +89,7 @@ class ChangeEmailAction
 
             $this->movePerson($subscriber, $target);
             $this->moveSubscriptions($subscriber, $target);
+            $this->moveMessages($subscriber, $target);
 
             // The person's consent history follows them; a block's stays with
             // the address it was about.
@@ -99,7 +100,8 @@ class ChangeEmailAction
 
             // The old address stays opted out, so it isn't mailed if it comes
             // back through an import; this entry is its record of why. It
-            // names no row, so two kept addresses can't be tied to one person.
+            // names no row of the person's. (The person's sent mail does keep
+            // the old address, so its unsubscribe link still reaches them.)
             if ($subscriber->opted_out_at !== null) {
                 ConsentRecord::record($subscriber, ConsentAction::OptOut, $context, meta: ['address_changed' => true]);
             }
@@ -108,6 +110,24 @@ class ChangeEmailAction
 
             return $target;
         });
+    }
+
+    /**
+     * Mail sent to the old address stays the person's, keeping that address,
+     * so its unsubscribe link still reaches them once the old row is
+     * forgotten. A campaign that reached both rows keeps the old row's email
+     * where it is, since a campaign holds one email per subscriber.
+     */
+    protected function moveMessages(Subscriber $from, Subscriber $to): void
+    {
+        // Locked, so a campaign frozen a moment ago is seen inside the app's
+        // transaction too, rather than failing the move on the unique pair.
+        $reachedBoth = CampaignMessage::query()->where('subscriber_id', $to->id)->lockForUpdate()->pluck('campaign_id');
+
+        CampaignMessage::query()
+            ->where('subscriber_id', $from->id)
+            ->whereNotIn('campaign_id', $reachedBoth)
+            ->update(['subscriber_id' => $to->id, 'updated_at' => now()]);
     }
 
     /**

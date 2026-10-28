@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 use Illuminate\Process\PendingProcess;
 use Illuminate\Support\Facades\Process;
+use Illuminate\Support\ServiceProvider;
+use Mozex\Campaigns\CampaignsServiceProvider;
 
 const STAR_QUESTION = 'Would you like to show some love by starring laravel-campaigns on GitHub?';
 
@@ -107,4 +109,15 @@ it('opens the repository with a note instead of asking when nobody can answer', 
     assertOpenedRepository();
 
     expect($this->app->configPath('campaigns.php'))->toBeFile();
+});
+
+it('lets an app publish the pages\' views and strings, to restyle and translate them', function (): void {
+    $published = fn (string $tag): array => array_values(array_map(
+        fn (string $path): string => str_replace('\\', '/', $path),
+        ServiceProvider::pathsToPublish(CampaignsServiceProvider::class, $tag),
+    ));
+
+    expect($published('campaigns-views'))->toHaveCount(1)
+        ->and($published('campaigns-views')[0])->toEndWith('views/vendor/campaigns')
+        ->and($published('campaigns-translations')[0])->toEndWith('lang/vendor/campaigns');
 });

@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Mozex\Campaigns\Enums\MessageStatus;
+use Mozex\Campaigns\Models\CampaignMessage;
 use Mozex\Campaigns\Models\ConsentRecord;
 use Mozex\Campaigns\Models\Subscriber;
+use Mozex\Campaigns\Support\Token;
 use Mozex\Campaigns\Tests\TestCase;
 
 uses(TestCase::class)->in(__DIR__);
@@ -25,6 +28,26 @@ function consentActions(?Subscriber $subscriber): array
         ->get()
         ->map(fn (ConsentRecord $record): string => $record->action->value)
         ->all();
+}
+
+/**
+ * A sent message and the raw token of its links, as the send job leaves
+ * them.
+ *
+ * @param  array<string, mixed>  $attributes
+ * @return array{0: CampaignMessage, 1: string}
+ */
+function sentMessage(array $attributes = []): array
+{
+    $token = Token::generate();
+
+    $message = CampaignMessage::factory()->create([
+        'status' => MessageStatus::Sent,
+        ...$attributes,
+        'token_hash' => Token::hash($token),
+    ]);
+
+    return [$message, $token];
 }
 
 /**

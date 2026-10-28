@@ -42,6 +42,24 @@ readonly class ConsentContext
     }
 
     /**
+     * The same context with more to keep in its records' meta.
+     *
+     * @param  array<string, mixed>  $meta
+     */
+    public function withMeta(array $meta): self
+    {
+        return new self(
+            source: $this->source,
+            basis: $this->basis,
+            noticeVersion: $this->noticeVersion,
+            accepted: $this->accepted,
+            ipAddress: $this->ipAddress,
+            userAgent: $this->userAgent,
+            meta: [...$this->meta, ...$meta],
+        );
+    }
+
+    /**
      * A change the person made through a request, carrying their IP address
      * and browser.
      *

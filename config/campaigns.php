@@ -5,8 +5,9 @@ declare(strict_types=1);
 return [
     /*
      * The master switch for sending. While it is false nothing is claimed or
-     * sent and campaigns can't start; subscriptions, unsubscribes and the
-     * consent records keep working, since they only record what people chose.
+     * sent, campaigns can't start and no double opt-in email goes out;
+     * subscriptions, the unsubscribe and confirmation pages and the consent
+     * records keep working, since they only record what people chose.
      * Default: false.
      */
     'enabled' => (bool) env('CAMPAIGNS_ENABLED', false),
@@ -18,6 +19,26 @@ return [
      * without a redirect for as long as that mail exists. Default: APP_URL.
      */
     'url' => env('CAMPAIGNS_URL'),
+
+    /*
+     * What the unsubscribe and confirmation pages and emails call the app, as
+     * in "Unsubscribe from all <name> emails?". Default: APP_NAME.
+     */
+    'name' => env('CAMPAIGNS_NAME'),
+
+    /*
+     * The mailer the package's emails go through, and their sender. Use a
+     * mailer on your marketing domain, so its reputation stays apart from
+     * your account emails. A null address takes the mailer's own sender.
+     * Default mailer: "campaigns", which you define in config/mail.php.
+     */
+    'mail' => [
+        'mailer' => env('CAMPAIGNS_MAILER', 'campaigns'),
+        'from' => [
+            'address' => env('CAMPAIGNS_FROM_ADDRESS'),
+            'name' => env('CAMPAIGNS_FROM_NAME'),
+        ],
+    ],
 
     /*
      * The dynamic lists fed from the app's own records, keyed by the list's

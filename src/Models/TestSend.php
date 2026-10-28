@@ -25,6 +25,7 @@ use Mozex\Campaigns\Database\Factories\TestSendFactory;
  * @property string $token_hash
  * @property ?string $provider_message_id
  * @property ?Carbon $sent_at
+ * @property ?Carbon $unsubscribed_at
  * @property ?Carbon $created_at
  * @property ?Carbon $updated_at
  */
@@ -45,6 +46,7 @@ class TestSend extends Model
         'token_hash',
         'provider_message_id',
         'sent_at',
+        'unsubscribed_at',
     ];
 
     protected $hidden = [
@@ -58,12 +60,13 @@ class TestSend extends Model
     }
 
     /**
-     * @return array{sent_at: 'datetime'}
+     * @return array{sent_at: 'datetime', unsubscribed_at: 'datetime'}
      */
     protected function casts(): array
     {
         return [
             'sent_at' => 'datetime',
+            'unsubscribed_at' => 'datetime',
         ];
     }
 

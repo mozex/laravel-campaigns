@@ -61,6 +61,8 @@ return new class extends Migration
             $table->timestamp('blocked_at')->nullable();
             $table->string('blocked_reason', 32)->nullable();
             $table->unsignedSmallInteger('soft_bounces')->default(0);
+            // The last double opt-in email, which may go to an address once a day.
+            $table->timestamp('confirmation_sent_at')->nullable();
             $table->timestamps();
 
             // One subscriber per app record. A short name, since apps with a
@@ -176,6 +178,8 @@ return new class extends Migration
             $table->string('token_hash', 64)->unique();
             $table->string('provider_message_id', 255)->nullable()->index();
             $table->timestamp('sent_at')->nullable();
+            // A test's unsubscribe is recorded here and changes nothing else.
+            $table->timestamp('unsubscribed_at')->nullable();
             $table->timestamps();
         });
 

@@ -16,6 +16,12 @@ use Mozex\Campaigns\Support\ConsentContext;
  */
 class ConfirmSubscriptionAction
 {
+    /**
+     * The consent record's source for the page the confirmation email's
+     * link opens.
+     */
+    public const PAGE = 'confirmation_page';
+
     public function __construct(protected OptInAction $optIn) {}
 
     /**

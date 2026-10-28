@@ -4,10 +4,13 @@ declare(strict_types=1);
 
 namespace Mozex\Campaigns;
 
+use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Config\Repository;
 use Illuminate\Contracts\Foundation\CachesConfiguration;
 use Illuminate\Database\Eloquent\Relations\Relation;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Process;
+use Illuminate\Support\Facades\RateLimiter;
 use Mozex\Campaigns\Commands\SyncListCommand;
 use Mozex\Campaigns\Models\ApiToken;
 use Mozex\Campaigns\Models\Campaign;
@@ -18,6 +21,7 @@ use Mozex\Campaigns\Models\ProviderEvent;
 use Mozex\Campaigns\Models\Subscriber;
 use Mozex\Campaigns\Models\Subscription;
 use Mozex\Campaigns\Models\TestSend;
+use Mozex\Campaigns\Support\Token;
 use Spatie\LaravelPackageTools\Commands\InstallCommand;
 use Spatie\LaravelPackageTools\Package;
 use Spatie\LaravelPackageTools\PackageServiceProvider;
@@ -32,6 +36,9 @@ class CampaignsServiceProvider extends PackageServiceProvider
         $package
             ->name('laravel-campaigns')
             ->hasConfigFile()
+            ->hasViews()
+            ->hasTranslations()
+            ->hasRoute('campaigns')
             ->hasMigration('create_campaigns_tables')
             ->hasCommand(SyncListCommand::class)
             ->hasInstallCommand(function (InstallCommand $command): void {
@@ -60,6 +67,11 @@ class CampaignsServiceProvider extends PackageServiceProvider
             'campaigns.provider_event' => ProviderEvent::class,
             'campaigns.api_token' => ApiToken::class,
         ]);
+
+        // A link's POSTs, counted per link: enough for a person and their
+        // mail app, too few to hammer one address's consent records.
+        RateLimiter::for('campaigns.links', fn (Request $request): Limit => Limit::perMinute(10)
+            ->by('campaigns.links:'.Token::hash((string) $request->route('token'))));
     }
 
     /**

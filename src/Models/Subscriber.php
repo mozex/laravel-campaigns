@@ -43,6 +43,7 @@ use Mozex\Campaigns\Support\EmailAddress;
  * @property ?Carbon $blocked_at
  * @property ?BlockReason $blocked_reason
  * @property int $soft_bounces
+ * @property ?Carbon $confirmation_sent_at
  * @property ?Carbon $created_at
  * @property ?Carbon $updated_at
  */
@@ -70,10 +71,11 @@ class Subscriber extends Model
         'blocked_at',
         'blocked_reason',
         'soft_bounces',
+        'confirmation_sent_at',
     ];
 
     /**
-     * @return array{custom_fields: 'array', last_opened_at: 'datetime', last_clicked_at: 'datetime', last_active_at: 'datetime', silent_since: 'datetime', opted_out_at: 'datetime', blocked_at: 'datetime', blocked_reason: class-string<BlockReason>, soft_bounces: 'integer'}
+     * @return array{custom_fields: 'array', last_opened_at: 'datetime', last_clicked_at: 'datetime', last_active_at: 'datetime', silent_since: 'datetime', opted_out_at: 'datetime', blocked_at: 'datetime', blocked_reason: class-string<BlockReason>, soft_bounces: 'integer', confirmation_sent_at: 'datetime'}
      */
     protected function casts(): array
     {
@@ -87,6 +89,7 @@ class Subscriber extends Model
             'blocked_at' => 'datetime',
             'blocked_reason' => BlockReason::class,
             'soft_bounces' => 'integer',
+            'confirmation_sent_at' => 'datetime',
         ];
     }
 

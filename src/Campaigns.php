@@ -56,6 +56,14 @@ class Campaigns
         }
     }
 
+    /**
+     * What the pages and emails call the app.
+     */
+    public function name(): string
+    {
+        return (string) (config('campaigns.name') ?: config('app.name'));
+    }
+
     public function consentFor(Model $record): ?ConsentContext
     {
         return $this->consents[$record::class] ?? null;
