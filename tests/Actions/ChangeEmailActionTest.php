@@ -109,6 +109,33 @@ it('deletes the old row when it held nothing to keep', function (): void {
         ->and(ConsentRecord::query()->sole()->subscriber_id)->toBe($contact->id);
 });
 
+it('takes the person\'s engagement to the row they join, so a reader isn\'t sunset by an address change', function (): void {
+    $this->freezeSecond();
+    $member = Member::query()->create(['email' => 'old@example.com']);
+    $old = Subscriber::findFor($member);
+    $old?->forceFill([
+        'last_opened_at' => now()->subDays(10),
+        'last_clicked_at' => now()->subDays(400),
+        'last_active_at' => now()->subDays(30),
+        'first_mailed_at' => now()->subMonths(20),
+    ])->save();
+    $contact = Subscriber::factory()->create([
+        'email' => 'new@example.com',
+        'last_opened_at' => now()->subDays(500),
+        'last_clicked_at' => now()->subDays(20),
+        'first_mailed_at' => now()->subMonths(18),
+    ]);
+
+    $moved = changeEmail($old, 'new@example.com')->fresh();
+
+    expect($moved)
+        ->last_opened_at->toEqual(now()->subDays(10))
+        ->last_clicked_at->toEqual(now()->subDays(20))
+        ->last_active_at->toEqual(now()->subDays(30))
+        ->first_mailed_at->toEqual(now()->subMonths(20))
+        ->and($moved?->isSunset())->toBeFalse();
+});
+
 it('keeps mail sent to the old address with the person, so its unsubscribe link still reaches them', function (): void {
     $member = Member::query()->create(['email' => 'old@example.com']);
     $old = Subscriber::findFor($member);

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Mozex\Campaigns\Models;
 
 use Illuminate\Database\Eloquent\Attributes\UseFactory;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -14,7 +15,9 @@ use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Illuminate\Support\Carbon;
 use Mozex\Campaigns\Database\Factories\SubscriberFactory;
 use Mozex\Campaigns\Enums\BlockReason;
+use Mozex\Campaigns\Enums\EngagementTier;
 use Mozex\Campaigns\Support\EmailAddress;
+use Mozex\Campaigns\Support\Engagement;
 
 /**
  * One email address in the app, optionally linked to the app record it
@@ -38,7 +41,7 @@ use Mozex\Campaigns\Support\EmailAddress;
  * @property ?Carbon $last_opened_at
  * @property ?Carbon $last_clicked_at
  * @property ?Carbon $last_active_at
- * @property ?Carbon $silent_since
+ * @property ?Carbon $first_mailed_at
  * @property ?Carbon $opted_out_at
  * @property ?Carbon $blocked_at
  * @property ?BlockReason $blocked_reason
@@ -66,7 +69,7 @@ class Subscriber extends Model
         'last_opened_at',
         'last_clicked_at',
         'last_active_at',
-        'silent_since',
+        'first_mailed_at',
         'opted_out_at',
         'blocked_at',
         'blocked_reason',
@@ -75,7 +78,7 @@ class Subscriber extends Model
     ];
 
     /**
-     * @return array{custom_fields: 'array', last_opened_at: 'datetime', last_clicked_at: 'datetime', last_active_at: 'datetime', silent_since: 'datetime', opted_out_at: 'datetime', blocked_at: 'datetime', blocked_reason: class-string<BlockReason>, soft_bounces: 'integer', confirmation_sent_at: 'datetime'}
+     * @return array{custom_fields: 'array', last_opened_at: 'datetime', last_clicked_at: 'datetime', last_active_at: 'datetime', first_mailed_at: 'datetime', opted_out_at: 'datetime', blocked_at: 'datetime', blocked_reason: class-string<BlockReason>, soft_bounces: 'integer', confirmation_sent_at: 'datetime'}
      */
     protected function casts(): array
     {
@@ -84,7 +87,7 @@ class Subscriber extends Model
             'last_opened_at' => 'datetime',
             'last_clicked_at' => 'datetime',
             'last_active_at' => 'datetime',
-            'silent_since' => 'datetime',
+            'first_mailed_at' => 'datetime',
             'opted_out_at' => 'datetime',
             'blocked_at' => 'datetime',
             'blocked_reason' => BlockReason::class,
@@ -118,6 +121,40 @@ class Subscriber extends Model
     public function isSuppressed(): bool
     {
         return $this->blocked_at !== null || $this->opted_out_at !== null;
+    }
+
+    public function tier(): EngagementTier
+    {
+        return Engagement::tier($this);
+    }
+
+    /**
+     * Whether the address has stayed silent too long to be mailed
+     * (campaigns.engagement.sunset_months).
+     */
+    public function isSunset(): bool
+    {
+        return Engagement::isSunset($this);
+    }
+
+    /**
+     * Whether a campaign may mail the address at all: not opted out, not
+     * blocked and not sunset. Whether a list it is on reaches it is the
+     * list subscription's status.
+     */
+    public function isMailable(): bool
+    {
+        return ! $this->isSuppressed() && ! $this->isSunset();
+    }
+
+    /**
+     * The subscribers isMailable() accepts.
+     *
+     * @param  Builder<self>  $query
+     */
+    public function scopeMailable(Builder $query): void
+    {
+        Engagement::whereSunset($query->whereNull('opted_out_at')->whereNull('blocked_at'), false);
     }
 
     /**

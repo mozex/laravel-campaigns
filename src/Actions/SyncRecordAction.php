@@ -18,6 +18,7 @@ use Mozex\Campaigns\Models\Subscription;
 use Mozex\Campaigns\Support\ConsentContext;
 use Mozex\Campaigns\Support\EmailAddress;
 use Mozex\Campaigns\Support\Rows;
+use Mozex\Campaigns\Support\SubscriberDetails;
 
 /**
  * Brings one app record's subscriber and its place on a dynamic list in
@@ -190,31 +191,13 @@ class SyncRecordAction
      */
     protected function details(array $fields, Subscriber $subscriber): array
     {
-        $details = [];
-
-        foreach (['name' => 255, 'first_name' => 255, 'locale' => 35, 'timezone' => 64] as $field => $length) {
-            if (array_key_exists($field, $fields)) {
-                $details[$field] = $this->cut($fields[$field], $length);
-            }
-        }
-
-        if (array_key_exists('country', $fields)) {
-            $country = strtoupper(trim((string) $fields['country']));
-            $details['country'] = preg_match('/^[A-Z]{2}$/', $country) === 1 ? $country : null;
-        }
+        $details = SubscriberDetails::clean($fields);
 
         if (is_array($fields['custom_fields'] ?? null)) {
             $details['custom_fields'] = [...$subscriber->custom_fields ?? [], ...$fields['custom_fields']];
         }
 
         return $details;
-    }
-
-    protected function cut(mixed $value, int $length): ?string
-    {
-        $value = trim((string) $value);
-
-        return $value === '' ? null : mb_substr($value, 0, $length);
     }
 
     /**

@@ -56,7 +56,10 @@ return new class extends Migration
             $table->timestamp('last_opened_at')->nullable();
             $table->timestamp('last_clicked_at')->nullable();
             $table->timestamp('last_active_at')->nullable();
-            $table->timestamp('silent_since')->nullable();
+            // The first campaign email this app sent the address: an address
+            // silent for the sunset period after the later of this and its
+            // last engagement is no longer mailed.
+            $table->timestamp('first_mailed_at')->nullable();
             $table->timestamp('opted_out_at')->nullable();
             $table->timestamp('blocked_at')->nullable();
             $table->string('blocked_reason', 32)->nullable();

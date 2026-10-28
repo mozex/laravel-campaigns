@@ -13,6 +13,7 @@ use Mozex\Campaigns\Models\Subscriber;
 use Mozex\Campaigns\Models\Subscription;
 use Mozex\Campaigns\Support\ConsentContext;
 use Mozex\Campaigns\Support\EmailAddress;
+use Mozex\Campaigns\Support\Engagement;
 use Mozex\Campaigns\Support\Rows;
 
 /**
@@ -131,7 +132,7 @@ class ChangeEmailAction
     }
 
     /**
-     * The record link, the details the new row lacks, the latest activity
+     * The record link, the details the new row lacks, the engagement dates
      * and an opt-out. The link goes first: one record links to one row.
      */
     protected function movePerson(Subscriber $from, Subscriber $to): void
@@ -151,8 +152,19 @@ class ChangeEmailAction
             $to->custom_fields = [...$from->custom_fields, ...$to->custom_fields ?? []];
         }
 
-        if ($from->last_active_at !== null && ($to->last_active_at === null || $from->last_active_at->isAfter($to->last_active_at))) {
-            $to->last_active_at = $from->last_active_at;
+        // The latest engagement and the earliest campaign email, so moving
+        // neither makes a reader look silent nor restarts a sunset.
+        foreach (Engagement::SIGNALS as $column) {
+            $theirs = $from->getAttribute($column);
+            $ours = $to->getAttribute($column);
+
+            if ($theirs !== null && ($ours === null || $theirs->isAfter($ours))) {
+                $to->setAttribute($column, $theirs);
+            }
+        }
+
+        if ($from->first_mailed_at !== null && ($to->first_mailed_at === null || $from->first_mailed_at->isBefore($to->first_mailed_at))) {
+            $to->first_mailed_at = $from->first_mailed_at;
         }
 
         $to->opted_out_at ??= $from->opted_out_at;

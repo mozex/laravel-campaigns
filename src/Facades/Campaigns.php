@@ -13,6 +13,11 @@ use Illuminate\Support\Facades\Facade;
  * @method static \Mozex\Campaigns\Contracts\ListSource listSource(string $key)
  * @method static array<string, \Mozex\Campaigns\Contracts\ListSource> listSourcesFor(\Illuminate\Database\Eloquent\Model $record)
  * @method static \Mozex\Campaigns\Models\CampaignList list(string $key)
+ * @method static \Mozex\Campaigns\Contracts\Audience audience(string $key)
+ * @method static array<string, \Mozex\Campaigns\Contracts\Audience> audiences()
+ * @method static \Illuminate\Database\Eloquent\Builder<\Mozex\Campaigns\Models\Subscriber> audienceSubscribers(string $key, array<string, mixed> $parameters = [])
+ * @method static \Mozex\Campaigns\Contracts\AgentResource resource(string $key)
+ * @method static array<string, \Mozex\Campaigns\Contracts\AgentResource> resources()
  * @method static bool recordActivity(\Illuminate\Database\Eloquent\Model $record, ?\Carbon\CarbonInterface $at = null)
  *
  * @see \Mozex\Campaigns\Campaigns

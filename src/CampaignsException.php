@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Mozex\Campaigns;
 
 use Mozex\Campaigns\Contracts\ListSource;
+use Mozex\Campaigns\Imports\ImportedContact;
 use RuntimeException;
 
 class CampaignsException extends RuntimeException
@@ -52,5 +53,45 @@ class CampaignsException extends RuntimeException
     public static function valueTooLong(string $name, int $max): self
     {
         return new self("The consent {$name} may be at most {$max} characters long.");
+    }
+
+    public static function unknownImportField(string $field): self
+    {
+        return new self("A contact has no field \"{$field}\". Use ".implode(', ', ImportedContact::FIELDS).'.');
+    }
+
+    public static function invalidImportValue(string $field, string $reason): self
+    {
+        return new self("The contact's {$field} can't be imported: {$reason}.");
+    }
+
+    /**
+     * @param  'audiences'|'resources'  $kind
+     */
+    public static function notConfigured(string $kind, string $key): self
+    {
+        return new self("Nothing is configured as \"{$key}\" in campaigns.{$kind}.");
+    }
+
+    /**
+     * @param  'audiences'|'resources'  $kind
+     * @param  class-string  $contract
+     */
+    public static function invalidExtension(string $kind, string $key, string $class, string $contract): self
+    {
+        return new self("campaigns.{$kind}.{$key} ({$class}) must implement {$contract}.");
+    }
+
+    /**
+     * @param  list<string>  $keys
+     */
+    public static function unknownLists(array $keys): self
+    {
+        return new self('No list has the key '.implode(', ', array_map(fn (string $key): string => "\"{$key}\"", $keys)).'.');
+    }
+
+    public static function invalidFilter(string $filter, string $reason): self
+    {
+        return new self("The filter \"{$filter}\" can't be used: {$reason}.");
     }
 }

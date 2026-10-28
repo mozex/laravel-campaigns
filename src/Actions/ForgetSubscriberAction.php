@@ -61,7 +61,7 @@ class ForgetSubscriberAction
                 'last_opened_at' => null,
                 'last_clicked_at' => null,
                 'last_active_at' => null,
-                'silent_since' => null,
+                'first_mailed_at' => null,
                 'confirmation_sent_at' => null,
             ])->save();
         });

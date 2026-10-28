@@ -33,7 +33,7 @@ class SubscriberFactory extends Factory
             'last_opened_at' => null,
             'last_clicked_at' => null,
             'last_active_at' => null,
-            'silent_since' => null,
+            'first_mailed_at' => null,
             'opted_out_at' => null,
             'blocked_at' => null,
             'blocked_reason' => null,

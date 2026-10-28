@@ -51,6 +51,35 @@ return [
     'list_sources' => [],
 
     /*
+     * Named audiences an agent can pick for a campaign, keyed by name:
+     * ['buyers' => App\Campaigns\BuyersAudience::class]. Each class
+     * implements Mozex\Campaigns\Contracts\Audience: its parameters, their
+     * validation rules and a query on your own records (or on subscribers).
+     */
+    'audiences' => [],
+
+    /*
+     * Read-only data agents may read to choose an audience or write an
+     * email, such as your products, keyed by name:
+     * ['courses' => App\Campaigns\CourseResource::class]. Each class
+     * implements Mozex\Campaigns\Contracts\AgentResource.
+     */
+    'resources' => [],
+
+    /*
+     * How recently someone must have opened or clicked an email, or done
+     * something in your app (Campaigns::recordActivity()), to count as
+     * engaged or active; anyone else is silent. An address that stays
+     * silent for sunset_months after the later of its last engagement and
+     * its first campaign email is no longer mailed; null never stops one.
+     */
+    'engagement' => [
+        'engaged_days' => 90,
+        'active_days' => 365,
+        'sunset_months' => 12,
+    ],
+
+    /*
      * Where the send jobs and webhook processing run. A null connection uses
      * the app's default queue connection. Give this queue its own worker
      * (one or two processes), with a job timeout below the worker's and the
