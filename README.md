@@ -8,7 +8,7 @@
 [![License](https://img.shields.io/github/license/mozex/laravel-campaigns.svg?style=flat-square)](https://packagist.org/packages/mozex/laravel-campaigns)
 [![Total Downloads](https://img.shields.io/packagist/dt/mozex/laravel-campaigns.svg?style=flat-square)](https://packagist.org/packages/mozex/laravel-campaigns)
 
-TODO(scaffold): one paragraph on what the package does and why it's useful. Concrete, no superlatives.
+Laravel Campaigns lets an AI agent run your app's email marketing from inside the app. Your lists stay in step with your own users, every subscribe and unsubscribe is recorded with its basis and source, and campaigns go out through Mailgun from your own queue, one message at a time, at a pace you set per campaign. Addresses that hard-bounce, report spam or unsubscribe stop getting mail on their own. Agents work through an MCP server the package adds to your app, so Claude Code, Codex or a chat app can draft, preview, test, start and watch a campaign without database access.
 
 > **[Read the full documentation at mozex.dev](https://mozex.dev/docs/laravel-campaigns/v1)**: searchable docs, version requirements, detailed changelog, and more.
 
@@ -32,7 +32,7 @@ Business sponsors get logo placement in package READMEs. [**See sponsorship tier
 composer require mozex/laravel-campaigns
 ```
 
-TODO(scaffold): one sentence on when to run the install command and what it publishes.
+Then run the install command once. It publishes the config file and the migration, which you run with `php artisan migrate`.
 
 ```bash
 php artisan campaigns:install

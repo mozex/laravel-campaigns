@@ -3,6 +3,13 @@
     "description": "Email campaigns that AI agents run inside your Laravel app over MCP, with lists synced from your users and paced sending through Mailgun on your own queue",
     "keywords": [
         "laravel",
+        "email-marketing",
+        "email-campaigns",
+        "newsletter",
+        "mailgun",
+        "mcp",
+        "ai-agents",
+        "unsubscribe",
         "mozex"
     ],
     "homepage": "https://github.com/mozex/laravel-campaigns",
