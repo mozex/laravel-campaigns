@@ -14,7 +14,31 @@ Laravel Campaigns lets an AI agent run your app's email marketing from inside th
 
 ## Table of Contents
 
-TODO(scaffold): single-page, anchor links to this README's headings; multi-page, links to the pages on mozex.dev. Documentation sections only.
+- [Introduction](https://mozex.dev/docs/laravel-campaigns/v1)
+- Getting Started
+  - [Installation](https://mozex.dev/docs/laravel-campaigns/v1/getting-started/installation)
+  - [Mailgun](https://mozex.dev/docs/laravel-campaigns/v1/getting-started/mailgun)
+  - [Connecting Agents](https://mozex.dev/docs/laravel-campaigns/v1/getting-started/connecting-agents)
+- Lists and Subscribers
+  - [Dynamic Lists](https://mozex.dev/docs/laravel-campaigns/v1/lists-and-subscribers/dynamic-lists)
+  - [Subscriptions and Consent](https://mozex.dev/docs/laravel-campaigns/v1/lists-and-subscribers/subscriptions)
+  - [Imports](https://mozex.dev/docs/laravel-campaigns/v1/lists-and-subscribers/imports)
+  - [Engagement and the Sunset](https://mozex.dev/docs/laravel-campaigns/v1/lists-and-subscribers/engagement)
+- Campaigns
+  - [Emails and Templates](https://mozex.dev/docs/laravel-campaigns/v1/campaigns/emails)
+  - [Audiences](https://mozex.dev/docs/laravel-campaigns/v1/campaigns/audiences)
+  - [Sending and Pace](https://mozex.dev/docs/laravel-campaigns/v1/campaigns/sending)
+  - [Feedback and the Stop-Loss](https://mozex.dev/docs/laravel-campaigns/v1/campaigns/feedback)
+- Agents
+  - [The MCP Server](https://mozex.dev/docs/laravel-campaigns/v1/agents/mcp-server)
+  - [Giving Agents Your Data](https://mozex.dev/docs/laravel-campaigns/v1/agents/your-data)
+- Reference
+  - [Configuration](https://mozex.dev/docs/laravel-campaigns/v1/reference/configuration)
+  - [Commands](https://mozex.dev/docs/laravel-campaigns/v1/reference/commands)
+  - [Events](https://mozex.dev/docs/laravel-campaigns/v1/reference/events)
+  - [Testing Your App](https://mozex.dev/docs/laravel-campaigns/v1/reference/testing)
+  - [Custom Providers](https://mozex.dev/docs/laravel-campaigns/v1/reference/providers)
+  - [Privacy and Security](https://mozex.dev/docs/laravel-campaigns/v1/reference/privacy-and-security)
 
 ## Support This Project
 
@@ -23,6 +47,20 @@ I maintain this package along with [several other open-source PHP packages](http
 If my packages save you time or help your business, consider [**sponsoring my work on GitHub Sponsors**](https://github.com/sponsors/mozex). Your support lets me keep these packages updated, respond to issues quickly, and ship new features.
 
 Business sponsors get logo placement in package READMEs. [**See sponsorship tiers →**](https://github.com/sponsors/mozex)
+
+## What You Get
+
+**Agents do the work, you approve it.** An MCP server with 48 tools lets an agent write, upload, preview and test an email, count its audience, and start, pace, pause and report on a campaign. Read-only and full tokens, or your own OAuth sign-in, decide who can do what, and the risky calls (starting, resuming, speeding up, test emails) ask the person first in Claude Code.
+
+**Lists that are your users.** A dynamic list follows one of your models, so sign-ups, address changes, bans and deletions reach it as they happen. Static lists hold everyone else: newsletter sign-ups, imports from another service.
+
+**Consent you can prove.** Every subscribe, opt-out, block and confirmation is an append-only record with its source and basis. One unsubscribe stops all your marketing to that person, and only the person can undo it.
+
+**Sending that warms up.** Each campaign starts small (100 emails on day one by default), grows each day, and goes out a few emails a minute from your own queue, engaged readers first, mailbox providers in turn.
+
+**Feedback that acts.** Mailgun's webhooks and logs block hard bounces and spam reports and opt out unsubscribes. A stop-loss pauses a campaign, or a whole sending domain, past its bounce, complaint or unsubscribe limits, and emails you.
+
+**The pages every email needs.** One-click unsubscribe for mail apps, an unsubscribe page, double opt-in confirmation and a web version, each link holding a token that's stored only as a hash.
 
 ## Installation
 
@@ -38,7 +76,63 @@ Then run the install command once. It publishes the config file and the migratio
 php artisan campaigns:install
 ```
 
-TODO(scaffold): the content sections (single-page), or What You Get and Quick Start (multi-page).
+## Quick Start
+
+Add a `campaigns` mailer on Mailgun's API to `config/mail.php`, on a domain kept for marketing:
+
+```php
+'campaigns' => [
+    'transport' => 'mailgun',
+    'scheme' => 'api',
+    'domain' => env('CAMPAIGNS_MAILGUN_DOMAIN'),
+    'secret' => env('CAMPAIGNS_MAILGUN_SECRET'),
+],
+```
+
+Turn one of your models into a list. The source says who belongs on it and what to keep in step:
+
+```php
+class AccountList implements \Mozex\Campaigns\Contracts\ListSource
+{
+    public function name(): string
+    {
+        return 'Accounts';
+    }
+
+    public function query(): Builder
+    {
+        return User::query();
+    }
+
+    public function isEligible(Model $record): bool
+    {
+        return $record->banned_at === null;
+    }
+
+    public function fields(Model $record): array
+    {
+        return ['email' => $record->email, 'name' => $record->name];
+    }
+}
+```
+
+```php
+// config/campaigns.php
+'list_sources' => ['accounts' => App\Campaigns\AccountList::class],
+```
+
+Add `use Mozex\Campaigns\Concerns\HasCampaignSubscriber;` to the `User` model, then bring in the accounts you already have and make a token for your agent:
+
+```bash
+php artisan campaigns:sync-list accounts --force
+php artisan campaigns:token create laptop
+claude mcp add --transport http campaigns https://your-app.example.com/mcp/campaigns \
+  --header "Authorization: Bearer <token>"
+```
+
+Point Mailgun's webhooks at `/campaigns/webhooks/mailgun`, run a worker for the `campaigns` queue and the scheduler, and set `CAMPAIGNS_ENABLED=true` when you're ready to send. Then ask your agent to draft a campaign.
+
+The [documentation](https://mozex.dev/docs/laravel-campaigns/v1) covers each piece: Mailgun's keys, OAuth for chat apps, consent on your sign-up form, named audiences, the pace and the stop-loss.
 
 ## Resources
 
