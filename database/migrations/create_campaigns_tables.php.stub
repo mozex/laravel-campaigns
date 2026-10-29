@@ -136,6 +136,10 @@ return new class extends Migration
             $table->string('author', 255)->nullable();
             $table->jsonb('check_results')->nullable();
             $table->timestamp('checked_at')->nullable();
+            // Set only on the copy a campaign's start makes of its email with
+            // UTM tags added: the revision it was made from, which is what a
+            // duplicate of the campaign copies.
+            $table->foreignId('frozen_from_id')->nullable()->index()->constrained('campaign_revisions')->nullOnDelete();
             $table->timestamps();
 
             $table->unique(['revisable_type', 'revisable_id', 'number']);
@@ -227,6 +231,13 @@ return new class extends Migration
             $table->jsonb('thresholds')->nullable();
             $table->unsignedInteger('recipient_count')->nullable();
             $table->text('pause_reason')->nullable();
+            // Why the last start or schedule was refused after it was
+            // accepted (the audience changed, a named audience failed), read
+            // by the agent that asked; cleared by the next start.
+            $table->text('start_error')->nullable();
+            // The start the freeze job belongs to, so a job left over from an
+            // earlier start can neither freeze nor hand back a newer one.
+            $table->uuid('start_run')->nullable();
             $table->jsonb('report')->nullable();
             $table->foreignId('template_id')->nullable()->index()->constrained('campaign_templates')->nullOnDelete();
             // The revision that goes out, fixed when the campaign is started
@@ -259,7 +270,10 @@ return new class extends Migration
             $table->jsonb('list_ids')->nullable();
             $table->string('email', 254)->nullable();
             $table->string('locale', 35)->nullable();
-            $table->unsignedInteger('position');
+            // The send order: the engagement tier in steps of 10^12, then a
+            // rank within the tier spread across mailbox providers. Gaps are
+            // fine, since only the order counts.
+            $table->unsignedBigInteger('position');
             $table->string('status', 32);
             $table->uuid('claim_id')->nullable();
             $table->string('token_hash', 64)->nullable()->unique();

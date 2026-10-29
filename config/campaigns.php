@@ -116,6 +116,20 @@ return [
     ],
 
     /*
+     * The UTM tags added to a campaign's links to your own sites when it
+     * starts (a campaign may change or switch them off): utm_source and
+     * utm_medium from here, utm_campaign the campaign's key. A link that
+     * already carries a utm_ parameter keeps its own. "hosts" are your sites:
+     * a link to one of them or a subdomain of it is tagged. Default hosts:
+     * those of APP_URL and the links' base URL, without a leading "www.".
+     */
+    'utm' => [
+        'source' => 'newsletter',
+        'medium' => 'email',
+        'hosts' => [],
+    ],
+
+    /*
      * The dynamic lists fed from the app's own records, keyed by the list's
      * key: ['accounts' => App\Campaigns\AccountList::class]. Each class
      * implements Mozex\Campaigns\Contracts\ListSource, and its model uses the

@@ -34,6 +34,8 @@ use Mozex\Campaigns\Models\Concerns\HasRevisions;
  * @property ?array<string, mixed> $thresholds
  * @property ?int $recipient_count
  * @property ?string $pause_reason
+ * @property ?string $start_error
+ * @property ?string $start_run
  * @property ?array<string, mixed> $report
  * @property ?int $template_id
  * @property ?int $frozen_revision_id
@@ -76,6 +78,8 @@ class Campaign extends Model
         'thresholds',
         'recipient_count',
         'pause_reason',
+        'start_error',
+        'start_run',
         'report',
         'template_id',
         'frozen_revision_id',
@@ -119,6 +123,27 @@ class Campaign extends Model
             'completed_at' => 'datetime',
             'canceled_at' => 'datetime',
         ];
+    }
+
+    /**
+     * The UTM tags its links get when it starts: the config's source and
+     * medium and its own key, under whatever it set itself; none when it
+     * switched them off (an empty utm).
+     *
+     * @return array<string, string>
+     */
+    public function utmTags(): array
+    {
+        if ($this->utm === []) {
+            return [];
+        }
+
+        return array_filter([
+            'source' => (string) config('campaigns.utm.source', 'newsletter'),
+            'medium' => (string) config('campaigns.utm.medium', 'email'),
+            'campaign' => $this->key,
+            ...$this->utm ?? [],
+        ], fn (string $value): bool => $value !== '');
     }
 
     /** @return HasMany<CampaignMessage, $this> */

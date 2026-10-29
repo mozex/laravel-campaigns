@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Illuminate\Support\Carbon;
@@ -30,6 +31,7 @@ use Mozex\Campaigns\Database\Factories\RevisionFactory;
  * @property ?string $author
  * @property ?array<string, mixed> $check_results
  * @property ?Carbon $checked_at
+ * @property ?int $frozen_from_id
  * @property ?Carbon $created_at
  * @property ?Carbon $updated_at
  * @property-read Collection<int, RevisionContent> $contents
@@ -52,6 +54,7 @@ class Revision extends Model
         'author',
         'check_results',
         'checked_at',
+        'frozen_from_id',
     ];
 
     /** @return list<string> */
@@ -61,7 +64,7 @@ class Revision extends Model
     }
 
     /**
-     * @return array{revisable_id: 'integer', number: 'integer', check_results: 'array', checked_at: 'datetime'}
+     * @return array{revisable_id: 'integer', number: 'integer', check_results: 'array', checked_at: 'datetime', frozen_from_id: 'integer'}
      */
     protected function casts(): array
     {
@@ -70,7 +73,28 @@ class Revision extends Model
             'number' => 'integer',
             'check_results' => 'array',
             'checked_at' => 'datetime',
+            'frozen_from_id' => 'integer',
         ];
+    }
+
+    /**
+     * The revision an author made that this one was copied from when its
+     * campaign started, for a copy with UTM tags added.
+     *
+     * @return BelongsTo<self, $this>
+     */
+    public function frozenFrom(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'frozen_from_id');
+    }
+
+    /**
+     * The revision as its author made it: this one, or for a copy a
+     * campaign's start made, the one it was copied from.
+     */
+    public function authored(): self
+    {
+        return $this->frozen_from_id === null ? $this : ($this->frozenFrom()->first() ?? $this);
     }
 
     /** @return MorphTo<Model, $this> */

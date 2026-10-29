@@ -36,6 +36,7 @@ class RevisionFactory extends Factory
             'author' => null,
             'check_results' => null,
             'checked_at' => null,
+            'frozen_from_id' => null,
         ];
     }
 

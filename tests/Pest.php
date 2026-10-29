@@ -4,12 +4,16 @@ declare(strict_types=1);
 
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Mozex\Campaigns\Content\EmailContent;
 use Mozex\Campaigns\Enums\MessageStatus;
+use Mozex\Campaigns\Enums\SubscriptionStatus;
 use Mozex\Campaigns\Fetching\HostResolver;
 use Mozex\Campaigns\Fetching\StaticHostResolver;
+use Mozex\Campaigns\Models\CampaignList;
 use Mozex\Campaigns\Models\CampaignMessage;
 use Mozex\Campaigns\Models\ConsentRecord;
 use Mozex\Campaigns\Models\Subscriber;
+use Mozex\Campaigns\Models\Subscription;
 use Mozex\Campaigns\Support\Token;
 use Mozex\Campaigns\Tests\TestCase;
 
@@ -101,6 +105,40 @@ function zipOf(array $files, array $links = [], array $encrypted = []): string
     } finally {
         @unlink($path);
     }
+}
+
+/**
+ * Campaigns come from news.example.com, and sending is on.
+ */
+function sendFromExample(): void
+{
+    config()->set('campaigns.mail.from', ['address' => 'news@news.example.com', 'name' => 'Example News']);
+    config()->set('campaigns.enabled', true);
+}
+
+/**
+ * A subscriber with a subscription in the given status on each list.
+ *
+ * @param  list<CampaignList>  $lists
+ * @param  array<string, mixed>  $attributes
+ */
+function subscriberOn(array $lists, array $attributes = [], SubscriptionStatus $status = SubscriptionStatus::Subscribed): Subscriber
+{
+    $subscriber = Subscriber::factory()->create($attributes);
+
+    foreach ($lists as $list) {
+        Subscription::factory()->for($list, 'list')->for($subscriber)->create(['status' => $status]);
+    }
+
+    return $subscriber;
+}
+
+/**
+ * One locale's email that meets the revision rules.
+ */
+function campaignEmail(string $locale = 'en', string $html = '<p>Hello</p>{{footer}}', ?string $text = null): EmailContent
+{
+    return new EmailContent(locale: $locale, subject: 'News', html: $html, text: $text);
 }
 
 /**

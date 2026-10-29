@@ -91,6 +91,78 @@ class CampaignsException extends RuntimeException
         return new self('No list has the key '.implode(', ', array_map(fn (string $key): string => "\"{$key}\"", $keys)).'.');
     }
 
+    /**
+     * @param  list<string>  $keys
+     */
+    public static function unknownCampaigns(array $keys): self
+    {
+        return new self('No campaign has the key '.implode(', ', array_map(fn (string $key): string => "\"{$key}\"", $keys)).'.');
+    }
+
+    public static function invalidSetting(string $setting, string $reason): self
+    {
+        return new self("The campaign's {$setting} can't be used: {$reason}.");
+    }
+
+    public static function invalidPace(string $setting, string $reason): self
+    {
+        return new self("The pace's {$setting} can't be used: {$reason}.");
+    }
+
+    public static function invalidAudience(string $part, string $reason): self
+    {
+        return new self("The audience's {$part} can't be used: {$reason}.");
+    }
+
+    public static function notOnSendingDomain(string $domain): self
+    {
+        return new self("A campaign's From address must be on the sending domain, {$domain}.");
+    }
+
+    public static function sendingDisabled(): self
+    {
+        return new self('Sending is switched off in this app (campaigns.enabled, CAMPAIGNS_ENABLED), so no campaign can start, resume or speed up.');
+    }
+
+    public static function campaignCannot(string $action, string $status): self
+    {
+        return new self("A {$status} campaign can't be {$action}.");
+    }
+
+    public static function noTargetLists(): self
+    {
+        return new self('The campaign has no target lists: set the lists it goes to first.');
+    }
+
+    public static function invalidRecipientCount(): self
+    {
+        return new self('Give the number of recipients the audience preview showed (at least 1), so a start never reaches people nobody counted.');
+    }
+
+    public static function recipientCountChanged(int $expected, int $actual): self
+    {
+        return new self("The audience now holds {$actual} recipients, not the {$expected} confirmed for the start. Preview it again, and start with the new number if it is still right.");
+    }
+
+    /**
+     * A database error met while freezing, without the original, whose
+     * message lists the SQL with its values: recipients' addresses.
+     */
+    public static function freezeFailed(string|int $sqlState): self
+    {
+        return new self("The database refused part of the campaign's freeze (SQLSTATE {$sqlState}). Start it again.");
+    }
+
+    public static function scheduleTooFar(): self
+    {
+        return new self('A campaign can be scheduled at most a year ahead.');
+    }
+
+    public static function paceFaster(): self
+    {
+        return new self('That pace sends faster than the current one (a higher number, a lifted cap, or wider or moved sending hours), so it is a speed-up, not a slow-down.');
+    }
+
     public static function invalidFilter(string $filter, string $reason): self
     {
         return new self("The filter \"{$filter}\" can't be used: {$reason}.");

@@ -8,10 +8,13 @@ use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Mozex\Campaigns\CampaignsException;
 use Mozex\Campaigns\Enums\EngagementTier;
+use Mozex\Campaigns\Enums\MessageStatus;
 use Mozex\Campaigns\Enums\SubscriptionStatus;
+use Mozex\Campaigns\Models\Campaign;
 use Mozex\Campaigns\Models\CampaignList;
 use Mozex\Campaigns\Models\Subscriber;
 use Mozex\Campaigns\Support\Engagement;
+use Mozex\Campaigns\Support\Keys;
 use Throwable;
 
 /**
@@ -34,7 +37,22 @@ readonly class SubscriberFilters
     /**
      * The keys fromArray() reads.
      */
-    public const KEYS = ['lists', 'list_status', 'locales', 'countries', 'tiers', 'opted_out', 'blocked', 'sunset', 'custom_fields', 'dates'];
+    public const KEYS = ['lists', 'list_status', 'locales', 'countries', 'tiers', 'opted_out', 'blocked', 'sunset', 'custom_fields', 'dates', 'campaigns'];
+
+    /**
+     * What a subscriber did with an earlier campaign (by its key). Received
+     * means the provider accepted the email and it didn't fail; the "not"
+     * outcomes other than not_received need it received, so someone the
+     * campaign never reached hasn't "not opened" it.
+     */
+    public const OUTCOMES = ['received', 'not_received', 'opened', 'not_opened', 'clicked', 'not_clicked'];
+
+    /**
+     * A custom field's name: letters, digits and underscores, never a digit
+     * first. A dot or an arrow would reach into a nested value, and
+     * PostgreSQL reads a name of digits as an array index.
+     */
+    public const CUSTOM_FIELD_NAME = '/^[A-Za-z_][A-Za-z0-9_]{0,63}$/';
 
     /**
      * The dates a "dates" filter can bound, and their columns.
@@ -57,6 +75,7 @@ readonly class SubscriberFilters
      * @param  list<EngagementTier>  $tiers
      * @param  array<string, string|int|bool|null>  $customFields  Each named custom field equal to its value; null matches a field that is missing or null.
      * @param  list<array{field: key-of<self::DATE_FIELDS>, after: ?CarbonImmutable, before: ?CarbonImmutable}>  $dates  Each date on or after "after" and before "before".
+     * @param  list<array{campaign: string, outcome: value-of<self::OUTCOMES>}>  $campaigns  Each outcome of each campaign.
      */
     public function __construct(
         public array $lists = [],
@@ -69,6 +88,7 @@ readonly class SubscriberFilters
         public ?bool $sunset = null,
         public array $customFields = [],
         public array $dates = [],
+        public array $campaigns = [],
     ) {}
 
     /**
@@ -109,6 +129,7 @@ readonly class SubscriberFilters
             sunset: static::flag($filters, 'sunset'),
             customFields: static::customFields($filters['custom_fields'] ?? []),
             dates: static::dates($filters['dates'] ?? []),
+            campaigns: static::outcomes($filters['campaigns'] ?? []),
         );
     }
 
@@ -154,6 +175,10 @@ readonly class SubscriberFilters
                 'after' => $date['after']?->toIso8601String(),
                 'before' => $date['before']?->toIso8601String(),
             ], $this->dates);
+        }
+
+        if ($this->campaigns !== []) {
+            $filters['campaigns'] = $this->campaigns;
         }
 
         return $filters;
@@ -223,7 +248,46 @@ readonly class SubscriberFilters
             }
         }
 
+        if ($this->campaigns !== []) {
+            static::whereOutcomes($query, $this->campaigns);
+        }
+
         return $query;
+    }
+
+    /**
+     * @param  Builder<Subscriber>  $query
+     * @param  list<array{campaign: string, outcome: value-of<self::OUTCOMES>}>  $outcomes
+     *
+     * @throws CampaignsException when a campaign doesn't exist
+     */
+    protected static function whereOutcomes(Builder $query, array $outcomes): void
+    {
+        $keys = array_values(array_unique(array_column($outcomes, 'campaign')));
+        $ids = Campaign::query()->whereIn('key', $keys)->pluck('id', 'key');
+        $missing = array_values(array_diff($keys, $ids->keys()->all()));
+
+        if ($missing !== []) {
+            throw CampaignsException::unknownCampaigns($missing);
+        }
+
+        $received = [MessageStatus::Sent, MessageStatus::Delivered];
+
+        foreach ($outcomes as ['campaign' => $key, 'outcome' => $outcome]) {
+            $constrain = match ($outcome) {
+                'received', 'not_received' => fn (Builder $message): Builder => $message->whereIn('status', $received),
+                'opened' => fn (Builder $message): Builder => $message->whereNotNull('opened_at'),
+                'not_opened' => fn (Builder $message): Builder => $message->whereIn('status', $received)->whereNull('opened_at'),
+                'clicked' => fn (Builder $message): Builder => $message->whereNotNull('clicked_at'),
+                'not_clicked' => fn (Builder $message): Builder => $message->whereIn('status', $received)->whereNull('clicked_at'),
+            };
+
+            $ofCampaign = fn (Builder $message): Builder => $constrain($message->where('campaign_id', $ids[$key]));
+
+            $outcome === 'not_received'
+                ? $query->whereDoesntHave('messages', $ofCampaign)
+                : $query->whereHas('messages', $ofCampaign);
+        }
     }
 
     /**
@@ -319,10 +383,7 @@ readonly class SubscriberFilters
         }
 
         foreach ($fields as $name => $value) {
-            // Letters, digits and underscores only, never a digit first: a
-            // dot or an arrow would reach into a nested value, and PostgreSQL
-            // reads a name of digits as an array index.
-            if (preg_match('/^[A-Za-z_][A-Za-z0-9_]{0,63}$/', (string) $name) !== 1) {
+            if (preg_match(static::CUSTOM_FIELD_NAME, (string) $name) !== 1) {
                 throw CampaignsException::invalidFilter('custom_fields', 'a field name is letters, digits and underscores, starting with a letter or an underscore');
             }
 
@@ -365,6 +426,30 @@ readonly class SubscriberFilters
 
             return ['field' => $field, 'after' => $after, 'before' => $before];
         }, $dates);
+    }
+
+    /**
+     * @return list<array{campaign: string, outcome: value-of<self::OUTCOMES>}>
+     */
+    protected static function outcomes(mixed $outcomes): array
+    {
+        if (! is_array($outcomes) || ! array_is_list($outcomes)) {
+            throw CampaignsException::invalidFilter('campaigns', 'it takes a list of {campaign, outcome}');
+        }
+
+        return array_map(function (mixed $outcome): array {
+            $valid = is_array($outcome)
+                && array_diff(array_keys($outcome), ['campaign', 'outcome']) === []
+                && is_string($outcome['campaign'] ?? null) && Keys::isValid($outcome['campaign'])
+                && in_array($outcome['outcome'] ?? null, static::OUTCOMES, true);
+
+            if (! $valid) {
+                throw CampaignsException::invalidFilter('campaigns', 'each names a campaign by its key and an outcome: '.implode(', ', static::OUTCOMES));
+            }
+
+            /** @var array{campaign: string, outcome: value-of<self::OUTCOMES>} $outcome */
+            return ['campaign' => $outcome['campaign'], 'outcome' => $outcome['outcome']];
+        }, $outcomes);
     }
 
     /**

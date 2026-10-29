@@ -39,6 +39,8 @@ class CampaignFactory extends Factory
             'thresholds' => null,
             'recipient_count' => null,
             'pause_reason' => null,
+            'start_error' => null,
+            'start_run' => null,
             'report' => null,
             'template_id' => null,
             'frozen_revision_id' => null,
