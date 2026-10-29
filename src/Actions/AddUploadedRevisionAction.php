@@ -9,6 +9,7 @@ use Mozex\Campaigns\CampaignsException;
 use Mozex\Campaigns\Enums\CampaignStatus;
 use Mozex\Campaigns\Models\Campaign;
 use Mozex\Campaigns\Models\Template;
+use Mozex\Campaigns\Support\TextValue;
 use Mozex\Campaigns\Uploads\UploadedRevision;
 
 /**
@@ -43,6 +44,11 @@ class AddUploadedRevisionAction
         if ($owner instanceof Campaign && $owner->status !== CampaignStatus::Draft) {
             throw CampaignsException::campaignNotDraft($owner->status->value);
         }
+
+        // Likewise before the upload is used up: AddRevisionAction checks
+        // them again.
+        TextValue::optional('note', $note, 255);
+        TextValue::optional('author', $author, 255);
 
         $email = $this->read->execute($uploadId, $subjects, $preheaders);
 

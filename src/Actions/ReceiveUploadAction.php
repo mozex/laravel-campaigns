@@ -12,9 +12,10 @@ use Throwable;
 
 /**
  * Takes the file sent to an upload link: once, before the link expires,
- * and only up to campaigns.uploads.max_size, counted on the bytes as they
- * arrive rather than on a length the sender declares. The file then waits
- * on campaigns.uploads.disk, a private disk, for Upload::KEEP_HOURS.
+ * and only up to its purpose's limit (Upload::maxSize()), counted on the
+ * bytes as they arrive; a length the sender declares over it is refused
+ * before anything is read. The file then waits on campaigns.uploads.disk,
+ * a private disk, for Upload::KEEP_HOURS.
  *
  * A refusal's exception code is the HTTP status the endpoint answers with:
  * 404 for an unknown link, 409 for one a file already came through, 410
@@ -29,10 +30,11 @@ class ReceiveUploadAction
 
     /**
      * @param  resource|string  $body  the request body, as a stream or a string
+     * @param  ?int  $declaredSize  the length the sender declares (Content-Length), when known
      *
      * @throws CampaignsException
      */
-    public function execute(string $uuid, mixed $body, ?string $mime = null): Upload
+    public function execute(string $uuid, mixed $body, ?string $mime = null, ?int $declaredSize = null): Upload
     {
         $upload = Upload::forId($uuid);
 
@@ -44,7 +46,13 @@ class ReceiveUploadAction
             throw CampaignsException::uploadExpired();
         }
 
-        [$stream, $size] = $this->buffer($body);
+        $max = Upload::maxSize($upload->purpose);
+
+        if ($declaredSize !== null && $declaredSize > $max) {
+            throw CampaignsException::uploadTooLarge($max);
+        }
+
+        [$stream, $size] = $this->buffer($body, $max);
 
         $disk = (string) config('campaigns.uploads.disk');
         // Its own name per attempt, so two requests racing on one link never
@@ -101,9 +109,8 @@ class ReceiveUploadAction
      *
      * @throws CampaignsException
      */
-    protected function buffer(mixed $body): array
+    protected function buffer(mixed $body, int $max): array
     {
-        $max = (int) config('campaigns.uploads.max_size');
         $buffer = fopen('php://temp/maxmemory:2097152', 'w+b');
 
         if ($buffer === false) {

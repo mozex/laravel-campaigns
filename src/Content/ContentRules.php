@@ -13,14 +13,17 @@ use Mozex\Campaigns\CampaignsException;
  * written); an unsubscribe link in the HTML and in the plain text alike
  * ({{unsubscribe_url}}, or {{footer}}, which carries it); every image on
  * https; and at most 90 KB of HTML once filled in for a recipient, since
- * Gmail clips an email past 102 KB and click tracking lengthens every link.
- * Every problem is reported at once.
+ * Gmail clips an email past 102 KB and click tracking lengthens every link;
+ * and at most MAX_LOCALES languages, so an agent's answer about one email or
+ * a page of them stays short. Every problem is reported at once.
  */
 class ContentRules
 {
     public const MAX_HTML_BYTES = 90 * 1024;
 
     public const MAX_LINE_LENGTH = 255;
+
+    public const MAX_LOCALES = 20;
 
     public function __construct(protected Renderer $renderer) {}
 
@@ -42,6 +45,10 @@ class ContentRules
         $problems = [];
         $prepared = [];
         $seen = [];
+
+        if (count($contents) > static::MAX_LOCALES) {
+            $problems[] = 'There are '.count($contents).' languages; an email holds at most '.static::MAX_LOCALES.'.';
+        }
 
         foreach ($contents as $content) {
             $locale = $content->locale;

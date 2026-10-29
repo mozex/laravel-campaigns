@@ -43,6 +43,12 @@ uses(TestCase::class)->in(__DIR__);
 
 dataset('databases', ['sqlite', 'mysql', 'pgsql']);
 
+// The characters that cost an MCP answer most, read as JSON: a quote takes
+// two characters, a control character and the line and paragraph
+// separators six (ShownText shows the last two as spaces, so each comes
+// with a letter, or a cut text would be all spaces and trimmed away).
+dataset('costly characters', ['quotes' => '"', 'control characters' => "\x01x", 'line separators' => "\u{2028}x"]);
+
 /**
  * The actions in a subscriber's consent records, oldest first.
  *

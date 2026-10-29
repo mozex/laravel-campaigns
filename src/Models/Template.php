@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
+use Mozex\Campaigns\CampaignsException;
 use Mozex\Campaigns\Database\Factories\TemplateFactory;
 use Mozex\Campaigns\Models\Concerns\HasRevisions;
 
@@ -68,6 +69,16 @@ class Template extends Model
     public static function findByKey(string $key): ?self
     {
         return static::query()->where('key', $key)->first();
+    }
+
+    /**
+     * The template with this key, archived or not.
+     *
+     * @throws CampaignsException when no template has it
+     */
+    public static function forKey(string $key): self
+    {
+        return static::findByKey($key) ?? throw CampaignsException::unknownTemplate($key);
     }
 
     /**

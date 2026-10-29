@@ -95,11 +95,11 @@ describe('an upload link', function (): void {
         {
             public string $uuid = '';
 
-            protected function buffer(mixed $body): array
+            protected function buffer(mixed $body, int $max): array
             {
                 app(ReceiveUploadAction::class)->execute($this->uuid, 'the other request');
 
-                return parent::buffer($body);
+                return parent::buffer($body, $max);
             }
         };
         $racing->uuid = $upload->uuid;

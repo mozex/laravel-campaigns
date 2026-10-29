@@ -2,8 +2,11 @@
 
 declare(strict_types=1);
 
+use Illuminate\Support\Facades\Route;
 use Laravel\Mcp\Facades\Mcp;
+use Mozex\Campaigns\Http\Controllers\AgentFileController;
 use Mozex\Campaigns\Http\Middleware\AuthenticateAgent;
+use Mozex\Campaigns\Http\Middleware\PageHeaders;
 use Mozex\Campaigns\Mcp\CampaignsServer;
 
 /*
@@ -21,6 +24,26 @@ $middleware = array_values(array_filter((array) config('campaigns.mcp.middleware
 $path = config('campaigns.mcp.path');
 
 // An empty path would put the server on the app's home page.
-Mcp::web(is_string($path) && trim($path, '/ ') !== '' ? $path : 'mcp/campaigns', CampaignsServer::class)
+$path = is_string($path) && trim($path, '/ ') !== '' ? trim($path, '/ ') : 'mcp/campaigns';
+
+Mcp::web($path, CampaignsServer::class)
     ->middleware([AuthenticateAgent::class, ...$middleware])
     ->name('campaigns.mcp');
+
+/*
+ * The signed links the tools hand an agent: a file sent with curl, and a
+ * revision's email to download. curl carries no token, so the signature is
+ * the authorization, checked in the controller, which answers every refusal
+ * itself; they skip the server's sign-in and the app's middleware for it,
+ * and sit under its path so one rule at the app's CDN covers them all.
+ */
+Route::middleware(PageHeaders::class)->group(function () use ($path): void {
+    Route::put("{$path}/uploads/{upload}", [AgentFileController::class, 'upload'])
+        ->whereUuid('upload')
+        ->name('campaigns.mcp.upload');
+
+    Route::get("{$path}/downloads/{revision}/{file}", [AgentFileController::class, 'download'])
+        ->whereUuid('revision')
+        ->whereIn('file', AgentFileController::FILES)
+        ->name('campaigns.mcp.download');
+});

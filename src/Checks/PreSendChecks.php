@@ -39,6 +39,11 @@ use Mozex\Campaigns\Support\Sender;
 class PreSendChecks
 {
     /**
+     * Every check a run writes, by its name in the results.
+     */
+    public const CHECKS = ['locales', 'unsubscribe', 'privacy_link', 'size', 'images', 'links', 'spam_score'];
+
+    /**
      * A conservative length for a click-tracking address, which replaces
      * every link in the HTML.
      */

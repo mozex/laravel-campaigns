@@ -141,8 +141,11 @@ return [
     /*
      * Where files sent through an upload link wait until a tool uses them:
      * a private disk, since an upload may hold an unsent email or a list of
-     * contacts. A file may be at most max_size bytes (default 25 MB); keep
-     * it under what your proxy accepts in one request.
+     * contacts. A file may be at most max_size bytes (default 25 MB), an
+     * image at most assets.max_size, and neither more than PHP's
+     * post_max_size, which Laravel holds every request's body to: raise
+     * post_max_size to max_size, and keep both under what your web server
+     * and proxy accept in one request.
      */
     'uploads' => [
         'disk' => env('CAMPAIGNS_UPLOADS_DISK', 'local'),

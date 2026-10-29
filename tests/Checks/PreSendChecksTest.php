@@ -174,7 +174,8 @@ it('checks the links, images, size, unsubscribe and privacy links, languages and
         ->and(check($results, 'spam_score', 'en'))
         ->status->toBe('passed')
         ->score->toBe(2.3)
-        ->rules->toBe([['score' => 1.4, 'description' => 'Missing Date: header']]);
+        ->rules->toBe([['score' => 1.4, 'description' => 'Missing Date: header']])
+        ->and(array_values(array_unique(array_column($results['checks'], 'check'))))->toEqualCanonicalizing(PreSendChecks::CHECKS);
 
     Http::assertSent(function (Request $request): bool {
         return $request->url() === PreSendChecks::SPAM_CHECKER

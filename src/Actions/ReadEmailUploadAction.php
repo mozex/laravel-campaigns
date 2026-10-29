@@ -11,6 +11,7 @@ use Mozex\Campaigns\Content\ContentRules;
 use Mozex\Campaigns\Content\EmailContent;
 use Mozex\Campaigns\Content\Html;
 use Mozex\Campaigns\Content\ImageReferences;
+use Mozex\Campaigns\Content\Locales;
 use Mozex\Campaigns\Enums\UploadPurpose;
 use Mozex\Campaigns\Uploads\EmailArchive;
 use Mozex\Campaigns\Uploads\EmailUpload;
@@ -44,6 +45,8 @@ class ReadEmailUploadAction
      */
     public function execute(string $uploadId, array $subjects = [], array $preheaders = []): EmailUpload
     {
+        static::checkGiven($subjects, $preheaders);
+
         $upload = $this->claim->execute($uploadId, UploadPurpose::Email);
 
         try {
@@ -53,6 +56,38 @@ class ReadEmailUploadAction
         }
 
         return $this->read($bytes, $subjects, $preheaders);
+    }
+
+    /**
+     * What can be refused in the subjects and preheaders given before the
+     * upload is read, since reading uses it up: each keyed by a locale and
+     * no longer than a subject may be. Whether the upload holds that locale
+     * is known only once it is read.
+     *
+     * @param  array<array-key, mixed>  $subjects
+     * @param  array<array-key, mixed>  $preheaders
+     *
+     * @throws CampaignsException listing every problem
+     */
+    public static function checkGiven(array $subjects, array $preheaders): void
+    {
+        $problems = [];
+
+        foreach (['subject' => $subjects, 'preheader' => $preheaders] as $part => $given) {
+            foreach ($given as $locale => $value) {
+                $shown = mb_strimwidth((string) $locale, 0, 40, '...');
+
+                if (! Locales::isValid((string) $locale)) {
+                    $problems[] = "A {$part} was given for \"{$shown}\", which is not a locale (en, pt_BR, zh-Hant).";
+                } elseif (! is_string($value) || mb_strlen($value) > ContentRules::MAX_LINE_LENGTH) {
+                    $problems[] = "{$shown}: the {$part} must be text of at most ".ContentRules::MAX_LINE_LENGTH.' characters.';
+                }
+            }
+        }
+
+        if ($problems !== []) {
+            throw CampaignsException::invalidUpload($problems);
+        }
     }
 
     /**

@@ -142,6 +142,15 @@ abstract class CampaignsTool extends Tool
     }
 
     /**
+     * Who made a revision, an asset or an upload link, for its author
+     * column.
+     */
+    protected static function author(): ?string
+    {
+        return Principal::current()?->name();
+    }
+
+    /**
      * @throws CampaignsException when no subscriber has the address
      */
     protected static function subscriber(string $email): Subscriber

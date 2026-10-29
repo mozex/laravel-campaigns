@@ -68,6 +68,7 @@ it('refuses what breaks the rules, every problem at once', function (array $cont
     'no content' => [[], ['There is no content.']],
     'no default language' => [[validContent('fa')], ['There is no en version']],
     'a language twice' => [[validContent(), validContent()], ['en: given twice.']],
+    'too many languages' => [[validContent(), ...array_map(fn (int $number): EmailContent => validContent('x'.chr(96 + $number)), range(1, 20))], ['There are 21 languages; an email holds at most 20.']],
     'not a locale' => [[validContent(), validContent('../../etc')], ['"../../etc" is not a locale']],
     'an empty subject' => [[validContent(subject: '  ')], ['en: the subject is empty.']],
     'a subject on two lines' => [[validContent(subject: "One\nTwo")], ['en: the subject must fit on one line.']],

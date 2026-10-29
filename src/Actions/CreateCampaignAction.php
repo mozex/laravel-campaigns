@@ -79,6 +79,8 @@ class CreateCampaignAction
         }
 
         [$template, $contents] = $this->source($email);
+        TextValue::optional('note', $note, 255);
+        TextValue::optional('author', $author, 255);
         $upload = $email->uploadId === null ? null : $this->readUpload->execute($email->uploadId, $email->subjects, $email->preheaders);
 
         return (new Campaign)->getConnection()->transaction(function () use ($columns, $template, $contents, $upload, $note, $author, $key): CreatedCampaign {

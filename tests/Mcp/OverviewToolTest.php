@@ -130,7 +130,7 @@ it('stays under the answer limit with every column at its longest', function (st
         ->and($content['campaigns'])->toHaveCount(Overview::LIMIT)
         ->and($content['campaigns_total'])->toBe(Overview::LIMIT + 1)
         ->and(mb_strlen($content['campaigns'][0]['pause_reason']))->toBe(Overview::PAUSE_REASON_LENGTH + 3);
-})->with(['quotes' => '"', 'control characters' => "\x01x"]);
+})->with('costly characters');
 
 it('says what is switched off or missing', function (): void {
     config([

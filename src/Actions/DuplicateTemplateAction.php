@@ -10,7 +10,9 @@ use Mozex\Campaigns\Templates\StarterTemplates;
 
 /**
  * A new template starting from another one's current email, or from one of
- * the package's starter templates (named by its key).
+ * the package's starter templates (named by its key). A copy of a template
+ * takes its description unless given one; a starter's takes only the one
+ * given.
  */
 class DuplicateTemplateAction
 {
@@ -19,8 +21,14 @@ class DuplicateTemplateAction
     /**
      * @throws CampaignsException
      */
-    public function execute(Template|string $source, string $key, string $name, ?string $author = null): Template
-    {
+    public function execute(
+        Template|string $source,
+        string $key,
+        string $name,
+        ?string $author = null,
+        ?string $description = null,
+        bool $isDefault = false,
+    ): Template {
         $starter = is_string($source) ? StarterTemplates::find($source) : null;
 
         if ($starter !== null) {
@@ -28,6 +36,8 @@ class DuplicateTemplateAction
                 key: $key,
                 name: $name,
                 contents: $starter->contents,
+                description: $description,
+                isDefault: $isDefault,
                 note: "Duplicated from the starter template \"{$starter->key}\"",
                 author: $author,
             );
@@ -49,7 +59,8 @@ class DuplicateTemplateAction
             key: $key,
             name: $name,
             contents: $revision->contentsToCopy(),
-            description: $template->description,
+            description: $description ?? $template->description,
+            isDefault: $isDefault,
             note: "Duplicated from template \"{$template->key}\", revision {$revision->number}",
             author: $author,
         );

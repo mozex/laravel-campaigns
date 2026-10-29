@@ -84,6 +84,49 @@ class Upload extends Model
     }
 
     /**
+     * The largest file a link of this purpose takes: the uploads' limit, an
+     * image's own (campaigns.assets.max_size), and PHP's post_max_size, which
+     * Laravel's ValidatePostSize middleware holds every request's body to,
+     * whatever its method.
+     */
+    public static function maxSize(UploadPurpose $purpose): int
+    {
+        $limits = [(int) config('campaigns.uploads.max_size')];
+
+        if ($purpose === UploadPurpose::Image) {
+            $limits[] = (int) config('campaigns.assets.max_size');
+        }
+
+        $post = static::iniBytes((string) ini_get('post_max_size'));
+
+        // 0 lifts PHP's limit.
+        if ($post > 0) {
+            $limits[] = $post;
+        }
+
+        return min($limits);
+    }
+
+    /**
+     * An ini size (8M, 1G, 512K, or bytes) in bytes, as Laravel reads it.
+     */
+    protected static function iniBytes(string $value): int
+    {
+        $value = trim($value);
+
+        if (is_numeric($value)) {
+            return (int) $value;
+        }
+
+        return (int) $value * match (strtoupper(substr($value, -1))) {
+            'K' => 1024,
+            'M' => 1024 ** 2,
+            'G' => 1024 ** 3,
+            default => 1,
+        };
+    }
+
+    /**
      * The upload a link's id names. The id is checked first: PostgreSQL's
      * uuid column throws on a malformed one.
      *

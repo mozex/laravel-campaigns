@@ -89,4 +89,4 @@ it('pages the lists so the longest page stays under the limit', function (string
         ->and(mb_strlen($first['lists'][0]['description']))->toBe(ListSummary::DESCRIPTION_LENGTH + 3)
         ->and(json_encode($first))->not->toContain('\u0001')
         ->and($second['lists'])->toHaveCount(5);
-})->with(['quotes' => '"', 'control characters' => "\x01x"]);
+})->with('costly characters');

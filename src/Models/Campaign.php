@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
+use Mozex\Campaigns\CampaignsException;
 use Mozex\Campaigns\Database\Factories\CampaignFactory;
 use Mozex\Campaigns\Enums\CampaignStatus;
 use Mozex\Campaigns\Models\Concerns\HasRevisions;
@@ -103,6 +104,16 @@ class Campaign extends Model
     public function uniqueIds(): array
     {
         return ['uuid'];
+    }
+
+    /**
+     * The campaign with this key.
+     *
+     * @throws CampaignsException when no campaign has it
+     */
+    public static function forKey(string $key): self
+    {
+        return static::query()->where('key', $key)->first() ?? throw CampaignsException::unknownCampaigns([$key]);
     }
 
     /**

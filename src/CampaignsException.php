@@ -158,7 +158,7 @@ class CampaignsException extends RuntimeException
      */
     public static function unknownCampaigns(array $keys): self
     {
-        return new self('No campaign has the key '.implode(', ', array_map(fn (string $key): string => "\"{$key}\"", $keys)).'.');
+        return new self('No campaign has the key '.implode(', ', array_map(fn (string $key): string => '"'.mb_strimwidth($key, 0, 130, '...').'"', $keys)).'.');
     }
 
     public static function invalidSetting(string $setting, string $reason): self
@@ -275,7 +275,7 @@ class CampaignsException extends RuntimeException
 
     public static function unknownTemplate(string $key): self
     {
-        return new self("There is no template with the key \"{$key}\".");
+        return new self('There is no template with the key "'.mb_strimwidth($key, 0, 130, '...').'".');
     }
 
     public static function invalidValue(string $field, string $reason): self
@@ -366,6 +366,33 @@ class CampaignsException extends RuntimeException
     public static function invalidUpload(array $problems): self
     {
         return new self("The upload can't be used:\n- ".implode("\n- ", $problems), 422);
+    }
+
+    // A signed link's refusal, likewise answered with its code.
+
+    public static function linkInvalid(): self
+    {
+        return new self('This link isn\'t valid. Ask for a new one.', 403);
+    }
+
+    public static function linkExpired(): self
+    {
+        return new self('This link has expired. Ask for a new one.', 410);
+    }
+
+    public static function linkThrottled(int $seconds): self
+    {
+        return new self("Too many requests to this link. Try again in {$seconds} seconds.", 429);
+    }
+
+    public static function downloadNotFound(): self
+    {
+        return new self('There is no such email to download.', 404);
+    }
+
+    public static function downloadNotBuilt(): self
+    {
+        return new self('The download could not be built. Try again.', 500);
     }
 
     public static function invalidLocale(string $locale): self
