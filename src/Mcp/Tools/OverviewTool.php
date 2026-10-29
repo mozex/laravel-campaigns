@@ -22,7 +22,7 @@ use Mozex\Campaigns\Reports\Overview;
 
 #[Name('get_overview')]
 #[Title('Get overview')]
-#[Description('Start here. How sending is set up and what is switched off, the addresses test emails may go to, every list with its counts (by status, how many may be mailed, and by engagement tier), the campaigns starting, scheduled, sending or paused, and the placeholders an email may hold with this app\'s values. At most 25 lists and 25 campaigns; lists_total and campaigns_total say how many there are.')]
+#[Description('Start here. How sending is set up and what is switched off, the addresses test emails may go to, every list in use with its counts (by status, how many may be mailed, and by engagement tier; archived lists through list_lists), the campaigns starting, scheduled, sending or paused, and the placeholders an email may hold with this app\'s values. At most 25 lists and 25 campaigns; lists_total and campaigns_total say how many there are.')]
 #[IsReadOnly]
 #[IsIdempotent]
 #[IsOpenWorld(false)]

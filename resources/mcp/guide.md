@@ -8,7 +8,7 @@ Call `get_overview` first. It tells you:
 
 - whether sending is switched on, which provider and domain send, and what is switched off (`sending.notes`);
 - the addresses a test email may go to;
-- every list with its counts: `subscribed`, `pending` (waiting for a double opt-in), `unsubscribed`, `mailable` (subscribed people who aren't opted out, blocked or sunset) and the subscribed people by engagement tier;
+- every list in use (archived ones through `list_lists`) with its counts: `subscribed`, `pending` (waiting for a double opt-in), `unsubscribed`, `mailable` (subscribed people who aren't opted out, blocked or sunset) and the subscribed people by engagement tier;
 - the campaigns that are starting, scheduled, sending or paused;
 - the placeholders an email may hold, with this app's values. Only `first_name`, `name` and `email` may go in a subject or preheader.
 

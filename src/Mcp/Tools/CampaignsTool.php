@@ -12,8 +12,11 @@ use Laravel\Mcp\ResponseFactory;
 use Laravel\Mcp\Server\Tool;
 use Laravel\Mcp\Support\ValidationMessages;
 use Mozex\Campaigns\CampaignsException;
+use Mozex\Campaigns\Enums\ConsentBasis;
 use Mozex\Campaigns\Enums\Rights;
 use Mozex\Campaigns\Mcp\Principal;
+use Mozex\Campaigns\Models\Subscriber;
+use Mozex\Campaigns\Support\ConsentContext;
 
 /**
  * The rules every tool shares. A tool is a read tool when it carries
@@ -43,7 +46,17 @@ abstract class CampaignsTool extends Tool
      */
     public const RESULT_LIMIT = 50000;
 
+    /**
+     * The longest refusal, which a list of an email's problems stays under.
+     */
+    public const REFUSAL_LENGTH = 5000;
+
     public const APPROVAL_META = 'anthropic/requiresUserInteraction';
+
+    /**
+     * The source of the consent records an agent's changes leave.
+     */
+    public const CONSENT_SOURCE = 'agent';
 
     protected bool $requiresApproval = false;
 
@@ -112,7 +125,28 @@ abstract class CampaignsTool extends Tool
 
     public static function refused(string $message): ResponseFactory
     {
+        // A refusal may quote what the agent sent, which has no length limit.
+        $message = mb_strimwidth($message, 0, static::REFUSAL_LENGTH, '...');
+
         return Response::make(Response::error($message))->withStructuredContent(['error' => $message]);
+    }
+
+    /**
+     * The consent context of a change an agent makes for someone: never the
+     * request's IP address or browser, which are the agent's, not the
+     * person's; who made it goes into the records' meta.
+     */
+    protected static function agentContext(string $source = self::CONSENT_SOURCE, ?ConsentBasis $basis = null): ConsentContext
+    {
+        return new ConsentContext(source: $source, basis: $basis, meta: ['by' => Principal::current()?->name()]);
+    }
+
+    /**
+     * @throws CampaignsException when no subscriber has the address
+     */
+    protected static function subscriber(string $email): Subscriber
+    {
+        return Subscriber::findByEmail($email) ?? throw CampaignsException::unknownSubscriber();
     }
 
     /**

@@ -37,11 +37,35 @@ class ClaimUploadAction
             return $upload;
         }
 
-        throw match (true) {
+        throw static::refusal($upload, $purpose) ?? CampaignsException::uploadUnavailable('it was already used');
+    }
+
+    /**
+     * The upload, when a claim would take it now, without claiming it: for a
+     * preview that reads the file the real run claims later.
+     *
+     * @throws CampaignsException naming why the upload can't be used
+     */
+    public function usable(string $uuid, UploadPurpose $purpose): Upload
+    {
+        $upload = Upload::forId($uuid);
+        $refusal = static::refusal($upload, $purpose);
+
+        if ($refusal !== null) {
+            throw $refusal;
+        }
+
+        return $upload;
+    }
+
+    protected static function refusal(Upload $upload, UploadPurpose $purpose): ?CampaignsException
+    {
+        return match (true) {
             $upload->purpose !== $purpose => CampaignsException::uploadWrongPurpose($purpose, $upload->purpose),
             $upload->claimed_at !== null => CampaignsException::uploadUnavailable('it was already used'),
             $upload->expires_at->isPast() => CampaignsException::uploadExpired(),
-            default => CampaignsException::uploadUnavailable('no file has arrived through it yet'),
+            $upload->received_at === null => CampaignsException::uploadUnavailable('no file has arrived through it yet'),
+            default => null,
         };
     }
 }

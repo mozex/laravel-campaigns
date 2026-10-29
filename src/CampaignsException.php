@@ -150,7 +150,7 @@ class CampaignsException extends RuntimeException
      */
     public static function unknownLists(array $keys): self
     {
-        return new self('No list has the key '.implode(', ', array_map(fn (string $key): string => "\"{$key}\"", $keys)).'.');
+        return new self('No list has the key '.implode(', ', array_map(fn (string $key): string => '"'.mb_strimwidth($key, 0, 130, '...').'"', $keys)).'.');
     }
 
     /**
@@ -232,7 +232,7 @@ class CampaignsException extends RuntimeException
 
     public static function invalidFilter(string $filter, string $reason): self
     {
-        return new self("The filter \"{$filter}\" can't be used: {$reason}.");
+        return new self('The filter "'.mb_strimwidth($filter, 0, 40, '...')."\" can't be used: {$reason}.");
     }
 
     /**
@@ -371,5 +371,43 @@ class CampaignsException extends RuntimeException
     public static function invalidLocale(string $locale): self
     {
         return new self('"'.mb_strimwidth($locale, 0, 40, '...').'" is not a locale (en, pt_BR, zh-Hant).');
+    }
+
+    public static function unknownSubscriber(): self
+    {
+        return new self('No subscriber has that address.');
+    }
+
+    public static function listArchived(string $key): self
+    {
+        return new self("The list \"{$key}\" is archived. Restore it first.");
+    }
+
+    public static function dynamicListFixed(string $key): self
+    {
+        return new self("The list \"{$key}\" follows the app's records and config (campaigns.list_sources), so it can't be renamed or archived here.");
+    }
+
+    public static function listSourceKey(string $key): self
+    {
+        return new self("\"{$key}\" is the key of a dynamic list in campaigns.list_sources. Choose another.");
+    }
+
+    public static function tooManyContacts(int $max): self
+    {
+        return new self("At most {$max} contacts at a time. Send the rest in another call, or as a CSV through an import.");
+    }
+
+    public static function tooManyAddresses(int $max): self
+    {
+        return new self("At most {$max} addresses at a time. Send the rest in another call.");
+    }
+
+    /**
+     * @param  list<string>  $problems
+     */
+    public static function invalidCsv(array $problems): self
+    {
+        return new self("The CSV can't be imported:\n- ".implode("\n- ", $problems));
     }
 }

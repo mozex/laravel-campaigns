@@ -5,20 +5,13 @@ declare(strict_types=1);
 namespace Mozex\Campaigns\Reports;
 
 use Composer\InstalledVersions;
-use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
 use Mozex\Campaigns\Campaigns;
 use Mozex\Campaigns\CampaignsException;
 use Mozex\Campaigns\Content\Placeholders;
 use Mozex\Campaigns\Enums\CampaignStatus;
-use Mozex\Campaigns\Enums\EngagementTier;
-use Mozex\Campaigns\Enums\SubscriptionStatus;
 use Mozex\Campaigns\Models\Campaign;
 use Mozex\Campaigns\Models\CampaignList;
-use Mozex\Campaigns\Models\Subscriber;
-use Mozex\Campaigns\Models\Subscription;
-use Mozex\Campaigns\Support\Engagement;
 use Mozex\Campaigns\Support\Sender;
 use Mozex\Campaigns\Support\TestAddresses;
 
@@ -56,7 +49,7 @@ class Overview
             'package_version' => static::version(),
             'sending' => static::sending(),
             'lists' => static::lists(),
-            'lists_total' => CampaignList::query()->count(),
+            'lists_total' => CampaignList::query()->active()->count(),
             'campaigns' => static::campaigns(),
             'campaigns_total' => Campaign::query()->whereIn('status', static::OPEN_STATUSES)->count(),
             'placeholders' => static::placeholders(),
@@ -110,75 +103,14 @@ class Overview
     }
 
     /**
-     * Each list with its subscriptions by status, how many of its
-     * subscribed people may be mailed (not opted out, blocked or sunset),
-     * and its subscribed people by engagement tier.
+     * The lists in use with their counts; archived ones only through the
+     * list tool.
      *
      * @return list<array<string, mixed>>
      */
     protected static function lists(): array
     {
-        $lists = CampaignList::query()->orderBy('key')->limit(static::LIMIT)->get();
-
-        if ($lists->isEmpty()) {
-            return [];
-        }
-
-        $ids = $lists->modelKeys();
-
-        $statuses = Subscription::query()
-            ->whereIn('list_id', $ids)
-            ->groupBy('list_id', 'status')
-            ->selectRaw('list_id, status, count(*) as total')
-            ->toBase()
-            ->get();
-
-        $mailable = static::subscribedCounts($ids, fn (Builder $query): Builder => $query->mailable());
-
-        $tiers = [];
-
-        foreach (EngagementTier::cases() as $tier) {
-            $tiers[$tier->value] = static::subscribedCounts($ids, fn (Builder $query): Builder => Engagement::whereTier($query, $tier));
-        }
-
-        return $lists->map(function (CampaignList $list) use ($statuses, $mailable, $tiers): array {
-            $counts = [];
-
-            foreach (SubscriptionStatus::cases() as $status) {
-                $counts[$status->value] = (int) ($statuses->first(fn (object $row): bool => (int) $row->list_id === $list->id && $row->status === $status->value)->total ?? 0);
-            }
-
-            return [
-                'key' => $list->key,
-                'name' => $list->name,
-                'kind' => $list->kind->value,
-                'double_opt_in' => $list->double_opt_in,
-                ...$counts,
-                'mailable' => (int) ($mailable[$list->id] ?? 0),
-                'tiers' => array_map(fn (Collection $tierCounts): int => (int) ($tierCounts[$list->id] ?? 0), $tiers),
-            ];
-        })->all();
-    }
-
-    /**
-     * The subscribed people on each list whose subscriber the constraint
-     * keeps, by list id.
-     *
-     * @param  list<int>  $ids
-     * @param  callable(Builder<Subscriber>): Builder<Subscriber>  $constraint
-     * @return Collection<int, int>
-     */
-    protected static function subscribedCounts(array $ids, callable $constraint): Collection
-    {
-        /** @var Collection<int, int> */
-        return Subscription::query()
-            ->whereIn('list_id', $ids)
-            ->where('status', SubscriptionStatus::Subscribed)
-            ->whereHas('subscriber', $constraint)
-            ->groupBy('list_id')
-            ->selectRaw('list_id, count(*) as total')
-            ->toBase()
-            ->pluck('total', 'list_id');
+        return ListSummary::rows(CampaignList::query()->active()->orderBy('key')->limit(static::LIMIT)->get());
     }
 
     /**

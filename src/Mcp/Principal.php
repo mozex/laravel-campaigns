@@ -17,6 +17,8 @@ use Mozex\Campaigns\Models\ApiToken;
  */
 class Principal
 {
+    public const NAME_LENGTH = 255;
+
     public function __construct(
         public readonly Authenticatable $user,
         public readonly ?Rights $rights,
@@ -52,5 +54,27 @@ class Principal
     public function allows(Rights $needed): bool
     {
         return $this->rights?->allows($needed) ?? false;
+    }
+
+    /**
+     * Who this is in the records an agent's changes leave: a token's name,
+     * else the person's name or email, else their id; at most
+     * NAME_LENGTH characters.
+     */
+    public function name(): string
+    {
+        if ($this->user instanceof ApiToken) {
+            return $this->user->name;
+        }
+
+        foreach (['name', 'email'] as $field) {
+            $value = data_get($this->user, $field);
+
+            if (is_string($value) && trim($value) !== '') {
+                return mb_substr(trim($value), 0, static::NAME_LENGTH);
+            }
+        }
+
+        return mb_substr((string) $this->user->getAuthIdentifier(), 0, static::NAME_LENGTH);
     }
 }

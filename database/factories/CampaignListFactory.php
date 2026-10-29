@@ -41,6 +41,11 @@ class CampaignListFactory extends Factory
         ]);
     }
 
+    public function archived(): static
+    {
+        return $this->state(['archived_at' => now()]);
+    }
+
     public function doubleOptIn(): static
     {
         return $this->state([

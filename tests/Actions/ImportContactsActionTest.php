@@ -138,6 +138,8 @@ it('keeps a later row\'s opt-out whatever else it holds, and refuses what the da
         ['email' => 'a@example.com', 'opted_out' => true],
         ['email' => 'b@example.com', 'blocked' => 'hard_bounce'],
         ['email' => 'b@example.com', 'blocked' => 'complaint'],
+        ['email' => 'c@example.com', 'custom_fields' => ['bad name' => 1]],
+        ['email' => 'd@example.com', 'custom_fields' => ['nested' => ['a' => 1]]],
     ];
 
     $dryRun = import($rows, $list, dryRun: true);
@@ -148,11 +150,13 @@ it('keeps a later row\'s opt-out whatever else it holds, and refuses what the da
         ->and($result->suppressed)->toBe(2)
         ->and($result->problems)->toBe([
             'Row 2: the same address as row 1, which counts instead; this row\'s opt-out or block was added to it.',
-            'Row 3: The contact\'s custom_fields can\'t be imported: it can\'t be stored (Malformed UTF-8 characters, possibly incorrectly encoded).',
+            'Row 3: The custom field "city" is text of at most 1000 characters, a whole number, true, false or null.',
             'Row 4: The contact\'s name can\'t be imported: it holds a NUL character.',
             'Row 5: it has no email address that can be mailed.',
             'Row 6: the same address as row 1, which counts instead.',
             'Row 8: the same address as row 7, which counts instead.',
+            'Row 9: The custom field names are letters, digits and underscores, starting with a letter or an underscore.',
+            'Row 10: The custom field "nested" is text of at most 1000 characters, a whole number, true, false or null.',
         ])
         ->and(Subscriber::findByEmail('a@example.com')?->opted_out_at)->not->toBeNull()
         ->and(Subscriber::findByEmail('b@example.com')?->blocked_reason)->toBe(BlockReason::HardBounce)

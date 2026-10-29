@@ -49,12 +49,22 @@ class SetCustomFieldsAction
     }
 
     /**
+     * The rules every custom field meets, however it arrives (this action,
+     * an import, an agent adding a contact): a filter can find it by its
+     * name, and it shows in a lookup.
+     *
      * @param  array<array-key, mixed>  $fields
+     *
+     * @throws CampaignsException
      */
-    protected static function check(array $fields): void
+    public static function check(array $fields): void
     {
         if ($fields === [] || array_is_list($fields)) {
             throw CampaignsException::invalidValue('custom fields', 'are a map of field names to values');
+        }
+
+        if (count($fields) > static::MAX_FIELDS) {
+            throw CampaignsException::invalidValue('custom fields', 'may number at most '.static::MAX_FIELDS.' per subscriber');
         }
 
         foreach ($fields as $name => $value) {

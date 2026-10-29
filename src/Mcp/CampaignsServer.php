@@ -11,7 +11,21 @@ use Laravel\Mcp\Server\Tool;
 use Mozex\Campaigns\Campaigns;
 use Mozex\Campaigns\CampaignsException;
 use Mozex\Campaigns\Mcp\Resources\GuideResource;
+use Mozex\Campaigns\Mcp\Tools\AddContactsTool;
+use Mozex\Campaigns\Mcp\Tools\ArchiveListTool;
+use Mozex\Campaigns\Mcp\Tools\BlockContactTool;
+use Mozex\Campaigns\Mcp\Tools\CreateListTool;
+use Mozex\Campaigns\Mcp\Tools\GetSubscriberTool;
+use Mozex\Campaigns\Mcp\Tools\ListListsTool;
+use Mozex\Campaigns\Mcp\Tools\ListSubscribersTool;
 use Mozex\Campaigns\Mcp\Tools\OverviewTool;
+use Mozex\Campaigns\Mcp\Tools\PreviewContactsImportTool;
+use Mozex\Campaigns\Mcp\Tools\RemoveContactsTool;
+use Mozex\Campaigns\Mcp\Tools\RunContactsImportTool;
+use Mozex\Campaigns\Mcp\Tools\SetContactFieldsTool;
+use Mozex\Campaigns\Mcp\Tools\UnblockContactTool;
+use Mozex\Campaigns\Mcp\Tools\UnsubscribeContactTool;
+use Mozex\Campaigns\Mcp\Tools\UpdateListTool;
 
 /**
  * The MCP server agents run the app's campaigns through, at
@@ -35,6 +49,20 @@ class CampaignsServer extends Server
     /** @var array<int, class-string<Tool>> */
     protected array $tools = [
         OverviewTool::class,
+        ListListsTool::class,
+        CreateListTool::class,
+        UpdateListTool::class,
+        ArchiveListTool::class,
+        AddContactsTool::class,
+        RemoveContactsTool::class,
+        SetContactFieldsTool::class,
+        ListSubscribersTool::class,
+        GetSubscriberTool::class,
+        UnsubscribeContactTool::class,
+        BlockContactTool::class,
+        UnblockContactTool::class,
+        PreviewContactsImportTool::class,
+        RunContactsImportTool::class,
     ];
 
     /** @var array<int, class-string<McpResource>> */

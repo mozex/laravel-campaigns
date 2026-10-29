@@ -73,7 +73,7 @@ class ImportContactsAction
     /**
      * @param  iterable<ImportedContact|array<array-key, mixed>>  $contacts  Read one at a time, so a generator or a lazy collection streams a large source.
      * @param  ?CampaignList  $list  The static list the contacts join; null to record only opt-outs, blocks and engagement.
-     * @param  ConsentContext  $context  The import's source (its name), notice and meta; its basis defaults to imported, and its accepted is ignored.
+     * @param  ConsentContext  $context  The import's source (its name), notice and meta (which wins over a contact's own); its basis defaults to imported, and its accepted is ignored.
      * @param  bool  $dryRun  Roll every change back and only count it.
      * @param  ?string  $only  Import only the row with this address, to try an import on one contact first.
      *
@@ -212,7 +212,16 @@ class ImportContactsAction
      */
     protected function import(ImportedContact $contact, array $dates, string $address, ?CampaignList $list, ConsentContext $context): array
     {
-        $context = $context->withMeta($contact->meta);
+        // The import's own meta (who ran it, from which file) wins over a
+        // contact's, so a row can't rewrite who made the change.
+        $context = new ConsentContext(
+            source: $context->source,
+            basis: $context->basis,
+            noticeVersion: $context->noticeVersion,
+            ipAddress: $context->ipAddress,
+            userAgent: $context->userAgent,
+            meta: [...$contact->meta, ...$context->meta],
+        );
 
         // One locking read by address, before any plain one: it waits for a
         // deletion or an address change in progress and sees the row as it
@@ -292,6 +301,10 @@ class ImportContactsAction
      */
     protected function checkStorable(ImportedContact $contact): void
     {
+        if ($contact->customFields !== []) {
+            SetCustomFieldsAction::check($contact->customFields);
+        }
+
         $values = [...$this->details($contact), 'custom_fields' => $contact->customFields, 'meta' => $contact->meta];
 
         foreach ($values as $field => $value) {

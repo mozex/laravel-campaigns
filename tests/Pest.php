@@ -3,27 +3,38 @@
 declare(strict_types=1);
 
 use Carbon\CarbonInterface;
+use Illuminate\Auth\GenericUser;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
+use Laravel\Mcp\Server\Testing\PendingTestResponse;
 use Laravel\Mcp\Server\Testing\TestResponse as McpTestResponse;
 use Mozex\Campaigns\Actions\CreateCampaignAction;
+use Mozex\Campaigns\Actions\CreateUploadAction;
+use Mozex\Campaigns\Actions\ReceiveUploadAction;
 use Mozex\Campaigns\Actions\StartCampaignAction;
 use Mozex\Campaigns\Audiences\CampaignAudience;
 use Mozex\Campaigns\Content\EmailContent;
 use Mozex\Campaigns\Content\EmailSource;
 use Mozex\Campaigns\Contracts\CampaignProvider;
 use Mozex\Campaigns\Enums\MessageStatus;
+use Mozex\Campaigns\Enums\Rights;
 use Mozex\Campaigns\Enums\SubscriptionStatus;
+use Mozex\Campaigns\Enums\UploadPurpose;
 use Mozex\Campaigns\Fetching\HostResolver;
 use Mozex\Campaigns\Fetching\StaticHostResolver;
+use Mozex\Campaigns\Mcp\CampaignsServer;
+use Mozex\Campaigns\Models\ApiToken;
 use Mozex\Campaigns\Models\Campaign;
 use Mozex\Campaigns\Models\CampaignList;
 use Mozex\Campaigns\Models\CampaignMessage;
 use Mozex\Campaigns\Models\ConsentRecord;
 use Mozex\Campaigns\Models\Subscriber;
 use Mozex\Campaigns\Models\Subscription;
+use Mozex\Campaigns\Models\Upload;
 use Mozex\Campaigns\Sending\FakeProvider;
 use Mozex\Campaigns\Support\Token;
 use Mozex\Campaigns\Tests\TestCase;
@@ -128,6 +139,38 @@ function structuredContent(McpTestResponse $response): array
 {
     /** @var array<string, mixed> */
     return (fn (): ?array => $this->structuredContent())->call($response) ?? [];
+}
+
+/**
+ * The campaigns server as an agent signed in with these rights: a package
+ * token ("laptop" with full rights, "reader" with read), or a person named
+ * "Ann Agent" signed in through a stand-in for an app's own guard, whose
+ * rights are the gate abilities.
+ */
+function agent(Rights $rights = Rights::Full, bool $person = false): PendingTestResponse
+{
+    if (! $person) {
+        $name = $rights === Rights::Full ? 'laptop' : 'reader';
+        $token = ApiToken::query()->where('name', $name)->first() ?? ApiToken::factory()->create(['name' => $name, 'rights' => $rights]);
+
+        return CampaignsServer::actingAs($token, 'campaigns');
+    }
+
+    config(['auth.guards.people' => ['driver' => 'people']]);
+    Auth::viaRequest('people', fn (): ?GenericUser => null);
+    Gate::define(Rights::Full->ability(), fn (GenericUser $user): bool => $user->rights === Rights::Full->value);
+    Gate::define(Rights::Read->ability(), fn (GenericUser $user): bool => $user->rights === Rights::Read->value);
+
+    return CampaignsServer::actingAs(new GenericUser(['id' => 7, 'name' => 'Ann Agent', 'rights' => $rights->value]), 'people');
+}
+
+/**
+ * A CSV of contacts sent through an upload link, ready for an import to
+ * read. Fake the uploads disk first (Storage::fake('local')).
+ */
+function contactsUpload(string $csv): Upload
+{
+    return app(ReceiveUploadAction::class)->execute(app(CreateUploadAction::class)->execute(UploadPurpose::Contacts)->uuid, $csv);
 }
 
 /**
