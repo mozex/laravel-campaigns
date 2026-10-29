@@ -33,6 +33,11 @@ class CampaignAudience
     protected const COLUMNS = ['id', 'email', 'locale', ...Engagement::SIGNALS];
 
     /**
+     * Addresses the preview reads at a time.
+     */
+    protected const ADDRESS_CHUNK = 5000;
+
+    /**
      * @param  list<int>  $listIds  the target lists
      */
     public function __construct(public array $listIds, public AudienceDefinition $definition) {}
@@ -114,31 +119,45 @@ class CampaignAudience
 
     /**
      * How many the campaign would reach and who they are, in counts only.
+     * The database counts each breakdown, and only the addresses are read,
+     * for their mailbox providers: reading every recipient as a model, as
+     * the freeze does, outlasts a request's time limit once an audience
+     * reaches hundreds of thousands.
      */
     public function preview(): AudiencePreview
     {
-        $keys = CampaignList::query()->whereIn('id', $this->listIds)->pluck('key', 'id');
-        $lists = array_fill_keys($keys->values()->all(), 0);
+        $lists = [];
+
+        foreach (CampaignList::query()->whereIn('id', $this->listIds)->pluck('key', 'id') as $id => $key) {
+            $lists[(string) $key] = $this->recipients()->whereHas('subscriptions', fn (Builder $query): Builder => $query
+                ->where('list_id', $id)
+                ->where('status', SubscriptionStatus::Subscribed))->count();
+        }
+
         $locales = [];
-        $tiers = array_fill_keys(array_column(EngagementTier::cases(), 'value'), 0);
+
+        foreach ($this->recipients()->toBase()->select('locale')->selectRaw('count(*) as total')->groupBy('locale')->get() as $row) {
+            $locale = $row->locale ?? 'none';
+            $locales[$locale] = ($locales[$locale] ?? 0) + (int) $row->total;
+        }
+
+        $tiers = [];
+
+        foreach (EngagementTier::cases() as $tier) {
+            $tiers[$tier->value] = Engagement::whereTier($this->recipients(), $tier)->count();
+        }
+
         $providers = array_fill_keys(array_column(MailboxProvider::cases(), 'value'), 0);
 
-        $recipients = $this->each(function (Subscriber $subscriber, array $listIds) use ($keys, &$lists, &$locales, &$tiers, &$providers): void {
-            foreach ($listIds as $id) {
-                $lists[$keys[$id]]++;
-            }
-
-            $locale = $subscriber->locale ?? 'none';
-            $locales[$locale] = ($locales[$locale] ?? 0) + 1;
-            $tiers[Engagement::tier($subscriber)->value]++;
-            $providers[MailboxProvider::fromEmail($subscriber->email)->value]++;
-        });
+        foreach ($this->recipients()->toBase()->select(['id', 'email'])->lazyById(static::ADDRESS_CHUNK, 'id') as $row) {
+            $providers[MailboxProvider::fromEmail((string) $row->email)->value]++;
+        }
 
         ksort($lists);
         ksort($locales);
 
         return new AudiencePreview(
-            recipients: $recipients,
+            recipients: array_sum($providers),
             targeted: $this->targeted()->count(),
             dropped: [
                 'blocked' => $this->targeted()->whereNotNull('blocked_at')->count(),

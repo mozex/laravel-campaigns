@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Mozex\Campaigns\Support;
 
 use Carbon\CarbonInterface;
+use Closure;
 use Illuminate\Database\Eloquent\Builder;
 use Mozex\Campaigns\Enums\EngagementTier;
 use Mozex\Campaigns\Models\Subscriber;
@@ -38,12 +39,29 @@ class Engagement
 
     public static function tier(Subscriber $subscriber): EngagementTier
     {
-        $last = static::lastEngagedAt($subscriber);
+        return static::tiers()($subscriber);
+    }
 
-        return match (true) {
-            $last !== null && $last->gte(static::engagedCutoff()) => EngagementTier::Engaged,
-            $last !== null && $last->gte(static::activeCutoff()) => EngagementTier::Active,
-            default => EngagementTier::Silent,
+    /**
+     * The tier of each subscriber a long pass reads (a freeze), with the
+     * cutoffs worked out once: working them out per subscriber cost more
+     * than everything else in the tier.
+     *
+     * @return Closure(Subscriber): EngagementTier
+     */
+    public static function tiers(): Closure
+    {
+        $engaged = static::engagedCutoff();
+        $active = static::activeCutoff();
+
+        return function (Subscriber $subscriber) use ($engaged, $active): EngagementTier {
+            $last = static::lastEngagedAt($subscriber);
+
+            return match (true) {
+                $last !== null && $last->gte($engaged) => EngagementTier::Engaged,
+                $last !== null && $last->gte($active) => EngagementTier::Active,
+                default => EngagementTier::Silent,
+            };
         };
     }
 

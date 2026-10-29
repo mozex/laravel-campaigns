@@ -108,7 +108,10 @@ function reportedCampaign(): Campaign
     return $campaign;
 }
 
-it('counts a campaign\'s messages and events, every breakdown and day included', function (): void {
+it('counts a campaign\'s messages and events, every breakdown and day included', function (string $driver): void {
+    // The messages are read as plain rows, so each database's own way of
+    // handing back JSON and times is read here.
+    useDatabase($driver);
     $report = CampaignReport::build(reportedCampaign());
 
     $row = fn (int $messages, int $sends = 0, int $delivered = 0, int $hard = 0, int $senderBlocked = 0, int $complaints = 0, int $unsubscribes = 0, int $opened = 0, int $clicked = 0): array => [
@@ -166,7 +169,7 @@ it('counts a campaign\'s messages and events, every breakdown and day included',
     expect($timeline['2026-03-01']['complaints'])->toBe(0)
         ->and($timeline['2026-03-02']['complaints'])->toBe(1)
         ->and($timeline['2026-03-02']['unsubscribes'])->toBe(2);
-});
+})->with('databases');
 
 it('reads how each unsubscribe came on every database', function (string $driver): void {
     useDatabase($driver);

@@ -209,9 +209,10 @@ class FreezeCampaignAction
         $ranks = [];
         $rows = [];
         $now = now();
+        $tierOf = Engagement::tiers();
 
-        $count = CampaignAudience::for($campaign)->each(function (Subscriber $subscriber, array $lists) use ($campaign, $tiers, $providers, &$ranks, &$rows, $now): void {
-            $tier = Engagement::tier($subscriber);
+        $count = CampaignAudience::for($campaign)->each(function (Subscriber $subscriber, array $lists) use ($campaign, $tiers, $providers, &$ranks, &$rows, $now, $tierOf): void {
+            $tier = $tierOf($subscriber);
             $provider = MailboxProvider::fromEmail($subscriber->email);
             $rank = $ranks[$tier->value][$provider->value] ?? 0;
             $ranks[$tier->value][$provider->value] = $rank + 1;

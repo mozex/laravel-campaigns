@@ -4,7 +4,8 @@ declare(strict_types=1);
 
 namespace Mozex\Campaigns\Reports;
 
-use Carbon\CarbonInterface;
+use Closure;
+use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\Queue;
 use Mozex\Campaigns\Actions\FreezeCampaignAction;
 use Mozex\Campaigns\Actions\PumpCampaignsAction;
@@ -113,42 +114,50 @@ class CampaignReport
         $unsubscribed = [];
         $lists = CampaignList::query()->pluck('key', 'id');
         $tiers = EngagementTier::cases();
+        $days = static::days();
 
+        // Plain rows, not models: hydrating each message and its dates
+        // outlasts a request's time limit once a campaign reaches hundreds
+        // of thousands.
         $messages = CampaignMessage::query()
             ->where('campaign_id', $campaign->id)
+            ->toBase()
             ->select(['id', 'uuid', 'list_ids', 'email', 'locale', 'position', 'status', 'sent_at', 'delivered_at', 'opened_at', 'clicked_at', 'unsubscribed_at', 'complained_at', 'failed_at', 'failure_reason'])
-            ->lazyById(static::CHUNK);
+            ->lazyById(static::CHUNK, 'id');
 
         foreach ($messages as $message) {
-            $statuses[$message->status->value]++;
+            $status = (string) $message->status;
+            $statuses[$status] = ($statuses[$status] ?? 0) + 1;
             $row = static::row($message);
 
-            $totals = static::add($totals, $row);
-            $totals['unsent'] += (int) in_array($message->status, [MessageStatus::Pending, MessageStatus::Queued], true);
+            static::add($totals, $row);
+            $totals['unsent'] += (int) in_array($status, [MessageStatus::Pending->value, MessageStatus::Queued->value], true);
 
-            if ($message->status === MessageStatus::Failed) {
+            if ($status === MessageStatus::Failed->value) {
                 $reason = $message->failure_reason ?? DeliveryFailure::Other->value;
                 $failures[$reason] = ($failures[$reason] ?? 0) + 1;
             }
 
-            foreach ($message->list_ids ?? [] as $listId) {
+            foreach (static::listIds($message->list_ids) as $listId) {
                 $key = (string) ($lists[$listId] ?? "#{$listId}");
-                $byList[$key] = static::add($byList[$key] ?? static::ROW, $row);
+                $byList[$key] ??= static::ROW;
+                static::add($byList[$key], $row);
             }
 
             $locale = $message->locale ?? 'none';
-            $byLocale[$locale] = static::add($byLocale[$locale] ?? static::ROW, $row);
+            $byLocale[$locale] ??= static::ROW;
+            static::add($byLocale[$locale], $row);
 
-            $tier = ($tiers[intdiv($message->position, FreezeCampaignAction::TIER_STEP)] ?? EngagementTier::Silent)->value;
-            $byTier[$tier] = static::add($byTier[$tier], $row);
+            $tier = ($tiers[intdiv((int) $message->position, FreezeCampaignAction::TIER_STEP)] ?? EngagementTier::Silent)->value;
+            static::add($byTier[$tier], $row);
 
-            $provider = $message->email === null ? static::UNKNOWN_PROVIDER : MailboxProvider::fromEmail($message->email)->value;
-            $byProvider[$provider] = static::add($byProvider[$provider], $row);
+            $provider = $message->email === null ? static::UNKNOWN_PROVIDER : MailboxProvider::fromEmail((string) $message->email)->value;
+            static::add($byProvider[$provider], $row);
 
-            $timeline = static::timeline($timeline, $message, $row);
+            $timeline = static::timeline($timeline, $message, $row, $days);
 
             if ($message->unsubscribed_at !== null) {
-                $unsubscribed[] = $message->uuid;
+                $unsubscribed[] = (string) $message->uuid;
             }
         }
 
@@ -227,14 +236,16 @@ class CampaignReport
     }
 
     /**
+     * What one message did, from its plain row.
+     *
      * @return array<string, int>
      */
-    protected static function row(CampaignMessage $message): array
+    protected static function row(object $message): array
     {
         return [
             'messages' => 1,
             'sends' => (int) ($message->sent_at !== null),
-            'delivered' => (int) ($message->status === MessageStatus::Delivered),
+            'delivered' => (int) ($message->status === MessageStatus::Delivered->value),
             'hard_bounces' => (int) ($message->failure_reason === DeliveryFailure::HardBounce->value),
             'sender_blocked' => (int) ($message->failure_reason === DeliveryFailure::SenderBlocked->value),
             'complaints' => (int) ($message->complained_at !== null),
@@ -247,23 +258,52 @@ class CampaignReport
     /**
      * @param  array<string, int>  $into
      * @param  array<string, int>  $row
-     * @return array<string, int>
      */
-    protected static function add(array $into, array $row): array
+    protected static function add(array &$into, array $row): void
     {
         foreach ($row as $key => $count) {
             $into[$key] += $count;
         }
+    }
 
-        return $into;
+    /**
+     * The list ids a plain row stores as JSON.
+     *
+     * @return list<int>
+     */
+    protected static function listIds(mixed $stored): array
+    {
+        $ids = is_string($stored) ? json_decode($stored, true) : $stored;
+
+        return is_array($ids) ? array_values(array_map(fn (mixed $id): int => (int) $id, $ids)) : [];
+    }
+
+    /**
+     * The day a stored time falls on in the app's timezone. Eloquent reads a
+     * stored time in PHP's default timezone, which Laravel sets from
+     * app.timezone, so the stored date is already that day; the time is
+     * converted only when the two differ.
+     *
+     * @return Closure(string): string
+     */
+    protected static function days(): Closure
+    {
+        $zone = (string) config('app.timezone', 'UTC');
+
+        if ($zone === date_default_timezone_get()) {
+            return fn (string $at): string => substr($at, 0, 10);
+        }
+
+        return fn (string $at): string => Date::parse($at)->setTimezone($zone)->toDateString();
     }
 
     /**
      * @param  array<string, array<string, int>>  $timeline
      * @param  array<string, int>  $row
+     * @param  Closure(string): string  $days
      * @return array<string, array<string, int>>
      */
-    protected static function timeline(array $timeline, CampaignMessage $message, array $row): array
+    protected static function timeline(array $timeline, object $message, array $row, Closure $days): array
     {
         $steps = [
             'sent' => $message->sent_at,
@@ -277,8 +317,8 @@ class CampaignReport
         ];
 
         foreach ($steps as $step => $at) {
-            if ($at instanceof CarbonInterface) {
-                $day = $at->copy()->setTimezone((string) config('app.timezone', 'UTC'))->toDateString();
+            if ($at !== null) {
+                $day = $days((string) $at);
                 $timeline[$day] ??= static::DAY;
                 $timeline[$day][$step]++;
             }
