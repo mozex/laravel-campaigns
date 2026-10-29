@@ -316,7 +316,9 @@ describe('scheduling a campaign', function (): void {
         Event::assertNotDispatched(CampaignStartedEvent::class);
 
         app(PauseCampaignAction::class)->execute($campaign);
-        $this->travelTo($at->addMinute());
+        // In UTC: some Carbon versions read a mocked now in another timezone
+        // by its wall time, hours off.
+        $this->travelTo($at->copy()->utc()->addMinute());
         app(ResumeCampaignAction::class)->execute($campaign);
 
         expect($campaign->fresh())
