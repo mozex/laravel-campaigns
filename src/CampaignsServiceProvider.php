@@ -6,12 +6,14 @@ namespace Mozex\Campaigns;
 
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Config\Repository;
+use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Contracts\Foundation\CachesConfiguration;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\RateLimiter;
 use Mozex\Campaigns\Commands\SyncListCommand;
+use Mozex\Campaigns\Contracts\CampaignProvider;
 use Mozex\Campaigns\Models\ApiToken;
 use Mozex\Campaigns\Models\Asset;
 use Mozex\Campaigns\Models\Campaign;
@@ -27,6 +29,8 @@ use Mozex\Campaigns\Models\Subscription;
 use Mozex\Campaigns\Models\Template;
 use Mozex\Campaigns\Models\TestSend;
 use Mozex\Campaigns\Models\Upload;
+use Mozex\Campaigns\Sending\FakeProvider;
+use Mozex\Campaigns\Sending\MailgunProvider;
 use Mozex\Campaigns\Support\Token;
 use Spatie\LaravelPackageTools\Commands\InstallCommand;
 use Spatie\LaravelPackageTools\Package;
@@ -92,16 +96,49 @@ class CampaignsServiceProvider extends PackageServiceProvider
         // request or queued job in a long-running worker.
         $this->app->scoped(Campaigns::class);
 
+        $this->app->singleton(CampaignProvider::class, function (Application $app): CampaignProvider {
+            $value = config('campaigns.provider');
+
+            $class = match ($value) {
+                'mailgun' => MailgunProvider::class,
+                'fake' => FakeProvider::class,
+                default => $value,
+            };
+
+            if (! is_string($class) || ! is_a($class, CampaignProvider::class, true)) {
+                throw CampaignsException::invalidProvider(is_string($value) ? $value : get_debug_type($value));
+            }
+
+            /** @var CampaignProvider */
+            return $app->make($class);
+        });
+
         /** @var Repository $config */
         $config = $this->app->make('config');
 
         $this->mergePublishedConfig($config);
+        $this->boundMailgunClient($config);
 
         // The language every email holds, read before any middleware runs:
         // App::setLocale() writes app.locale, so reading it later would give
         // the current visitor's language instead of the app's.
         if (! $config->get('campaigns.locale')) {
             $config->set('campaigns.locale', $config->get('app.locale'));
+        }
+    }
+
+    /**
+     * Symfony's HTTP client only times out a connection that goes quiet, so a
+     * slow Mailgun answer could outlast the job sending to it. A campaigns
+     * mailgun mailer the app gave no client options of its own gets a total
+     * limit below any send job's timeout.
+     */
+    protected function boundMailgunClient(Repository $config): void
+    {
+        $key = 'mail.mailers.'.$config->get('campaigns.mail.mailer');
+
+        if ($config->get($key.'.transport') === 'mailgun' && ! $config->has($key.'.client')) {
+            $config->set($key.'.client', ['timeout' => 10, 'max_duration' => 30]);
         }
     }
 

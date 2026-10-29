@@ -21,6 +21,11 @@ class Links
         return static::to('campaigns.confirm', $token);
     }
 
+    public static function webVersion(string $token): string
+    {
+        return static::to('campaigns.web-version', $token);
+    }
+
     protected static function to(string $route, string $token): string
     {
         /** @var ?string $base */

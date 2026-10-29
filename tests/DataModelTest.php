@@ -81,6 +81,23 @@ it('builds the whole model graph and resolves every relation', function (string 
         ->and($message->campaign->uuid)->toBeString()->toHaveLength(36);
 })->with('databases');
 
+it('stores a template\'s tests with no campaign, and tests waiting for their token', function (string $driver): void {
+    useDatabase($driver);
+
+    $template = Template::factory()->create();
+    $revision = Revision::factory()->of($template)->withContent('en')->create();
+
+    TestSend::factory()->count(2)->create(['campaign_id' => null, 'revision_id' => $revision->id, 'token_hash' => null]);
+    $failed = TestSend::factory()->create(['revision_id' => $revision->id, 'failed_at' => now(), 'failure' => str_repeat('x', 255)]);
+
+    $tests = TestSend::query()->with(['revision', 'campaign'])->orderBy('id')->get();
+
+    expect($tests->pluck('token_hash')->filter()->count())->toBe(1)
+        ->and($tests->first()->campaign)->toBeNull()
+        ->and($tests->first()->revision->is($revision))->toBeTrue()
+        ->and($failed->fresh()->failure)->toHaveLength(255);
+})->with('databases');
+
 it('stores templates, revisions, the asset library, uploads and saved audiences, and links a campaign to them', function (string $driver): void {
     useDatabase($driver);
 

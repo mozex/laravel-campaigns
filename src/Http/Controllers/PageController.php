@@ -7,7 +7,10 @@ namespace Mozex\Campaigns\Http\Controllers;
 use Illuminate\Http\Response;
 use Illuminate\Support\Traits\Localizable;
 use Mozex\Campaigns\Campaigns;
+use Mozex\Campaigns\Models\CampaignMessage;
+use Mozex\Campaigns\Models\TestSend;
 use Mozex\Campaigns\Support\PageLocale;
+use Mozex\Campaigns\Support\Token;
 
 /**
  * The pages an email's links open. They run outside the app's web
@@ -38,5 +41,17 @@ abstract class PageController
     protected function invalid(): Response
     {
         return $this->render('campaigns::invalid', [], status: 404);
+    }
+
+    /**
+     * The email a link's token came in: a campaign's message, else a test
+     * email.
+     */
+    protected function email(string $token): CampaignMessage|TestSend|null
+    {
+        $hash = Token::hash($token);
+
+        return CampaignMessage::query()->where('token_hash', $hash)->first()
+            ?? TestSend::query()->where('token_hash', $hash)->first();
     }
 }

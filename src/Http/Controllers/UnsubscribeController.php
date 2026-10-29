@@ -12,7 +12,6 @@ use Mozex\Campaigns\Enums\ConsentBasis;
 use Mozex\Campaigns\Models\CampaignMessage;
 use Mozex\Campaigns\Models\TestSend;
 use Mozex\Campaigns\Support\ConsentContext;
-use Mozex\Campaigns\Support\Token;
 
 /**
  * The page behind an email's unsubscribe and preferences links, and the
@@ -24,14 +23,14 @@ class UnsubscribeController extends PageController
 {
     public function show(string $token): Response
     {
-        $email = $this->find($token);
+        $email = $this->email($token);
 
         return $email === null ? $this->invalid() : $this->page($token, $email);
     }
 
     public function unsubscribe(Request $request, string $token, UnsubscribeAction $unsubscribe): Response
     {
-        $email = $this->find($token);
+        $email = $this->email($token);
         $oneClick = $request->input('List-Unsubscribe') === 'One-Click';
 
         if ($email === null) {
@@ -54,7 +53,7 @@ class UnsubscribeController extends PageController
 
     public function resubscribe(Request $request, string $token, ResubscribeAction $resubscribe): Response
     {
-        $email = $this->find($token);
+        $email = $this->email($token);
 
         if ($email === null) {
             return $this->invalid();
@@ -72,14 +71,6 @@ class UnsubscribeController extends PageController
         ));
 
         return $this->page($token, $email, $resubscribed ? 'resubscribed' : null);
-    }
-
-    protected function find(string $token): CampaignMessage|TestSend|null
-    {
-        $hash = Token::hash($token);
-
-        return CampaignMessage::query()->where('token_hash', $hash)->first()
-            ?? TestSend::query()->where('token_hash', $hash)->first();
     }
 
     /**

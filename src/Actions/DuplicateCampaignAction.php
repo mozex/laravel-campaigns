@@ -8,6 +8,7 @@ use Illuminate\Database\UniqueConstraintViolationException;
 use Mozex\Campaigns\CampaignsException;
 use Mozex\Campaigns\Enums\CampaignStatus;
 use Mozex\Campaigns\Models\Campaign;
+use Mozex\Campaigns\Models\TestSend;
 use Mozex\Campaigns\Support\Keys;
 use Mozex\Campaigns\Support\TextValue;
 
@@ -28,6 +29,10 @@ class DuplicateCampaignAction
     {
         if (! Keys::isValid($key)) {
             throw CampaignsException::invalidKey($key);
+        }
+
+        if ($key === TestSend::TAG) {
+            throw CampaignsException::reservedCampaignKey($key);
         }
 
         $name = TextValue::required('name', $name, 255);

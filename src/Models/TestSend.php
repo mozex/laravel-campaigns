@@ -14,20 +14,27 @@ use Illuminate\Support\Carbon;
 use Mozex\Campaigns\Database\Factories\TestSendFactory;
 
 /**
- * A test email, kept apart from the campaign's messages so it never counts in
- * the campaign's numbers. Its links open the real pages but change nothing.
+ * A test email of a campaign's or a template's revision, kept apart from the
+ * campaign's messages so it never counts in the campaign's numbers. Its links
+ * open the real pages but change nothing. The token is made when the email is
+ * sent, so token_hash is null until then.
  *
  * @property int $id
  * @property string $uuid
- * @property int $campaign_id
+ * @property ?int $campaign_id
+ * @property ?int $revision_id
  * @property string $email
  * @property ?string $locale
- * @property string $token_hash
+ * @property ?string $token_hash
  * @property ?string $provider_message_id
  * @property ?Carbon $sent_at
+ * @property ?Carbon $failed_at
+ * @property ?string $failure
  * @property ?Carbon $unsubscribed_at
  * @property ?Carbon $created_at
  * @property ?Carbon $updated_at
+ * @property-read ?Campaign $campaign
+ * @property-read ?Revision $revision
  */
 #[UseFactory(TestSendFactory::class)]
 class TestSend extends Model
@@ -37,15 +44,24 @@ class TestSend extends Model
 
     use HasUuids;
 
+    /**
+     * The tag every test email carries, so tests never count in a campaign's
+     * tag in the provider's numbers.
+     */
+    public const TAG = 'campaigns-test';
+
     protected $table = 'campaign_test_sends';
 
     protected $fillable = [
         'campaign_id',
+        'revision_id',
         'email',
         'locale',
         'token_hash',
         'provider_message_id',
         'sent_at',
+        'failed_at',
+        'failure',
         'unsubscribed_at',
     ];
 
@@ -60,12 +76,13 @@ class TestSend extends Model
     }
 
     /**
-     * @return array{sent_at: 'datetime', unsubscribed_at: 'datetime'}
+     * @return array{sent_at: 'datetime', failed_at: 'datetime', unsubscribed_at: 'datetime'}
      */
     protected function casts(): array
     {
         return [
             'sent_at' => 'datetime',
+            'failed_at' => 'datetime',
             'unsubscribed_at' => 'datetime',
         ];
     }
@@ -74,6 +91,12 @@ class TestSend extends Model
     public function campaign(): BelongsTo
     {
         return $this->belongsTo(Campaign::class);
+    }
+
+    /** @return BelongsTo<Revision, $this> */
+    public function revision(): BelongsTo
+    {
+        return $this->belongsTo(Revision::class);
     }
 
     /** @return HasMany<ProviderEvent, $this> */

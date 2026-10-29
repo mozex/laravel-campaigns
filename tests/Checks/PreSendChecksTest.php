@@ -10,9 +10,12 @@ use Mozex\Campaigns\Actions\QueueChecksAction;
 use Mozex\Campaigns\CampaignsException;
 use Mozex\Campaigns\Checks\PreSendChecks;
 use Mozex\Campaigns\Content\EmailContent;
+use Mozex\Campaigns\Content\Personalization;
 use Mozex\Campaigns\Jobs\RunChecksJob;
+use Mozex\Campaigns\Models\Campaign;
 use Mozex\Campaigns\Models\Revision;
 use Mozex\Campaigns\Models\Template;
+use Mozex\Campaigns\Sending\OutgoingMessage;
 
 beforeEach(function (): void {
     Http::preventStrayRequests();
@@ -63,6 +66,40 @@ function check(array $results, string $check, ?string $locale = null): array
     return collect($results['checks'])->first(fn (array $result): bool => $result['check'] === $check
         && ($locale === null || $result['locale'] === $locale)) ?? [];
 }
+
+it('scores a campaign\'s email from the campaign\'s sender, with the headers a send carries', function (): void {
+    Http::fake([
+        PreSendChecks::SPAM_CHECKER => Http::response(['success' => true, 'score' => '0.1', 'rules' => []]),
+        'https://app.example.com/privacy' => Http::response(),
+    ]);
+
+    $campaign = Campaign::factory()->create(['from_name' => 'Spring Team', 'from_email' => 'spring@news.example.com', 'reply_to' => 'help@example.com']);
+    $revision = app(AddRevisionAction::class)->execute($campaign, [new EmailContent(locale: 'en', subject: 'Hello', html: '<p>Hi</p>{{footer}}')]);
+
+    runChecks($revision);
+
+    $sent = '';
+    Http::assertSent(function (Request $request) use (&$sent): bool {
+        if ($request->url() !== PreSendChecks::SPAM_CHECKER) {
+            return false;
+        }
+
+        $sent = (string) $request['email'];
+
+        return true;
+    });
+
+    $headers = (new OutgoingMessage(
+        uuid: 'x', to: 'someone@example.com', fromEmail: 'spring@news.example.com', fromName: 'Spring Team', replyTo: 'help@example.com',
+        subject: 'Hello', html: '', text: '', unsubscribeUrl: Personalization::sample('en')->unsubscribeUrl, tag: 'x', trackOpens: true, trackClicks: true,
+    ))->headers();
+
+    expect($sent)->toContain('From: Spring Team <spring@news.example.com>')
+        ->and($sent)->toContain('Reply-To: help@example.com')
+        ->and($sent)->toContain('List-Unsubscribe: '.$headers['List-Unsubscribe'])
+        ->and($sent)->toContain('List-Unsubscribe-Post: '.$headers['List-Unsubscribe-Post'])
+        ->and($sent)->not->toContain('news@news.example.com');
+});
 
 it('queues the checks and returns at once', function (): void {
     $revision = revisionWith('<p>Hi</p>{{footer}}');

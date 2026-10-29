@@ -33,7 +33,11 @@ return [
      * takes the mailer's own sender. A campaign's From address must be on
      * the marketing domain: "domain", else the sender's domain. Replies go
      * to "reply_to", an inbox someone reads (it may be on another domain).
-     * Default mailer: "campaigns", which you define in config/mail.php.
+     * Default mailer: "campaigns", which you define in config/mail.php. With
+     * the Mailgun provider it uses the mailgun transport with
+     * 'scheme' => 'api' (or the log mailer locally); a mailgun mailer with
+     * no 'client' options gets a 10-second idle timeout and 30 seconds in
+     * all, so a stuck request ends before the job that sends it.
      */
     'mail' => [
         'mailer' => env('CAMPAIGNS_MAILER', 'campaigns'),
@@ -44,6 +48,22 @@ return [
         'reply_to' => env('CAMPAIGNS_REPLY_TO'),
         'domain' => env('CAMPAIGNS_DOMAIN'),
     ],
+
+    /*
+     * The service that delivers campaign email: "mailgun", "fake" (keeps
+     * what it is given and sends nothing, for tests and local runs), or the
+     * class name of your own Mozex\Campaigns\Contracts\CampaignProvider.
+     * Default: mailgun.
+     */
+    'provider' => env('CAMPAIGNS_PROVIDER', 'mailgun'),
+
+    /*
+     * Countries whose subscribers' opens are never tracked, whatever a
+     * campaign says, as two-letter codes: France's data protection authority
+     * requires consent for a tracking pixel. Clicks are still tracked.
+     * Default: ['FR'].
+     */
+    'no_open_tracking_countries' => ['FR'],
 
     /*
      * Shown by the {{footer}} and {{postal_address}} placeholders. Some laws

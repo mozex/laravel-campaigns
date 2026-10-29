@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Mozex\Campaigns;
 
+use Mozex\Campaigns\Contracts\CampaignProvider;
 use Mozex\Campaigns\Contracts\ListSource;
 use Mozex\Campaigns\Enums\UploadPurpose;
 use Mozex\Campaigns\Imports\ImportedContact;
@@ -81,6 +82,48 @@ class CampaignsException extends RuntimeException
     public static function invalidExtension(string $kind, string $key, string $class, string $contract): self
     {
         return new self("campaigns.{$kind}.{$key} ({$class}) must implement {$contract}.");
+    }
+
+    public static function invalidProvider(string $value): self
+    {
+        return new self('campaigns.provider ("'.mb_strimwidth($value, 0, 120, '...').'") must be "mailgun", "fake" or a class implementing '.CampaignProvider::class.'.');
+    }
+
+    public static function recipientForgotten(): self
+    {
+        return new self('The person this email is for was forgotten, so it can no longer be sent or shown.');
+    }
+
+    public static function testSendingDisabled(): self
+    {
+        return new self('Sending is switched off in this app (campaigns.enabled, CAMPAIGNS_ENABLED), so no test email can go out.');
+    }
+
+    /**
+     * @param  list<string>  $held
+     */
+    public static function localeNotHeld(string $locale, array $held): self
+    {
+        return new self('The email has no "'.mb_strimwidth($locale, 0, 40, '...').'" version; it holds '.implode(', ', $held).'.');
+    }
+
+    public static function testAddressesNotConfigured(): self
+    {
+        return new self('No test addresses are configured (campaigns.test_addresses, CAMPAIGNS_TEST_ADDRESSES), so no test email can go out.');
+    }
+
+    /**
+     * Counts the refused addresses rather than naming them: one may be a
+     * subscriber's, and the message may reach an error report.
+     */
+    public static function notTestAddresses(int $refused): self
+    {
+        return new self("Test emails go only to the addresses in campaigns.test_addresses, and {$refused} of the addresses given ".($refused === 1 ? 'is' : 'are').' not among them.');
+    }
+
+    public static function tooManyTestSends(int $max): self
+    {
+        return new self("At most {$max} test emails go out at once: pick fewer addresses or languages.");
     }
 
     /**
@@ -189,6 +232,11 @@ class CampaignsException extends RuntimeException
     public static function reservedKey(string $key): self
     {
         return new self("\"{$key}\" is the key of one of the package's starter templates. Choose another.");
+    }
+
+    public static function reservedCampaignKey(string $key): self
+    {
+        return new self("\"{$key}\" is the tag every test email carries, so no campaign can use it as its key. Choose another.");
     }
 
     public static function unknownTemplate(string $key): self

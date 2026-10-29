@@ -17,6 +17,22 @@ class Locales
     }
 
     /**
+     * A locale written one way, so pt_BR, pt-br and PT-BR compare equal.
+     */
+    public static function normalize(string $locale): string
+    {
+        return strtolower(str_replace('-', '_', trim($locale)));
+    }
+
+    /**
+     * A locale's language alone, its first part (pt_BR gives pt).
+     */
+    public static function language(string $locale): string
+    {
+        return explode('_', static::normalize($locale))[0];
+    }
+
+    /**
      * Whether a value looks like a locale (en, pt_BR, zh-Hant), as stored
      * locales must before the translator reads one as part of a path.
      */

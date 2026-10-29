@@ -14,6 +14,7 @@ use Mozex\Campaigns\Content\EmailSource;
 use Mozex\Campaigns\Enums\CampaignStatus;
 use Mozex\Campaigns\Models\Campaign;
 use Mozex\Campaigns\Models\Template;
+use Mozex\Campaigns\Models\TestSend;
 use Mozex\Campaigns\Support\CampaignSettings;
 use Mozex\Campaigns\Support\Keys;
 use Mozex\Campaigns\Support\Sender;
@@ -50,6 +51,12 @@ class CreateCampaignAction
     ): CreatedCampaign {
         if (! Keys::isValid($key)) {
             throw CampaignsException::invalidKey($key);
+        }
+
+        // A campaign's key is its tag at the provider, and test emails carry
+        // this one.
+        if ($key === TestSend::TAG) {
+            throw CampaignsException::reservedCampaignKey($key);
         }
 
         if (Campaign::query()->where('key', $key)->exists()) {

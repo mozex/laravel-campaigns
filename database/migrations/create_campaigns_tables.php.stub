@@ -297,15 +297,22 @@ return new class extends Migration
             $table->index(['status', 'claim_id']);
         });
 
+        // A test email of a campaign's or a template's revision, apart from
+        // the campaign's messages. The revision is the one that went out, so
+        // its web version shows what was sent after the draft moves on. The
+        // token is made by the job that sends it, so it is null until then.
         Schema::create('campaign_test_sends', function (Blueprint $table): void {
             $table->id();
             $table->uuid('uuid')->unique();
-            $table->foreignId('campaign_id')->index()->constrained('campaigns')->cascadeOnDelete();
+            $table->foreignId('campaign_id')->nullable()->index()->constrained('campaigns')->cascadeOnDelete();
+            $table->foreignId('revision_id')->nullable()->index()->constrained('campaign_revisions')->nullOnDelete();
             $table->string('email', 254);
             $table->string('locale', 35)->nullable();
-            $table->string('token_hash', 64)->unique();
+            $table->string('token_hash', 64)->nullable()->unique();
             $table->string('provider_message_id', 255)->nullable()->index();
             $table->timestamp('sent_at')->nullable();
+            $table->timestamp('failed_at')->nullable();
+            $table->string('failure', 255)->nullable();
             // A test's unsubscribe is recorded here and changes nothing else.
             $table->timestamp('unsubscribed_at')->nullable();
             $table->timestamps();

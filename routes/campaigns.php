@@ -5,6 +5,7 @@ declare(strict_types=1);
 use Illuminate\Support\Facades\Route;
 use Mozex\Campaigns\Http\Controllers\ConfirmationController;
 use Mozex\Campaigns\Http\Controllers\UnsubscribeController;
+use Mozex\Campaigns\Http\Controllers\WebVersionController;
 use Mozex\Campaigns\Http\Middleware\PageHeaders;
 
 /*
@@ -22,6 +23,7 @@ Route::prefix('campaigns')
         Route::middleware('throttle:60,1')->group(function (): void {
             Route::get('u/{token}', [UnsubscribeController::class, 'show'])->name('unsubscribe');
             Route::get('c/{token}', [ConfirmationController::class, 'show'])->name('confirm');
+            Route::get('v/{token}', WebVersionController::class)->name('web-version');
         });
 
         // Per link: mail apps post one-click unsubscribes from a few shared

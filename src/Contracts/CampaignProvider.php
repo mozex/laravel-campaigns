@@ -8,6 +8,7 @@ use Carbon\CarbonInterface;
 use Illuminate\Http\Request;
 use Mozex\Campaigns\Sending\Feedback;
 use Mozex\Campaigns\Sending\OutgoingMessage;
+use Mozex\Campaigns\Sending\SendFailed;
 use Mozex\Campaigns\Sending\SendReceipt;
 use Mozex\Campaigns\Sending\Suppression;
 
@@ -21,7 +22,12 @@ interface CampaignProvider
 {
     /**
      * Hands one message to the provider. The receipt carries the provider's
-     * own id for it.
+     * own id for it. Anything short of an accepted message throws, saying
+     * whether the provider took nothing (it may go later), refuses the whole
+     * sending domain, or may have taken it (it must never be sent again
+     * blindly).
+     *
+     * @throws SendFailed
      */
     public function send(OutgoingMessage $message): SendReceipt;
 

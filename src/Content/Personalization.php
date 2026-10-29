@@ -24,7 +24,8 @@ readonly class Personalization
     ) {}
 
     /**
-     * The links made from the token of the email that carries them.
+     * The links made from the token of the email that carries them: the
+     * unsubscribe page and, unless another is given, the web version.
      */
     public static function forToken(
         string $token,
@@ -39,7 +40,7 @@ readonly class Personalization
             unsubscribeUrl: Links::unsubscribe($token),
             firstName: $firstName,
             name: $name,
-            webVersionUrl: $webVersionUrl,
+            webVersionUrl: $webVersionUrl ?? Links::webVersion($token),
             locale: $locale,
         );
     }
@@ -57,7 +58,6 @@ readonly class Personalization
             email: 'someone@example.com',
             firstName: 'Alexandra',
             name: 'Alexandra Example',
-            webVersionUrl: Links::unsubscribe($token),
             locale: $locale,
         );
     }

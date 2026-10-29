@@ -118,6 +118,7 @@ describe('creating a campaign', function (): void {
             ->and(Campaign::query()->count())->toBe(1);
     })->with([
         'a taken key' => [['key' => 'taken'], 'A campaign with the key "taken" already exists.'],
+        'the test emails\' tag' => [['key' => 'campaigns-test'], 'the tag every test email carries'],
         'a From off the domain' => [['settings' => ['from_email' => 'news@example.com']], 'must be on the sending domain, news.example.com'],
         'an unknown list' => [['settings' => ['lists' => ['nope']]], 'No list has the key "nope".'],
         'an unknown setting' => [['settings' => ['colour' => 'red']], 'there is no such setting'],
@@ -239,7 +240,9 @@ describe('duplicating a campaign', function (): void {
         Revision::factory()->of($source)->create();
 
         expect(fn () => app(DuplicateCampaignAction::class)->execute($source, 'spring', 'Again'))
-            ->toThrow(CampaignsException::class, 'A campaign with the key "spring" already exists.');
+            ->toThrow(CampaignsException::class, 'A campaign with the key "spring" already exists.')
+            ->and(fn () => app(DuplicateCampaignAction::class)->execute($source, 'campaigns-test', 'Again'))
+            ->toThrow(CampaignsException::class, 'the tag every test email carries');
     });
 });
 

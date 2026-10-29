@@ -19,11 +19,12 @@ use Mozex\Campaigns\Content\RenderedEmail;
 use Mozex\Campaigns\Content\Renderer;
 use Mozex\Campaigns\Enums\CheckStatus;
 use Mozex\Campaigns\Fetching\Fetcher;
+use Mozex\Campaigns\Models\Campaign;
 use Mozex\Campaigns\Models\Revision;
 use Mozex\Campaigns\Models\RevisionContent;
+use Mozex\Campaigns\Models\TestSend;
+use Mozex\Campaigns\Sending\OutgoingMessage;
 use Mozex\Campaigns\Support\Sender;
-use Symfony\Component\Mime\Address;
-use Symfony\Component\Mime\Email;
 
 /**
  * What is checked on an email before it is sent, each locale filled in
@@ -92,7 +93,7 @@ class PreSendChecks
         $results[] = $this->links($rendered, $started + static::LINK_SECONDS);
 
         foreach ($rendered as $locale => $email) {
-            $results[] = $this->spamScore((string) $locale, $email, $started + static::RUN_SECONDS);
+            $results[] = $this->spamScore($revision, (string) $locale, $email, $started + static::RUN_SECONDS);
         }
 
         return $results;
@@ -281,7 +282,7 @@ class PreSendChecks
     /**
      * @return array<string, mixed>
      */
-    protected function spamScore(string $locale, RenderedEmail $email, float $deadline): array
+    protected function spamScore(Revision $revision, string $locale, RenderedEmail $email, float $deadline): array
     {
         if (! config('campaigns.checks.spam_score')) {
             return $this->result('spam_score', $locale, CheckStatus::Skipped, 'Switched off (campaigns.checks.spam_score).');
@@ -294,7 +295,7 @@ class PreSendChecks
         }
 
         try {
-            $raw = $this->message($email, Personalization::sample($locale));
+            $raw = $this->message($revision, $email, Personalization::sample($locale));
         } catch (CampaignsException|InvalidArgumentException $exception) {
             return $this->result('spam_score', $locale, CheckStatus::Skipped, 'No message could be built to score: '.$exception->getMessage());
         }
@@ -331,32 +332,33 @@ class PreSendChecks
     }
 
     /**
-     * The message as a mailbox would get it, with the headers a send
-     * carries, addressed to a placeholder recipient, never a subscriber.
+     * The message as a mailbox would get it, built as a send builds it
+     * (OutgoingMessage::toEmail()): a campaign's sender, else the app's,
+     * with the headers a send carries, addressed to a placeholder recipient,
+     * never a subscriber.
      *
      * @throws CampaignsException|InvalidArgumentException
      */
-    protected function message(RenderedEmail $email, Personalization $person): string
+    protected function message(Revision $revision, RenderedEmail $email, Personalization $person): string
     {
-        $from = Sender::address() ?? throw CampaignsException::noSendingDomain();
+        $campaign = $revision->revisable_type === (new Campaign)->getMorphClass()
+            ? Campaign::query()->find($revision->revisable_id)
+            : null;
 
-        $message = (new Email)
-            ->from(new Address($from, Sender::name() ?? ''))
-            ->to($person->email)
-            ->subject($email->subject)
-            ->text($email->text)
-            ->html($email->html);
-
-        $replyTo = Sender::replyTo();
-
-        if ($replyTo !== null) {
-            $message->replyTo($replyTo);
-        }
-
-        $message->getHeaders()->addTextHeader('List-Unsubscribe', "<{$person->unsubscribeUrl}>");
-        $message->getHeaders()->addTextHeader('List-Unsubscribe-Post', 'List-Unsubscribe=One-Click');
-
-        return $message->toString();
+        return (new OutgoingMessage(
+            uuid: $revision->uuid,
+            to: $person->email,
+            fromEmail: $campaign === null ? (Sender::address() ?? throw CampaignsException::noSendingDomain()) : $campaign->from_email,
+            fromName: $campaign === null ? Sender::name() : $campaign->from_name,
+            replyTo: $campaign === null ? Sender::replyTo() : $campaign->reply_to,
+            subject: $email->subject,
+            html: $email->html,
+            text: $email->text,
+            unsubscribeUrl: $person->unsubscribeUrl,
+            tag: $campaign === null ? TestSend::TAG : $campaign->tag,
+            trackOpens: false,
+            trackClicks: false,
+        ))->toEmail()->toString();
     }
 
     /**

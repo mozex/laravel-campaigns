@@ -110,16 +110,32 @@ class Revision extends Model
     }
 
     /**
-     * The content for a recipient's locale, else the default locale's, which
-     * every revision holds.
+     * The content for a recipient's locale, however it is written (fr_CA,
+     * fr-ca), else for its language alone (fr_CA gets fr), else another
+     * version in that language (fr_CA gets fr_BE, pt gets pt_BR: closer than
+     * the default), else the default locale's, which every revision holds.
      */
     public function contentFor(?string $locale): RevisionContent
     {
-        $contents = $this->contents;
+        $contents = $this->contents->sortBy('id');
 
-        return $contents->firstWhere('locale', $locale)
-            ?? $contents->firstWhere('locale', Locales::default())
-            ?? $contents->sortBy('id')->firstOrFail();
+        if ($locale !== null) {
+            $wanted = Locales::normalize($locale);
+            $language = Locales::language($wanted);
+
+            $match = $contents->first(fn (RevisionContent $content): bool => Locales::normalize($content->locale) === $wanted)
+                ?? $contents->first(fn (RevisionContent $content): bool => Locales::normalize($content->locale) === $language)
+                ?? $contents->first(fn (RevisionContent $content): bool => Locales::language($content->locale) === $language);
+
+            if ($match !== null) {
+                return $match;
+            }
+        }
+
+        $default = Locales::normalize(Locales::default());
+
+        return $contents->first(fn (RevisionContent $content): bool => Locales::normalize($content->locale) === $default)
+            ?? $contents->firstOrFail();
     }
 
     /**

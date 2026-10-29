@@ -22,11 +22,14 @@ class TestSendFactory extends Factory
     {
         return [
             'campaign_id' => Campaign::factory(),
+            'revision_id' => null,
             'email' => strtolower($this->faker->unique()->safeEmail()),
             'locale' => 'en',
             'token_hash' => hash('sha256', $this->faker->unique()->uuid()),
             'provider_message_id' => null,
             'sent_at' => null,
+            'failed_at' => null,
+            'failure' => null,
             'unsubscribed_at' => null,
         ];
     }
