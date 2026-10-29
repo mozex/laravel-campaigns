@@ -12,6 +12,7 @@ use Mozex\Campaigns\Actions\EnforceStopLossAction;
 use Mozex\Campaigns\Enums\FeedbackType;
 use Mozex\Campaigns\Models\ProviderEvent;
 use Mozex\Campaigns\Sending\AppliedFeedback;
+use Mozex\Campaigns\Support\DatabaseErrors;
 
 /**
  * Applies one stored provider event's effects, once: the event's row is
@@ -70,7 +71,8 @@ class ProcessFeedbackJob implements ShouldQueue
      */
     public function handle(ApplyFeedbackAction $apply, EnforceStopLossAction $stopLoss): void
     {
-        $applied = (new ProviderEvent)->getConnection()->transaction(function () use ($apply): ?AppliedFeedback {
+        // An effect can insert the address an event is about (DatabaseErrors).
+        $applied = DatabaseErrors::scrubbed('a provider event\'s effects', fn (): ?AppliedFeedback => (new ProviderEvent)->getConnection()->transaction(function () use ($apply): ?AppliedFeedback {
             $event = ProviderEvent::query()->lockForUpdate()->find($this->eventId);
 
             if ($event === null || $event->processed_at !== null) {
@@ -82,7 +84,7 @@ class ProcessFeedbackJob implements ShouldQueue
             $event->forceFill(['processed_at' => now()])->save();
 
             return $applied;
-        });
+        }));
 
         if ($applied !== null) {
             $stopLoss->execute($applied);

@@ -18,6 +18,8 @@ use Mozex\Campaigns\Enums\Rights;
 use Mozex\Campaigns\Mcp\Principal;
 use Mozex\Campaigns\Models\Subscriber;
 use Mozex\Campaigns\Support\ConsentContext;
+use Mozex\Campaigns\Support\DatabaseErrors;
+use PDOException;
 
 /**
  * The rules every tool shares. A tool is a read tool when it carries
@@ -137,6 +139,14 @@ abstract class CampaignsTool extends Tool
             return static::refused($exception->getMessage());
         } catch (ValidationException $exception) {
             return static::refused(ValidationMessages::from($exception));
+        } catch (PDOException $exception) {
+            // Its message holds the SQL with an address or a person's
+            // details, which laravel/mcp would answer whole under app.debug
+            // and the error tracker would keep (Support\DatabaseErrors).
+            $scrubbed = DatabaseErrors::scrub('the call', $exception);
+            report($scrubbed);
+
+            return static::refused($scrubbed->getMessage().' It was reported.');
         }
 
         return static::withinLimit($response);

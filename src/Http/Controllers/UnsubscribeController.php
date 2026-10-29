@@ -13,6 +13,7 @@ use Mozex\Campaigns\Jobs\EnforceStopLossJob;
 use Mozex\Campaigns\Models\CampaignMessage;
 use Mozex\Campaigns\Models\TestSend;
 use Mozex\Campaigns\Support\ConsentContext;
+use Mozex\Campaigns\Support\DatabaseErrors;
 
 /**
  * The page behind an email's unsubscribe and preferences links, and the
@@ -38,10 +39,11 @@ class UnsubscribeController extends PageController
             return $oneClick ? response('', 404) : $this->invalid();
         }
 
-        $unsubscribed = $unsubscribe->execute($email, ConsentContext::fromRequest(
+        // The opt-out's record holds the visitor's IP address and browser.
+        $unsubscribed = DatabaseErrors::scrubbed('the unsubscribe', fn (): bool => $unsubscribe->execute($email, ConsentContext::fromRequest(
             $request,
             $oneClick ? UnsubscribeAction::ONE_CLICK : UnsubscribeAction::PAGE,
-        ));
+        )));
 
         // The opt-out stands whatever the queue does: a check that can't be
         // queued is reported, and the next unsubscribe queues it again.
@@ -72,12 +74,12 @@ class UnsubscribeController extends PageController
             return $this->page($token, $email, 'resubscribed');
         }
 
-        $resubscribed = $resubscribe->execute($email, ConsentContext::fromRequest(
+        $resubscribed = DatabaseErrors::scrubbed('the subscription', fn (): bool => $resubscribe->execute($email, ConsentContext::fromRequest(
             $request,
             UnsubscribeAction::PAGE,
             ConsentBasis::Consent,
             accepted: true,
-        ));
+        )));
 
         return $this->page($token, $email, $resubscribed ? 'resubscribed' : null);
     }

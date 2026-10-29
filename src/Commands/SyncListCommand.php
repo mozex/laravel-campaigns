@@ -15,6 +15,7 @@ use Mozex\Campaigns\CampaignsException;
 use Mozex\Campaigns\Enums\SyncChange;
 use Mozex\Campaigns\Lists\SyncResult;
 use Mozex\Campaigns\Models\Subscriber;
+use Mozex\Campaigns\Support\DatabaseErrors;
 use Throwable;
 
 class SyncListCommand extends Command
@@ -59,7 +60,7 @@ class SyncListCommand extends Command
         try {
             $query->chunkById(500, function (Collection $chunk) use ($sync, $key, $dryRun, &$counts, &$records, &$unchanged, &$suppressed, &$problems): void {
                 foreach ($chunk as $record) {
-                    $result = $this->syncRecord($sync, $key, $record, $dryRun);
+                    $result = DatabaseErrors::scrubbed('a record\'s sync', fn (): SyncResult => $this->syncRecord($sync, $key, $record, $dryRun));
                     $records++;
 
                     foreach ($result->changes as $change) {
@@ -81,7 +82,7 @@ class SyncListCommand extends Command
             return self::FAILURE;
         }
 
-        $forgotten = $id === null ? $this->forgetOrphans($query->getModel(), $forget, $dryRun) : 0;
+        $forgotten = $id === null ? DatabaseErrors::scrubbed('forgetting a subscriber', fn (): int => $this->forgetOrphans($query->getModel(), $forget, $dryRun)) : 0;
 
         if ($dryRun) {
             $this->warn('Dry run: nothing was written. Run it again with --force to make these changes.');

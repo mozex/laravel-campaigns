@@ -241,6 +241,15 @@ class CampaignsException extends RuntimeException
     }
 
     /**
+     * A database error without the original, whose message holds the SQL
+     * with its values (Support\DatabaseErrors).
+     */
+    public static function databaseFailed(string $doing, string $sqlState): self
+    {
+        return new self("The database refused {$doing} (SQLSTATE {$sqlState}).");
+    }
+
+    /**
      * A database error met while syncing a record onto its list, without
      * the original, whose message holds the SQL with the person's address.
      */

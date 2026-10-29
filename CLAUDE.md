@@ -49,7 +49,7 @@ Each class's docblock gives the reasons for its own behaviour; read it before ch
 - Consent records and campaign messages outlive their subscriber (`subscriber_id` nulled); code deleting a subscriber clears the address on its messages.
 - Rows other requests may make at the same moment go through `Support\Rows::firstOrCreate()`, which re-reads with `sharedLock()`: Eloquent's `firstOrCreate()` reads a stale MySQL snapshot after a lost race, and `lockForUpdate()` deadlocks two losers.
 - Every state change is a conditional update, and its consent record is written only when it changed a row.
-- A database error's message carries the SQL's bindings, addresses among them: values are checked before the write, and an error that still happens is rethrown with its SQLSTATE only, never chained.
+- A database error's message carries the SQL's bindings, addresses among them: values are checked before the write, and an error that still happens is rethrown with its SQLSTATE only, never chained, at every entry point that writes a person's details (`Support\DatabaseErrors`: the feedback job, the pages' POSTs, the webhook, `CampaignsTool::handle()`, the sync and import loops, the freeze). Catch `PDOException`: a `DeadlockException` is no `QueryException`.
 
 ### Consent and subscribers
 

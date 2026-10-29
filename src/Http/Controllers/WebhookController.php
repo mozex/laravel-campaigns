@@ -11,6 +11,7 @@ use Mozex\Campaigns\Actions\RecordFeedbackAction;
 use Mozex\Campaigns\CampaignsException;
 use Mozex\Campaigns\Contracts\CampaignProvider;
 use Mozex\Campaigns\Enums\FeedbackResult;
+use Mozex\Campaigns\Support\DatabaseErrors;
 
 /**
  * Where the provider posts what happened to the emails it sent. A 406 tells
@@ -43,7 +44,7 @@ class WebhookController
         $refused = false;
 
         foreach ($provider->parseWebhook($request) as $feedback) {
-            if ($record->execute($feedback) === FeedbackResult::Refused) {
+            if (DatabaseErrors::scrubbed('a provider event', fn (): FeedbackResult => $record->execute($feedback)) === FeedbackResult::Refused) {
                 $refused = true;
             }
         }

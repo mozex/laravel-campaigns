@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Mozex\Campaigns\Actions;
 
-use Illuminate\Database\QueryException;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -22,7 +21,9 @@ use Mozex\Campaigns\Models\Campaign;
 use Mozex\Campaigns\Models\CampaignMessage;
 use Mozex\Campaigns\Models\Revision;
 use Mozex\Campaigns\Models\Subscriber;
+use Mozex\Campaigns\Support\DatabaseErrors;
 use Mozex\Campaigns\Support\Engagement;
+use PDOException;
 use Throwable;
 
 /**
@@ -60,10 +61,11 @@ class FreezeCampaignAction
             static::refuse($campaign, static::reason($exception), $run);
 
             return $campaign->refresh();
-        } catch (QueryException $exception) {
+        } catch (PDOException $exception) {
             // Its message lists the inserts' values, recipients' addresses
             // among them, so only its SQLSTATE goes on, never the original.
-            $sanitized = CampaignsException::freezeFailed($exception->getCode());
+            // A deadlock is a PDOException but no QueryException.
+            $sanitized = CampaignsException::freezeFailed(DatabaseErrors::sqlState($exception));
             static::refuse($campaign, $sanitized->getMessage(), $run);
 
             throw $sanitized;

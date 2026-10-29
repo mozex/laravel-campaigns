@@ -11,6 +11,7 @@ use Mozex\Campaigns\Enums\ConsentBasis;
 use Mozex\Campaigns\Enums\SubscriptionStatus;
 use Mozex\Campaigns\Models\Subscription;
 use Mozex\Campaigns\Support\ConsentContext;
+use Mozex\Campaigns\Support\DatabaseErrors;
 use Mozex\Campaigns\Support\Token;
 
 /**
@@ -41,12 +42,13 @@ class ConfirmationController extends PageController
             return $this->invalid();
         }
 
-        $confirm->execute($subscription, ConsentContext::fromRequest(
+        // The confirmation's record holds the visitor's IP address and browser.
+        DatabaseErrors::scrubbed('the confirmation', fn (): bool => $confirm->execute($subscription, ConsentContext::fromRequest(
             $request,
             ConfirmSubscriptionAction::PAGE,
             ConsentBasis::Consent,
             accepted: true,
-        ));
+        )));
 
         return $this->page($token, $subscription, confirmed: true);
     }

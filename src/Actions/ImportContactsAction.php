@@ -8,7 +8,6 @@ use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 use Closure;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\QueryException;
 use JsonException;
 use Mozex\Campaigns\CampaignsException;
 use Mozex\Campaigns\Enums\ConsentBasis;
@@ -20,10 +19,12 @@ use Mozex\Campaigns\Imports\RolledBackRow;
 use Mozex\Campaigns\Models\CampaignList;
 use Mozex\Campaigns\Models\Subscriber;
 use Mozex\Campaigns\Support\ConsentContext;
+use Mozex\Campaigns\Support\DatabaseErrors;
 use Mozex\Campaigns\Support\EmailAddress;
 use Mozex\Campaigns\Support\Engagement;
 use Mozex\Campaigns\Support\Rows;
 use Mozex\Campaigns\Support\SubscriberDetails;
+use PDOException;
 
 /**
  * Brings contacts in from another system: onto a static list with their
@@ -180,10 +181,11 @@ class ImportContactsAction
                 $problems[] = $refusal ?? "Row {$row}: {$exception->getMessage()}";
 
                 continue;
-            } catch (QueryException $exception) {
+            } catch (PDOException $exception) {
                 // Its message holds the SQL with the row's address, so only
                 // its code is kept; whatever broke would break the next row.
-                $problems[] = "Row {$row}: the database refused it (SQLSTATE {$exception->getCode()}), so the import stopped there.";
+                // A deadlock is a PDOException but no QueryException.
+                $problems[] = 'Row '.$row.': the database refused it (SQLSTATE '.DatabaseErrors::sqlState($exception).'), so the import stopped there.';
 
                 break;
             }
