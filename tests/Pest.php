@@ -2,18 +2,26 @@
 
 declare(strict_types=1);
 
+use Carbon\CarbonInterface;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Mozex\Campaigns\Actions\CreateCampaignAction;
+use Mozex\Campaigns\Actions\StartCampaignAction;
+use Mozex\Campaigns\Audiences\CampaignAudience;
 use Mozex\Campaigns\Content\EmailContent;
+use Mozex\Campaigns\Content\EmailSource;
+use Mozex\Campaigns\Contracts\CampaignProvider;
 use Mozex\Campaigns\Enums\MessageStatus;
 use Mozex\Campaigns\Enums\SubscriptionStatus;
 use Mozex\Campaigns\Fetching\HostResolver;
 use Mozex\Campaigns\Fetching\StaticHostResolver;
+use Mozex\Campaigns\Models\Campaign;
 use Mozex\Campaigns\Models\CampaignList;
 use Mozex\Campaigns\Models\CampaignMessage;
 use Mozex\Campaigns\Models\ConsentRecord;
 use Mozex\Campaigns\Models\Subscriber;
 use Mozex\Campaigns\Models\Subscription;
+use Mozex\Campaigns\Sending\FakeProvider;
 use Mozex\Campaigns\Support\Token;
 use Mozex\Campaigns\Tests\TestCase;
 
@@ -131,6 +139,40 @@ function subscriberOn(array $lists, array $attributes = [], SubscriptionStatus $
     }
 
     return $subscriber;
+}
+
+/**
+ * A campaign started on a list of new subscribers, with the given pace: its
+ * recipients frozen into pending messages in send order, and sending (or
+ * scheduled, given a time). Sending is on and goes to the fake provider.
+ *
+ * @param  int|list<string>  $recipients  how many, or their addresses
+ * @param  array<string, mixed>  $pace
+ */
+function sendingCampaign(int|array $recipients, array $pace = [], string $key = 'news', string $list = 'readers', ?CarbonInterface $at = null): Campaign
+{
+    sendFromExample();
+    config()->set('campaigns.provider', 'fake');
+
+    $target = CampaignList::query()->where('key', $list)->first() ?? CampaignList::factory()->create(['key' => $list]);
+    $emails = is_int($recipients) ? array_map(fn (int $i): string => "{$key}-{$i}@example.org", range(1, $recipients)) : $recipients;
+
+    foreach ($emails as $email) {
+        subscriberOn([$target], ['email' => $email]);
+    }
+
+    $campaign = app(CreateCampaignAction::class)->execute($key, 'News', EmailSource::contents([campaignEmail()]), ['lists' => [$list]])->campaign;
+
+    return app(StartCampaignAction::class)->execute($campaign, CampaignAudience::for($campaign)->recipients()->count(), $at, $pace);
+}
+
+/**
+ * The provider, once campaigns.provider is "fake".
+ */
+function fakeProvider(): FakeProvider
+{
+    /** @var FakeProvider */
+    return app(CampaignProvider::class);
 }
 
 /**

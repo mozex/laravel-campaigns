@@ -64,8 +64,9 @@ return new class extends Migration
             $table->timestamp('blocked_at')->nullable();
             $table->string('blocked_reason', 32)->nullable();
             $table->unsignedSmallInteger('soft_bounces')->default(0);
-            // The last double opt-in email, which may go to an address once a day.
-            $table->timestamp('confirmation_sent_at')->nullable();
+            // The last double opt-in email, which may go to an address once a
+            // day; indexed, since the pace counts a day's of them each minute.
+            $table->timestamp('confirmation_sent_at')->nullable()->index();
             $table->timestamps();
 
             // One subscriber per app record. A short name, since apps with a
@@ -295,6 +296,8 @@ return new class extends Migration
             $table->unique(['campaign_id', 'subscriber_id']);
             $table->index(['campaign_id', 'status', 'position']);
             $table->index(['status', 'claim_id']);
+            // The pace counts a campaign's claims in a window, by status.
+            $table->index(['campaign_id', 'claimed_at', 'status']);
         });
 
         // A test email of a campaign's or a template's revision, apart from

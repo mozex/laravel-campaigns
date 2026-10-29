@@ -115,11 +115,11 @@ class FreezeCampaignAction
 
     /**
      * Moves a campaign still being started by this run back to a draft,
-     * saying why.
+     * saying why. Returns whether it did.
      */
-    public static function refuse(Campaign $campaign, string $reason, string $run): void
+    public static function refuse(Campaign $campaign, string $reason, string $run): bool
     {
-        Campaign::query()
+        return Campaign::query()
             ->whereKey($campaign->getKey())
             ->where('status', CampaignStatus::Starting)
             ->where('start_run', $run)
@@ -128,7 +128,7 @@ class FreezeCampaignAction
                 'start_error' => $reason,
                 'scheduled_at' => null,
                 'updated_at' => now(),
-            ]);
+            ]) === 1;
     }
 
     protected function freeze(Campaign $campaign, int $expected, string $run): ?Campaign

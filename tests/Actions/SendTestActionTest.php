@@ -5,7 +5,6 @@ declare(strict_types=1);
 use Illuminate\Support\Facades\Queue;
 use Mozex\Campaigns\Actions\SendTestAction;
 use Mozex\Campaigns\CampaignsException;
-use Mozex\Campaigns\Contracts\CampaignProvider;
 use Mozex\Campaigns\Enums\CampaignStatus;
 use Mozex\Campaigns\Enums\SendFailure;
 use Mozex\Campaigns\Jobs\SendTestJob;
@@ -13,7 +12,6 @@ use Mozex\Campaigns\Models\Campaign;
 use Mozex\Campaigns\Models\Revision;
 use Mozex\Campaigns\Models\Template;
 use Mozex\Campaigns\Models\TestSend;
-use Mozex\Campaigns\Sending\FakeProvider;
 use Mozex\Campaigns\Sending\MessageComposer;
 use Mozex\Campaigns\Sending\OutgoingMessage;
 use Mozex\Campaigns\Sending\SendFailed;
@@ -24,12 +22,6 @@ beforeEach(function (): void {
     config()->set('campaigns.provider', 'fake');
     config()->set('campaigns.test_addresses', ['owner@example.com', 'Editor@Example.com']);
 });
-
-function fakeProvider(): FakeProvider
-{
-    /** @var FakeProvider */
-    return app(CampaignProvider::class);
-}
 
 it('sends a draft\'s current email to the test addresses only, each test once', function (): void {
     $campaign = Campaign::factory()->create();

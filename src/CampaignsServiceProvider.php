@@ -6,12 +6,15 @@ namespace Mozex\Campaigns;
 
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Config\Repository;
+use Illuminate\Console\Scheduling\CacheEventMutex;
+use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Contracts\Foundation\CachesConfiguration;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\RateLimiter;
+use Mozex\Campaigns\Commands\PumpCommand;
 use Mozex\Campaigns\Commands\SyncListCommand;
 use Mozex\Campaigns\Contracts\CampaignProvider;
 use Mozex\Campaigns\Models\ApiToken;
@@ -50,7 +53,7 @@ class CampaignsServiceProvider extends PackageServiceProvider
             ->hasTranslations()
             ->hasRoute('campaigns')
             ->hasMigration('create_campaigns_tables')
-            ->hasCommand(SyncListCommand::class)
+            ->hasCommands([SyncListCommand::class, PumpCommand::class])
             ->hasInstallCommand(function (InstallCommand $command): void {
                 $command
                     ->publishConfigFile()
@@ -88,6 +91,28 @@ class CampaignsServiceProvider extends PackageServiceProvider
         // mail app, too few to hammer one address's consent records.
         RateLimiter::for('campaigns.links', fn (Request $request): Limit => Limit::perMinute(10)
             ->by('campaigns.links:'.Token::hash((string) $request->route('token'))));
+
+        $this->callAfterResolving(Schedule::class, fn (Schedule $schedule) => $this->schedule($schedule));
+    }
+
+    /**
+     * The pump every minute, unless the app schedules it itself. Its overlap
+     * lock lives on campaigns.cache_store, a store the app's deploys don't
+     * flush, through a mutex of its own so the app's other scheduled
+     * commands keep theirs.
+     */
+    protected function schedule(Schedule $schedule): void
+    {
+        if (! config('campaigns.schedule')) {
+            return;
+        }
+
+        $pump = $schedule->command(PumpCommand::class)->everyMinute()->withoutOverlapping(5);
+        $store = config('campaigns.cache_store');
+
+        if (is_string($store) && $store !== '') {
+            $pump->preventOverlapsUsing($this->app->make(CacheEventMutex::class)->useStore($store));
+        }
     }
 
     public function packageRegistered(): void

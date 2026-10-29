@@ -2,6 +2,9 @@
 
 declare(strict_types=1);
 
+use Illuminate\Console\Scheduling\CacheEventMutex;
+use Illuminate\Console\Scheduling\Event;
+use Illuminate\Console\Scheduling\Schedule;
 use Mozex\Campaigns\Campaigns;
 use Mozex\Campaigns\CampaignsException;
 use Mozex\Campaigns\CampaignsServiceProvider;
@@ -65,4 +68,29 @@ it('fills a published nested group in from the defaults', function (): void {
         ->and(config('campaigns.pace.per_minute'))->toBe(10)
         ->and(config('campaigns.stop_loss.complaint_rate'))->toBe(0.08)
         ->and(config('campaigns.domain_daily_caps'))->toBe(['news.example.com' => 3000]);
+});
+
+it('schedules the pump every minute without overlapping, its lock on the configured store, unless told not to', function (): void {
+    $pumps = function (): array {
+        app()->forgetInstance(Schedule::class);
+
+        return array_values(array_filter(
+            app(Schedule::class)->events(),
+            fn (Event $event): bool => str_contains((string) $event->command, 'campaigns:pump'),
+        ));
+    };
+
+    config()->set('campaigns.cache_store', 'array');
+    [$pump] = $pumps();
+
+    expect($pump)
+        ->expression->toBe('* * * * *')
+        ->withoutOverlapping->toBeTrue()
+        ->expiresAt->toBe(5)
+        ->and($pump->mutex)->toBeInstanceOf(CacheEventMutex::class)
+        ->and($pump->mutex->store)->toBe('array');
+
+    config()->set('campaigns.schedule', false);
+
+    expect($pumps())->toBe([]);
 });

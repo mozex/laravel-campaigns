@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Mozex\Campaigns\Sending;
 
+use Carbon\CarbonInterface;
 use DateTimeZone;
 use Mozex\Campaigns\CampaignsException;
 
@@ -102,6 +103,40 @@ class Pace
         }
 
         return ! static::within(static::minutes($to['sending_hours']), static::minutes($from['sending_hours']));
+    }
+
+    /**
+     * Whether a moment falls inside the sending hours, read in the pace's
+     * timezone; always, when it has none.
+     *
+     * @param  array{first_day: int, daily_growth: int|float, daily_cap: ?int, per_minute: int, sending_hours: ?array{0: string, 1: string}, timezone: string}  $pace
+     */
+    public static function isSendingTime(array $pace, CarbonInterface $at): bool
+    {
+        if ($pace['sending_hours'] === null) {
+            return true;
+        }
+
+        $local = $at->copy()->setTimezone($pace['timezone']);
+        $minute = $local->hour * 60 + $local->minute;
+
+        return static::within([[$minute, $minute + 1]], static::minutes($pace['sending_hours']));
+    }
+
+    /**
+     * How many emails a day of the pace may send: the first day's number,
+     * grown by daily_growth percent each later day, up to the daily cap (or
+     * the largest first_day allowed, so a fast growth can't overflow).
+     *
+     * @param  array{first_day: int, daily_growth: int|float, daily_cap: ?int, per_minute: int, sending_hours: ?array{0: string, 1: string}, timezone: string}  $pace
+     * @param  int  $day  counted from 1
+     */
+    public static function dayVolume(array $pace, int $day): int
+    {
+        $volume = $pace['first_day'] * (1 + $pace['daily_growth'] / 100) ** max(0, $day - 1);
+
+        // Rounded first, so 119.99999 from the float maths is still 120.
+        return (int) min($pace['daily_cap'] ?? 100_000_000, floor(round($volume, 6)));
     }
 
     protected static function whole(string $key, mixed $value, int $min, int $max): int

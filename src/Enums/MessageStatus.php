@@ -6,9 +6,10 @@ namespace Mozex\Campaigns\Enums;
 
 /**
  * A message moves pending, queued, sending, sent, delivered, or ends failed,
- * skipped or unknown. The one step back is queued to pending, for a claim
- * whose job never ran; nothing ever moves back from sending, since the
- * provider may already have the email.
+ * skipped or unknown. Two steps lead back to pending: queued, for a claim
+ * whose job never sent it, and sending, only when the provider answered that
+ * it took nothing (not accepted, or the sending domain refused). Nothing else
+ * moves back from sending, since the provider may already have the email.
  */
 enum MessageStatus: string
 {

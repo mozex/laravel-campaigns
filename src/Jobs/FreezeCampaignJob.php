@@ -22,12 +22,15 @@ class FreezeCampaignJob implements ShouldQueue
     use Dispatchable;
     use Queueable;
 
+    /**
+     * Give the queue's worker a longer timeout than this. The pump hands back
+     * a start still freezing well past it, whose job was lost.
+     */
+    public const TIMEOUT = 300;
+
     public int $tries = 1;
 
-    /**
-     * Give the queue's worker a longer timeout than this.
-     */
-    public int $timeout = 300;
+    public int $timeout = self::TIMEOUT;
 
     public function __construct(public int $campaignId, public int $expectedRecipients, public string $run)
     {

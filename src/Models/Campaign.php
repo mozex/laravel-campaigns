@@ -146,6 +146,15 @@ class Campaign extends Model
         ], fn (string $value): bool => $value !== '');
     }
 
+    /**
+     * The domain it sends from, its From address's, which the pace's daily
+     * cap and a provider's refusal are counted by.
+     */
+    public function sendingDomain(): string
+    {
+        return strtolower(substr($this->from_email, (int) strrpos($this->from_email, '@') + 1));
+    }
+
     /** @return HasMany<CampaignMessage, $this> */
     public function messages(): HasMany
     {
