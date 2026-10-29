@@ -235,10 +235,7 @@ class SendMessageJob implements ShouldQueue
             'failure_code' => $status,
         ]);
 
-        Campaign::query()->whereKey($message->campaign_id)->update([
-            'rate_halved_until' => now()->addMinutes(10),
-            'updated_at' => now(),
-        ]);
+        $this->halveRate($message);
 
         $recent = CampaignMessage::query()
             ->where('campaign_id', $message->campaign_id)
@@ -247,8 +244,12 @@ class SendMessageJob implements ShouldQueue
             ->where('sending_at', '>=', now()->subMinutes(static::UNCLEAR_MINUTES))
             ->count();
 
+        if ($recent < static::UNCLEAR_LIMIT) {
+            return;
+        }
+
         // Found on its own, so the event's listeners may read its relations.
-        $campaign = $recent >= static::UNCLEAR_LIMIT ? Campaign::query()->find($message->campaign_id) : null;
+        $campaign = Campaign::query()->find($message->campaign_id);
 
         if ($campaign?->status !== CampaignStatus::Sending) {
             return;
@@ -267,7 +268,14 @@ class SendMessageJob implements ShouldQueue
     protected function notAccepted(CampaignMessage $message): void
     {
         $this->backToPending(MessageStatus::Sending);
+        $this->halveRate($message);
+    }
 
+    /**
+     * Halves the message's campaign's per-minute rate for ten minutes.
+     */
+    protected function halveRate(CampaignMessage $message): void
+    {
         Campaign::query()->whereKey($message->campaign_id)->update([
             'rate_halved_until' => now()->addMinutes(10),
             'updated_at' => now(),

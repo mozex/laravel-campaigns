@@ -53,10 +53,12 @@ abstract class CampaignsTool extends Tool
     public const REFUSAL_LENGTH = 5000;
 
     /**
-     * A page number's rules: an upper bound, since a huge one overflows the
-     * offset it becomes and fails instead of answering an empty page.
+     * The highest page number: a huge one overflows the offset it becomes
+     * and fails instead of answering an empty page.
      */
-    public const PAGE_RULES = ['nullable', 'integer', 'min:1', 'max:100000'];
+    public const MAX_PAGE = 100000;
+
+    public const PAGE_RULES = ['nullable', 'integer', 'min:1', 'max:'.self::MAX_PAGE];
 
     public const APPROVAL_META = 'anthropic/requiresUserInteraction';
 

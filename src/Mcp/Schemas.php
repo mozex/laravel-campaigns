@@ -344,7 +344,7 @@ class Schemas
                 'per_minute' => $schema->integer()->required(),
                 'sending_hours' => $schema->array()->items($schema->string())->nullable()->required()->description('["09:00", "17:00"] in timezone; null sends all day.'),
                 'timezone' => $schema->string()->required(),
-                'rate_halved_until' => $schema->string()->nullable()->required()->description('The per-minute rate is halved until then, after the provider took nothing (a rate limit or an outage).'),
+                'rate_halved_until' => $schema->string()->nullable()->required()->description('The per-minute rate is halved until then, after the provider took nothing (a rate limit or an outage) or a send ended without a clear answer.'),
                 'day' => $schema->integer()->nullable()->required()->description('The day of the pace it is on, counted in 24 hours from its start (or from a resume after a pause of more than a day).'),
                 'day_volume' => $schema->integer()->nullable()->required()->description('How many that day may send.'),
                 'in_sending_hours' => $schema->boolean()->required(),

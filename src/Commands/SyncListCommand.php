@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Mozex\Campaigns\Commands;
 
+use Closure;
 use Illuminate\Console\Command;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
@@ -133,19 +134,12 @@ class SyncListCommand extends Command
         Subscriber::query()
             ->where('subscribable_type', $model->getMorphClass())
             ->whereNotIn('subscribable_id', $records)
-            ->chunkById(500, function (Collection $orphans) use ($forget, $dryRun, $connection, &$forgotten): void {
+            ->chunkById(500, function (Collection $orphans) use ($forget, $dryRun, &$forgotten): void {
                 foreach ($orphans as $orphan) {
-                    $connection->beginTransaction();
-
-                    try {
+                    $this->inTransaction(function () use ($forget, $orphan): void {
                         $forget->execute($orphan);
-                    } catch (Throwable $exception) {
-                        $connection->rollBack();
+                    }, $dryRun);
 
-                        throw $exception;
-                    }
-
-                    $dryRun ? $connection->rollBack() : $connection->commit();
                     $forgotten++;
                 }
             });
@@ -163,11 +157,25 @@ class SyncListCommand extends Command
      */
     protected function syncRecord(SyncRecordAction $sync, string $key, Model $record, bool $dryRun): SyncResult
     {
+        return $this->inTransaction(fn (): SyncResult => $sync->execute($key, $record), $dryRun);
+    }
+
+    /**
+     * Runs one record's change in a transaction of its own, rolled back on a
+     * dry run.
+     *
+     * @template TResult
+     *
+     * @param  Closure(): TResult  $change
+     * @return TResult
+     */
+    protected function inTransaction(Closure $change, bool $dryRun): mixed
+    {
         $connection = (new Subscriber)->getConnection();
         $connection->beginTransaction();
 
         try {
-            $result = $sync->execute($key, $record);
+            $result = $change();
         } catch (Throwable $exception) {
             $connection->rollBack();
 

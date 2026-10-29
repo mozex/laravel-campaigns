@@ -12,6 +12,7 @@ use Laravel\Mcp\Server\Attributes\Name;
 use Laravel\Mcp\Server\Attributes\Title;
 use Laravel\Mcp\Server\Contracts\HasUriTemplate;
 use Laravel\Mcp\Support\UriTemplate;
+use Mozex\Campaigns\Mcp\Tools\CampaignsTool;
 
 /**
  * Any page of one of the app's own resources.
@@ -33,6 +34,6 @@ class AppDataPageResource extends CampaignsResource implements HasUriTemplate
 
         // Clamped as the tools' page rules hold a page, so a huge one never
         // overflows the app's paginator.
-        return AppDataResource::page((string) $request->get('name'), is_numeric($page) ? min(100000, max(1, (int) $page)) : 1);
+        return AppDataResource::page((string) $request->get('name'), is_numeric($page) ? min(CampaignsTool::MAX_PAGE, max(1, (int) $page)) : 1);
     }
 }

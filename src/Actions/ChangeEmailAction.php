@@ -80,7 +80,9 @@ class ChangeEmailAction
             if ($existing === null && ! $subscriber->isSuppressed()) {
                 // Soft bounces are the old address's, like a block: the new
                 // one starts with none.
-                $subscriber->update(['email' => $address, 'soft_bounces' => 0]);
+                // The new address may be asked to confirm today, whatever the
+                // old one was sent.
+                $subscriber->update(['email' => $address, 'soft_bounces' => 0, 'confirmation_sent_at' => null]);
                 $this->voidConfirmations($subscriber);
 
                 return $subscriber;
@@ -210,8 +212,7 @@ class ChangeEmailAction
     /**
      * A confirmation link already sent went to the old address, so it proves
      * nothing about the one the person holds now: their waiting double
-     * opt-ins lose it, and the address may get a new confirmation email
-     * today (SendConfirmationAction).
+     * opt-ins lose it, and SendConfirmationAction asks the new address.
      */
     protected function voidConfirmations(Subscriber $holder): void
     {
@@ -220,7 +221,5 @@ class ChangeEmailAction
             ->where('status', SubscriptionStatus::Pending)
             ->whereNotNull('confirm_token_hash')
             ->update(['confirm_token_hash' => null, 'updated_at' => now()]);
-
-        Subscriber::query()->whereKey($holder->id)->update(['confirmation_sent_at' => null]);
     }
 }
