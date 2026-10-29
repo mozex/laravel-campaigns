@@ -89,6 +89,11 @@ class CampaignsException extends RuntimeException
         return new self('campaigns.provider ("'.mb_strimwidth($value, 0, 120, '...').'") must be "mailgun", "fake" or a class implementing '.CampaignProvider::class.'.');
     }
 
+    public static function missingWebhookSigningKey(): self
+    {
+        return new self('A Mailgun webhook arrived, but no webhook signing key is configured (campaigns.mailgun.webhook_signing_key, MAILGUN_WEBHOOK_SIGNING_KEY), so it can\'t be verified.');
+    }
+
     public static function recipientForgotten(): self
     {
         return new self('The person this email is for was forgotten, so it can no longer be sent or shown.');

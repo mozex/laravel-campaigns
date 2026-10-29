@@ -23,7 +23,6 @@ class ProviderEventFactory extends Factory
     {
         return [
             'provider_event_id' => $this->faker->unique()->regexify('[A-Za-z0-9]{22}'),
-            'signature_token_hash' => null,
             'message_id' => CampaignMessage::factory(),
             'test_send_id' => null,
             'type' => FeedbackType::Delivered,

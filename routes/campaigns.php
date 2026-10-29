@@ -5,6 +5,7 @@ declare(strict_types=1);
 use Illuminate\Support\Facades\Route;
 use Mozex\Campaigns\Http\Controllers\ConfirmationController;
 use Mozex\Campaigns\Http\Controllers\UnsubscribeController;
+use Mozex\Campaigns\Http\Controllers\WebhookController;
 use Mozex\Campaigns\Http\Controllers\WebVersionController;
 use Mozex\Campaigns\Http\Middleware\PageHeaders;
 
@@ -33,4 +34,8 @@ Route::prefix('campaigns')
             Route::post('u/{token}/subscribe', [UnsubscribeController::class, 'resubscribe'])->name('resubscribe');
             Route::post('c/{token}', [ConfirmationController::class, 'confirm'])->name('confirm.submit');
         });
+
+        // Not throttled: the signature is the gate, and a limit would turn
+        // away the provider's bursts after a campaign's sends.
+        Route::post('webhooks/mailgun', WebhookController::class)->name('webhooks.mailgun');
     });

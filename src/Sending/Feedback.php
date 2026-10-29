@@ -9,11 +9,13 @@ use Mozex\Campaigns\Enums\FeedbackType;
 
 /**
  * One event the provider reported about one email, in the package's terms.
- * messageUuid is the id the package sent with the message, when the provider
- * echoed it back; bot names the machine that opened or clicked, if any.
- * replayKey is the one-time value a signed webhook carries, stored with the
- * event so the same request can't be processed twice; events read from the
- * provider's logs have none.
+ * messageUuid is the id the package sent with a campaign's message and
+ * testSendUuid the one it sent with a test email, when the provider echoed
+ * them back; bot names the machine that opened or clicked, if any.
+ * replayKey is the one-time value a signed webhook carries, recorded with the
+ * event's id so a replayed request can't carry another event; events read
+ * from the provider's logs have none. payload is the provider's own details worth
+ * keeping, never a recipient's address or IP.
  */
 readonly class Feedback
 {
@@ -26,6 +28,7 @@ readonly class Feedback
         public CarbonInterface $occurredAt,
         public string $recipient,
         public ?string $messageUuid = null,
+        public ?string $testSendUuid = null,
         public ?string $providerMessageId = null,
         public ?string $severity = null,
         public ?string $reason = null,

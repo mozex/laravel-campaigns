@@ -1,0 +1,61 @@
+{
+    "event": "failed",
+    "id": "YusK9KhoTwe2C00iRxsEqQ",
+    "timestamp": 1770919267.4288595,
+    "flags": {
+        "is-authenticated": true,
+        "is-routed": false,
+        "is-big": false,
+        "is-system-test": false,
+        "is-test-mode": false
+    },
+    "message": {
+        "attachments": [],
+        "headers": {
+            "message-id": "20260212180106.5c8f35804ae3fd54@sample.mailgun.com",
+            "from": "Sample Sender <sender@sample.mailgun.com>",
+            "to": "tempfailrecipient@sample.mailgun.com",
+            "subject": "Sample webhook payload"
+        },
+        "size": 392
+    },
+    "storage": {
+        "key": "XXXXAQVV4uE1s5YYj9ZJq7Ge6flueUXXXX",
+        "url": "https://storage-us-west1.api.mailgun.net/v3/domains/sample.mailgun.com/messages/BAABAQdkRjek67WfRENNirr66rsdtk9IYg"
+    },
+    "log-level": "warn",
+    "recipient": "tempfailrecipient@sample.mailgun.com",
+    "recipient-domain": "free.fr",
+    "primary-dkim": "smtp._domainkey.sample.mailgun.com",
+    "tags": [
+        "webhook_payload"
+    ],
+    "reason": "generic",
+    "recipient-provider": "Free FR",
+    "severity": "temporary",
+    "campaigns": [],
+    "account": {
+        "id": "1234567890303a4bd1f33898"
+    },
+    "delivery-status": {
+        "attempt-no": 1,
+        "code": 421,
+        "message": "Your IP (161.38.194.10) is temporary blacklisted by an anti-troyan rule, retry later and/or visit http://sample.mailgun.com/",
+        "description": null,
+        "session-seconds": 0.478,
+        "retry-seconds": 600,
+        "enhanced-code": null,
+        "mx-host": "mx1.sample.mailgun.com",
+        "first-delivery-attempt-seconds": 0.365
+    },
+    "domain": {
+        "name": "sample.mailgun.com"
+    },
+    "envelope": {
+        "sender": "postmaster@sample.mailgun.com",
+        "targets": "tempfailrecipient@sample.mailgun.com",
+        "transport": "smtp",
+        "sending-ip": "161.38.194.10"
+    },
+    "user-variables": []
+}

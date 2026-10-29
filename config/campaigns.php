@@ -58,6 +58,16 @@ return [
     'provider' => env('CAMPAIGNS_PROVIDER', 'mailgun'),
 
     /*
+     * Mailgun's settings beyond the campaigns mailer. Its webhooks post to
+     * /campaigns/webhooks/mailgun and are verified with the account's HTTP
+     * webhook signing key (Settings, API Security in Mailgun), which is
+     * neither the API key nor a domain sending key.
+     */
+    'mailgun' => [
+        'webhook_signing_key' => env('MAILGUN_WEBHOOK_SIGNING_KEY'),
+    ],
+
+    /*
      * Countries whose subscribers' opens are never tracked, whatever a
      * campaign says, as two-letter codes: France's data protection authority
      * requires consent for a tracking pixel. Clicks are still tracked.
@@ -200,9 +210,11 @@ return [
     ],
 
     /*
-     * The cache store that holds the scheduled commands' overlap locks. Point
-     * it at a store your deploys don't flush, so a release can't free a lock
-     * a running pump still holds. Null uses the app's default store.
+     * The cache store that holds the scheduled commands' overlap locks (and
+     * the mark that limits a misconfigured webhook's error report to one an
+     * hour). Point it at a store your deploys don't flush, so a release can't
+     * free a lock a running pump still holds. Null uses the app's default
+     * store.
      */
     'cache_store' => env('CAMPAIGNS_CACHE_STORE'),
 

@@ -5,6 +5,7 @@ declare(strict_types=1);
 use Carbon\CarbonInterface;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Str;
 use Mozex\Campaigns\Actions\CreateCampaignAction;
 use Mozex\Campaigns\Actions\StartCampaignAction;
 use Mozex\Campaigns\Audiences\CampaignAudience;
@@ -173,6 +174,44 @@ function fakeProvider(): FakeProvider
 {
     /** @var FakeProvider */
     return app(CampaignProvider::class);
+}
+
+/**
+ * One of Mailgun's documented webhook payloads (its event-data), from
+ * tests/Fixtures/Mailgun, with the given fields replaced (nested arrays
+ * merge, so ['user-variables' => [...]] turns its [] into an object).
+ *
+ * @param  array<string, mixed>  $changes
+ * @return array<string, mixed>
+ */
+function mailgunEvent(string $name, array $changes = []): array
+{
+    /** @var array<string, mixed> $event */
+    $event = json_decode((string) file_get_contents(__DIR__."/Fixtures/Mailgun/{$name}.json"), true, flags: JSON_THROW_ON_ERROR);
+
+    return array_replace_recursive($event, $changes);
+}
+
+/**
+ * A webhook request's body as Mailgun posts it: the event, and a signature
+ * of its timestamp (now, unless given) and token made with the given key.
+ *
+ * @param  array<string, mixed>  $event
+ * @return array{signature: array{timestamp: string, token: string, signature: string}, event-data: array<string, mixed>}
+ */
+function mailgunWebhook(array $event, ?string $token = null, ?int $timestamp = null, string $key = 'webhook-signing-key'): array
+{
+    $timestamp = (string) ($timestamp ?? now()->getTimestamp());
+    $token ??= Str::random(50);
+
+    return [
+        'signature' => [
+            'timestamp' => $timestamp,
+            'token' => $token,
+            'signature' => hash_hmac('sha256', $timestamp.$token, $key),
+        ],
+        'event-data' => $event,
+    ];
 }
 
 /**

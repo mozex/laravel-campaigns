@@ -18,13 +18,13 @@ use Mozex\Campaigns\Enums\FeedbackType;
  *
  * @property int $id
  * @property string $provider_event_id
- * @property ?string $signature_token_hash
  * @property ?int $message_id
  * @property ?int $test_send_id
  * @property FeedbackType $type
  * @property bool $is_bot
  * @property ?array<string, mixed> $payload
  * @property Carbon $occurred_at
+ * @property ?Carbon $processed_at
  * @property ?Carbon $created_at
  */
 #[UseFactory(ProviderEventFactory::class)]
@@ -39,21 +39,17 @@ class ProviderEvent extends Model
 
     protected $fillable = [
         'provider_event_id',
-        'signature_token_hash',
         'message_id',
         'test_send_id',
         'type',
         'is_bot',
         'payload',
         'occurred_at',
-    ];
-
-    protected $hidden = [
-        'signature_token_hash',
+        'processed_at',
     ];
 
     /**
-     * @return array{type: class-string<FeedbackType>, is_bot: 'boolean', payload: 'array', occurred_at: 'datetime'}
+     * @return array{type: class-string<FeedbackType>, is_bot: 'boolean', payload: 'array', occurred_at: 'datetime', processed_at: 'datetime'}
      */
     protected function casts(): array
     {
@@ -62,6 +58,7 @@ class ProviderEvent extends Model
             'is_bot' => 'boolean',
             'payload' => 'array',
             'occurred_at' => 'datetime',
+            'processed_at' => 'datetime',
         ];
     }
 

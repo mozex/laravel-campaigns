@@ -32,6 +32,7 @@ use Mozex\Campaigns\Models\Subscription;
 use Mozex\Campaigns\Models\Template;
 use Mozex\Campaigns\Models\TestSend;
 use Mozex\Campaigns\Models\Upload;
+use Mozex\Campaigns\Models\WebhookToken;
 use Mozex\Campaigns\Sending\FakeProvider;
 use Mozex\Campaigns\Sending\MailgunProvider;
 use Mozex\Campaigns\Support\Token;
@@ -85,6 +86,7 @@ class CampaignsServiceProvider extends PackageServiceProvider
             'campaigns.asset' => Asset::class,
             'campaigns.upload' => Upload::class,
             'campaigns.saved_audience' => SavedAudience::class,
+            'campaigns.webhook_token' => WebhookToken::class,
         ]);
 
         // A link's POSTs, counted per link: enough for a person and their
