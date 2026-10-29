@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Mozex\Campaigns\Reports;
 
 use Composer\InstalledVersions;
-use Illuminate\Support\Str;
 use Mozex\Campaigns\Campaigns;
 use Mozex\Campaigns\CampaignsException;
 use Mozex\Campaigns\Content\Placeholders;
@@ -13,6 +12,7 @@ use Mozex\Campaigns\Enums\CampaignStatus;
 use Mozex\Campaigns\Models\Campaign;
 use Mozex\Campaigns\Models\CampaignList;
 use Mozex\Campaigns\Support\Sender;
+use Mozex\Campaigns\Support\ShownText;
 use Mozex\Campaigns\Support\TestAddresses;
 
 /**
@@ -23,13 +23,17 @@ use Mozex\Campaigns\Support\TestAddresses;
 class Overview
 {
     /**
-     * At most this many lists and campaigns, and this much of a pause's
-     * reason (the status tool has it whole), so the answer stays under
-     * CampaignsTool::RESULT_LIMIT with every column at its longest.
+     * At most this many lists and campaigns, this much of a list's or a
+     * campaign's name, and this much of a pause's reason (the list and
+     * status tools have them whole), so the answer stays under
+     * CampaignsTool::RESULT_LIMIT, counted as JSON, with every column at its
+     * longest and every free character a quote.
      */
     public const LIMIT = 25;
 
-    public const PAUSE_REASON_LENGTH = 300;
+    public const NAME_LENGTH = 100;
+
+    public const PAUSE_REASON_LENGTH = 150;
 
     /** The statuses of a campaign that is running or waiting to. */
     public const OPEN_STATUSES = [
@@ -110,7 +114,7 @@ class Overview
      */
     protected static function lists(): array
     {
-        return ListSummary::rows(CampaignList::query()->active()->orderBy('key')->limit(static::LIMIT)->get());
+        return ListSummary::rows(CampaignList::query()->active()->orderBy('key')->limit(static::LIMIT)->get(), nameLength: static::NAME_LENGTH);
     }
 
     /**
@@ -126,13 +130,13 @@ class Overview
             ->map(fn (Campaign $campaign): array => [
                 'uuid' => $campaign->uuid,
                 'key' => $campaign->key,
-                'name' => $campaign->name,
+                'name' => ShownText::of($campaign->name, static::NAME_LENGTH),
                 'status' => $campaign->status->value,
                 'recipient_count' => $campaign->recipient_count,
                 'scheduled_at' => $campaign->scheduled_at?->toIso8601String(),
                 'started_at' => $campaign->started_at?->toIso8601String(),
                 'paused_at' => $campaign->paused_at?->toIso8601String(),
-                'pause_reason' => $campaign->pause_reason === null ? null : Str::limit($campaign->pause_reason, static::PAUSE_REASON_LENGTH),
+                'pause_reason' => ShownText::of($campaign->pause_reason, static::PAUSE_REASON_LENGTH),
             ])
             ->all();
     }

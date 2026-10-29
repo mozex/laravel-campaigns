@@ -6,13 +6,13 @@ namespace Mozex\Campaigns\Reports;
 
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
-use Illuminate\Support\Str;
 use Mozex\Campaigns\Enums\EngagementTier;
 use Mozex\Campaigns\Enums\SubscriptionStatus;
 use Mozex\Campaigns\Models\CampaignList;
 use Mozex\Campaigns\Models\Subscriber;
 use Mozex\Campaigns\Models\Subscription;
 use Mozex\Campaigns\Support\Engagement;
+use Mozex\Campaigns\Support\ShownText;
 
 /**
  * Lists with their counts, as the overview and the list tools show them:
@@ -30,9 +30,10 @@ class ListSummary
     /**
      * @param  iterable<CampaignList>  $lists
      * @param  bool  $details  Add each list's description (cut to DESCRIPTION_LENGTH), its default basis, and when it was made and archived.
+     * @param  ?int  $nameLength  Cut each name to this many characters.
      * @return list<array<string, mixed>>
      */
-    public static function rows(iterable $lists, bool $details = false): array
+    public static function rows(iterable $lists, bool $details = false, ?int $nameLength = null): array
     {
         $lists = collect($lists)->values();
 
@@ -57,7 +58,7 @@ class ListSummary
             $tiers[$tier->value] = static::subscribedCounts($ids, fn (Builder $query): Builder => Engagement::whereTier($query, $tier));
         }
 
-        return $lists->map(function (CampaignList $list) use ($statuses, $mailable, $tiers, $details): array {
+        return $lists->map(function (CampaignList $list) use ($statuses, $mailable, $tiers, $details, $nameLength): array {
             $counts = [];
 
             foreach (SubscriptionStatus::cases() as $status) {
@@ -66,8 +67,8 @@ class ListSummary
 
             return [
                 'key' => $list->key,
-                'name' => $list->name,
-                ...$details ? ['description' => $list->description === null ? null : Str::limit($list->description, static::DESCRIPTION_LENGTH)] : [],
+                'name' => ShownText::of($list->name, $nameLength),
+                ...$details ? ['description' => ShownText::of($list->description, static::DESCRIPTION_LENGTH)] : [],
                 'kind' => $list->kind->value,
                 'double_opt_in' => $list->double_opt_in,
                 ...$details ? ['default_basis' => $list->default_basis->value] : [],

@@ -104,14 +104,15 @@ it('reads every list\'s counts, the open campaigns and the placeholders with the
         ->and(array_keys(array_filter(array_column($content['placeholders'], 'in_subject', 'name'))))->toBe(['first_name', 'name', 'email']);
 })->with('databases');
 
-it('stays under the answer limit with every column at its longest', function (): void {
+it('stays under the answer limit with every column at its longest', function (string $character): void {
+    // Measured as JSON: a quote takes two characters, a control character six.
     foreach (range(1, Overview::LIMIT + 1) as $n) {
-        CampaignList::factory()->create(['key' => str_pad("list-{$n}-", 125, 'k'), 'name' => str_repeat('N', 255)]);
+        CampaignList::factory()->create(['key' => str_pad("list-{$n}-", 125, 'k'), 'name' => mb_substr(str_repeat($character, 255), 0, 255)]);
         Campaign::factory()->create([
             'key' => str_pad("campaign-{$n}-", 125, 'k'),
-            'name' => str_repeat('N', 255),
+            'name' => mb_substr(str_repeat($character, 255), 0, 255),
             'status' => CampaignStatus::Paused,
-            'pause_reason' => str_repeat('r', 5000),
+            'pause_reason' => str_repeat($character, 5000),
             'scheduled_at' => now(),
             'started_at' => now(),
             'paused_at' => now(),
@@ -129,7 +130,7 @@ it('stays under the answer limit with every column at its longest', function ():
         ->and($content['campaigns'])->toHaveCount(Overview::LIMIT)
         ->and($content['campaigns_total'])->toBe(Overview::LIMIT + 1)
         ->and(mb_strlen($content['campaigns'][0]['pause_reason']))->toBe(Overview::PAUSE_REASON_LENGTH + 3);
-});
+})->with(['quotes' => '"', 'control characters' => "\x01x"]);
 
 it('says what is switched off or missing', function (): void {
     config([

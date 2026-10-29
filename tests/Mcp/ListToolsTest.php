@@ -6,12 +6,12 @@ use Illuminate\Database\Eloquent\Factories\Sequence;
 use Mozex\Campaigns\Enums\Rights;
 use Mozex\Campaigns\Enums\SubscriptionStatus;
 use Mozex\Campaigns\Mcp\Tools\ArchiveListTool;
-use Mozex\Campaigns\Mcp\Tools\CampaignsTool;
 use Mozex\Campaigns\Mcp\Tools\CreateListTool;
 use Mozex\Campaigns\Mcp\Tools\ListListsTool;
 use Mozex\Campaigns\Mcp\Tools\OverviewTool;
 use Mozex\Campaigns\Mcp\Tools\UpdateListTool;
 use Mozex\Campaigns\Models\CampaignList;
+use Mozex\Campaigns\Reports\ListSummary;
 
 it('creates, renames, archives and restores a list, which the lists and the overview follow', function (string $driver): void {
     useDatabase($driver);
@@ -73,19 +73,20 @@ it('answers a list the tools can\'t change as a refusal', function (): void {
     agent()->tool(CreateListTool::class, ['key' => 'x', 'name' => 'X', 'basis' => 'legacy'])->assertHasErrors(['basis']);
 });
 
-it('pages the lists so the longest page stays under the limit', function (): void {
+it('pages the lists so the longest page stays under the limit', function (string $character): void {
+    // Measured as JSON: a quote takes two characters, a control character six.
     CampaignList::factory()->count(30)->sequence(fn (Sequence $sequence): array => [
         'key' => str_pad((string) $sequence->index, 125, 'k', STR_PAD_LEFT),
-        'name' => str_repeat('n', 255),
-        'description' => str_repeat('d', 5000),
+        'name' => mb_substr(str_repeat($character, 255), 0, 255),
+        'description' => str_repeat($character, 5000),
     ])->create();
 
-    $first = agent(Rights::Read)->tool(ListListsTool::class)->assertOk();
+    $first = structuredContent(agent(Rights::Read)->tool(ListListsTool::class)->assertOk());
     $second = structuredContent(agent(Rights::Read)->tool(ListListsTool::class, ['page' => 2])->assertOk());
 
-    expect(mb_strlen((string) json_encode(structuredContent($first))))->toBeLessThan(CampaignsTool::RESULT_LIMIT)
-        ->and(structuredContent($first))->pages->toBe(2)->total->toBe(30)
-        ->and(structuredContent($first)['lists'])->toHaveCount(25)
-        ->and(structuredContent($first)['lists'][0]['description'])->toBe(str_repeat('d', 300).'...')
+    expect($first)->pages->toBe(2)->total->toBe(30)
+        ->and($first['lists'])->toHaveCount(ListListsTool::PER_PAGE)
+        ->and(mb_strlen($first['lists'][0]['description']))->toBe(ListSummary::DESCRIPTION_LENGTH + 3)
+        ->and(json_encode($first))->not->toContain('\u0001')
         ->and($second['lists'])->toHaveCount(5);
-});
+})->with(['quotes' => '"', 'control characters' => "\x01x"]);

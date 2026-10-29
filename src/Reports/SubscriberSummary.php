@@ -6,12 +6,12 @@ namespace Mozex\Campaigns\Reports;
 
 use Carbon\CarbonInterface;
 use Illuminate\Support\Collection;
-use Illuminate\Support\Str;
 use Mozex\Campaigns\Models\CampaignList;
 use Mozex\Campaigns\Models\ConsentRecord;
 use Mozex\Campaigns\Models\Subscriber;
 use Mozex\Campaigns\Models\Subscription;
 use Mozex\Campaigns\Support\Engagement;
+use Mozex\Campaigns\Support\ShownText;
 
 /**
  * A subscriber as an agent reads it: a short row for a page of them, and
@@ -86,7 +86,7 @@ class SubscriberSummary
 
         return [
             ...static::basics($subscriber),
-            'timezone' => static::shown($subscriber->timezone),
+            'timezone' => ShownText::of($subscriber->timezone),
             'soft_bounces' => $subscriber->soft_bounces,
             'last_opened_at' => static::date($subscriber->last_opened_at),
             'last_clicked_at' => static::date($subscriber->last_clicked_at),
@@ -97,7 +97,7 @@ class SubscriberSummary
                 'key' => $keys[$subscription->list_id] ?? null,
                 'status' => $subscription->status->value,
                 'basis' => $subscription->basis->value,
-                'source' => static::shown($subscription->source),
+                'source' => ShownText::of($subscription->source),
                 'subscribed_at' => static::date($subscription->subscribed_at),
                 'confirmed_at' => static::date($subscription->confirmed_at),
             ])->all(),
@@ -106,10 +106,10 @@ class SubscriberSummary
                 'action' => $record->action->value,
                 'list' => $record->list_id === null ? null : $keys[$record->list_id] ?? null,
                 'basis' => $record->basis?->value,
-                'source' => static::shown($record->source),
-                'notice_version' => static::shown($record->notice_version),
+                'source' => ShownText::of($record->source),
+                'notice_version' => ShownText::of($record->notice_version),
                 'occurred_at' => static::date($record->occurred_at),
-                'meta' => $record->meta === null ? null : static::shown((string) json_encode($record->meta, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE), static::META_LENGTH),
+                'meta' => $record->meta === null ? null : ShownText::of((string) json_encode($record->meta, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE), static::META_LENGTH),
             ])->all(),
             'ledger_total' => $subscriber->consentRecords()->count(),
         ];
@@ -125,9 +125,9 @@ class SubscriberSummary
     {
         return array_map(
             fn (mixed $value): mixed => match (true) {
-                is_string($value) => static::shown($value, static::FIELD_LENGTH),
+                is_string($value) => ShownText::of($value, static::FIELD_LENGTH),
                 $value === null || is_scalar($value) => $value,
-                default => static::shown((string) json_encode($value, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE), static::FIELD_LENGTH),
+                default => ShownText::of((string) json_encode($value, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE), static::FIELD_LENGTH),
             },
             $subscriber->custom_fields ?? [],
         );
@@ -156,8 +156,8 @@ class SubscriberSummary
     {
         return [
             'email' => $subscriber->email,
-            'name' => static::shown($subscriber->name, $nameLength),
-            'first_name' => static::shown($subscriber->first_name, $nameLength),
+            'name' => ShownText::of($subscriber->name, $nameLength),
+            'first_name' => ShownText::of($subscriber->first_name, $nameLength),
             'locale' => $subscriber->locale,
             'country' => $subscriber->country,
             'linked' => $subscriber->subscribable_type !== null,
@@ -171,21 +171,6 @@ class SubscriberSummary
             'first_mailed_at' => static::date($subscriber->first_mailed_at),
             'created_at' => static::date($subscriber->created_at),
         ];
-    }
-
-    /**
-     * Free text as shown: its control characters as spaces, cut to a length
-     * when one is given.
-     */
-    protected static function shown(?string $value, ?int $length = null): ?string
-    {
-        if ($value === null) {
-            return null;
-        }
-
-        $value = (string) preg_replace('/\p{Cc}/u', ' ', $value);
-
-        return $length === null ? $value : Str::limit($value, $length);
     }
 
     /**
