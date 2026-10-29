@@ -379,6 +379,8 @@ describe('reading Mailgun\'s logs and suppressions', function (): void {
             ->and($posted[0]['start'])->toBe(now()->subDays(5)->addMinute()->utc()->toRfc2822String())
             ->and($posted[0]['end'])->toBe(now()->subMinutes(30)->utc()->toRfc2822String())
             ->and($posted[0]['filter'])->toBe(['AND' => [['attribute' => 'domain', 'comparator' => '=', 'values' => [['label' => 'news.example.com', 'value' => 'news.example.com']]]]])
+            // Every type the package reads but accepted, which the others prove.
+            ->and($posted[0]['events'])->toBe(['delivered', 'failed', 'opened', 'clicked', 'unsubscribed', 'complained'])
             ->and($provider->logDays())->toBe(5);
 
         config()->set('campaigns.mailgun.log_days', 30);
@@ -594,6 +596,6 @@ describe('reading Mailgun\'s metrics', function (): void {
         Http::fake(['*' => Http::response(['message' => 'Invalid private key'], 401)]);
 
         expect(fn (): mixed => app(MailgunProvider::class)->domainMetrics('example.com', now()->subDay(), now()))
-            ->toThrow(CampaignsException::class, 'Mailgun answered 401 when its logs, suppressions or metrics were read.');
+            ->toThrow(CampaignsException::class, 'Mailgun answered 401 when its logs, suppressions or metrics were read. campaigns.mailgun.api_key must be an account API key');
     });
 });

@@ -7,6 +7,7 @@ namespace Mozex\Campaigns\Commands;
 use Illuminate\Console\Command;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
+use Mozex\Campaigns\Actions\ForgetSubscriberAction;
 use Mozex\Campaigns\Actions\SyncRecordAction;
 use Mozex\Campaigns\Campaigns;
 use Mozex\Campaigns\CampaignsException;
@@ -24,7 +25,7 @@ class SyncListCommand extends Command
 
     protected $description = 'Bring a dynamic list in step with the app records behind it';
 
-    public function handle(Campaigns $campaigns, SyncRecordAction $sync): int
+    public function handle(Campaigns $campaigns, SyncRecordAction $sync, ForgetSubscriberAction $forget): int
     {
         $key = (string) $this->argument('list');
 
@@ -79,6 +80,8 @@ class SyncListCommand extends Command
             return self::FAILURE;
         }
 
+        $forgotten = $id === null ? $this->forgetOrphans($query->getModel(), $forget, $dryRun) : 0;
+
         if ($dryRun) {
             $this->warn('Dry run: nothing was written. Run it again with --force to make these changes.');
         }
@@ -87,6 +90,7 @@ class SyncListCommand extends Command
             ['Checked', $records],
             ...array_map(fn (SyncChange $change): array => [$change->label(), $counts[$change->value]], SyncChange::cases()),
             ['Unchanged', $unchanged],
+            ['Forgotten: their record is gone', $forgotten],
             ['Not synced (see below)', count($problems)],
             ['Opted out or blocked, so never mailed', $suppressed],
         ]);
@@ -96,6 +100,49 @@ class SyncListCommand extends Command
         }
 
         return self::SUCCESS;
+    }
+
+    /**
+     * Forgets the subscribers whose record is gone without a model event (a
+     * query-builder delete, a database cascade, a mass prune), which the
+     * observer never heard of: left alone they would still be mailed. A
+     * soft-deleted record counts as gone, as its delete event treats it.
+     * The table is read without the model's global scopes, so a scope that
+     * hides records (a tenant, say) never makes their people look orphaned.
+     */
+    protected function forgetOrphans(Model $model, ForgetSubscriberAction $forget, bool $dryRun): int
+    {
+        $records = $model->newQueryWithoutScopes()->select($model->getQualifiedKeyName());
+
+        // A model using SoftDeletes.
+        if (method_exists($model, 'getQualifiedDeletedAtColumn')) {
+            $records->whereNull($model->getQualifiedDeletedAtColumn());
+        }
+
+        $connection = (new Subscriber)->getConnection();
+        $forgotten = 0;
+
+        Subscriber::query()
+            ->where('subscribable_type', $model->getMorphClass())
+            ->whereNotIn('subscribable_id', $records)
+            ->chunkById(500, function (Collection $orphans) use ($forget, $dryRun, $connection, &$forgotten): void {
+                foreach ($orphans as $orphan) {
+                    $connection->beginTransaction();
+
+                    try {
+                        $forget->execute($orphan);
+                    } catch (Throwable $exception) {
+                        $connection->rollBack();
+
+                        throw $exception;
+                    }
+
+                    $dryRun ? $connection->rollBack() : $connection->commit();
+                    $forgotten++;
+                }
+            });
+
+        return $forgotten;
     }
 
     /**

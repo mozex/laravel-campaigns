@@ -13,11 +13,13 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Illuminate\Support\Carbon;
+use Mozex\Campaigns\CampaignsException;
 use Mozex\Campaigns\Database\Factories\SubscriberFactory;
 use Mozex\Campaigns\Enums\BlockReason;
 use Mozex\Campaigns\Enums\EngagementTier;
 use Mozex\Campaigns\Support\EmailAddress;
 use Mozex\Campaigns\Support\Engagement;
+use Mozex\Campaigns\Support\Rows;
 
 /**
  * One email address in the app, optionally linked to the app record it
@@ -103,6 +105,21 @@ class Subscriber extends Model
     public static function findByEmail(string $email): ?self
     {
         return static::query()->where('email', EmailAddress::clean($email))->first();
+    }
+
+    /**
+     * The subscriber with this address, made when the address is new, such
+     * as a newsletter form's sign-up: the address is cleaned and checked
+     * first, and two requests racing get the same row. A row made here is
+     * only the address; SubscribeAction puts it on a list.
+     *
+     * @throws CampaignsException for an address that can't be mailed
+     */
+    public static function forEmail(string $email): self
+    {
+        $address = EmailAddress::normalize($email) ?? throw CampaignsException::invalidEmail();
+
+        return Rows::firstOrCreate(static::query(), ['email' => $address]);
     }
 
     /**

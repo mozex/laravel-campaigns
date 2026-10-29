@@ -46,6 +46,13 @@ class SendMessageJob implements ShouldQueue
     public const CLAIM_EXPIRES = 900;
 
     /**
+     * Unclear sends within UNCLEAR_MINUTES that pause a campaign (unclear()).
+     */
+    public const UNCLEAR_LIMIT = 10;
+
+    public const UNCLEAR_MINUTES = 5;
+
+    /**
      * A retry could send the same message twice.
      */
     public int $tries = 1;
@@ -99,7 +106,7 @@ class SendMessageJob implements ShouldQueue
         } catch (Throwable $exception) {
             // A provider of the app's own broke its contract: it may have the
             // message, so it is never sent again blindly.
-            $this->finish(MessageStatus::Unknown, ['failure_reason' => SendFailure::Unclear->value]);
+            $this->unclear($message, $pause);
 
             throw $exception;
         }
@@ -210,11 +217,51 @@ class SendMessageJob implements ShouldQueue
         match ($failed->failure) {
             SendFailure::NotAccepted => $this->notAccepted($message),
             SendFailure::DomainRefused => $this->domainRefused($failed, $message, $pause),
-            SendFailure::Unclear => $this->finish(MessageStatus::Unknown, [
-                'failure_reason' => $failed->failure->value,
-                'failure_code' => $failed->status,
-            ]),
+            SendFailure::Unclear => $this->unclear($message, $pause, $failed->status),
         };
+    }
+
+    /**
+     * An unclear send is never sent again, and the reconciler fails it once
+     * the provider's logs show nothing, so a run of them (a lost connection,
+     * a gateway answering 504) would spend the campaign's audience: each one
+     * halves the rate for ten minutes, and UNCLEAR_LIMIT of them within
+     * UNCLEAR_MINUTES pause the campaign until someone looks.
+     */
+    protected function unclear(CampaignMessage $message, PauseCampaignAction $pause, ?int $status = null): void
+    {
+        $this->finish(MessageStatus::Unknown, [
+            'failure_reason' => SendFailure::Unclear->value,
+            'failure_code' => $status,
+        ]);
+
+        Campaign::query()->whereKey($message->campaign_id)->update([
+            'rate_halved_until' => now()->addMinutes(10),
+            'updated_at' => now(),
+        ]);
+
+        $recent = CampaignMessage::query()
+            ->where('campaign_id', $message->campaign_id)
+            ->where('status', MessageStatus::Unknown)
+            ->where('failure_reason', SendFailure::Unclear->value)
+            ->where('sending_at', '>=', now()->subMinutes(static::UNCLEAR_MINUTES))
+            ->count();
+
+        // Found on its own, so the event's listeners may read its relations.
+        $campaign = $recent >= static::UNCLEAR_LIMIT ? Campaign::query()->find($message->campaign_id) : null;
+
+        if ($campaign?->status !== CampaignStatus::Sending) {
+            return;
+        }
+
+        try {
+            $pause->execute($campaign, "{$recent} sends in the last ".static::UNCLEAR_MINUTES.' minutes ended without a clear answer from the provider (a lost connection or a gateway error, say). None of them is sent again; check the provider is reachable before resuming.', automatic: true);
+        } catch (CampaignsException) {
+            // Another job paused it a moment ago.
+        } catch (Throwable $exception) {
+            // A listener that failed: the campaign is paused all the same.
+            report($exception);
+        }
     }
 
     protected function notAccepted(CampaignMessage $message): void

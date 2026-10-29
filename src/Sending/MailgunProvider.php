@@ -255,10 +255,14 @@ class MailgunProvider implements CampaignProvider
     {
         $domain = $this->mailgunDomain($domain);
 
+        // Without accepted, which every other event of a message proves and
+        // which doubles what a busy domain's replay must read; a message
+        // whose send ended unclear is looked up with it (eventsForMessage()).
         return $this->logs(
             [['attribute' => 'domain', 'comparator' => '=', 'values' => [['label' => $domain, 'value' => $domain]]]],
             $from,
             $to,
+            types: array_values(array_diff(array_keys(static::EVENT_TYPES), ['accepted'])),
         );
     }
 
@@ -390,9 +394,10 @@ class MailgunProvider implements CampaignProvider
      * when it stopped at the page limit with pages left.
      *
      * @param  list<array<string, mixed>>  $filter
+     * @param  ?list<string>  $types  the event types asked for; null for every one the package reads
      * @return Generator<int, Feedback, mixed, bool>
      */
-    protected function logs(array $filter, CarbonInterface $from, CarbonInterface $to, int $pages = PHP_INT_MAX): Generator
+    protected function logs(array $filter, CarbonInterface $from, CarbonInterface $to, int $pages = PHP_INT_MAX, ?array $types = null): Generator
     {
         // A minute inside the retention, so a start at its edge is never
         // refused as too old.
@@ -410,7 +415,7 @@ class MailgunProvider implements CampaignProvider
             $json = $this->read('POST', $this->apiBase().'/v1/analytics/logs', [
                 'start' => Carbon::instance($from)->utc()->toRfc2822String(),
                 'end' => Carbon::instance($to)->utc()->toRfc2822String(),
-                'events' => array_keys(static::EVENT_TYPES),
+                'events' => $types ?? array_keys(static::EVENT_TYPES),
                 'filter' => ['AND' => $filter],
                 'pagination' => array_filter([
                     'sort' => 'timestamp:asc',
@@ -516,7 +521,13 @@ class MailgunProvider implements CampaignProvider
         }
 
         if (! $response->successful()) {
-            throw CampaignsException::providerUnreadable("Mailgun answered {$response->status()} when its logs, suppressions or metrics were read.");
+            $fix = match ($response->status()) {
+                401, 403 => ' campaigns.mailgun.api_key must be an account API key that may read logs, metrics and suppressions (a domain sending key can only send), in the region campaigns.mailgun.endpoint names.',
+                404 => ' Check that the sending domain exists in the region campaigns.mailgun.endpoint names.',
+                default => '',
+            };
+
+            throw CampaignsException::providerUnreadable("Mailgun answered {$response->status()} when its logs, suppressions or metrics were read.{$fix}");
         }
 
         $json = $response->json();

@@ -179,6 +179,12 @@ class SyncRecordAction
             }
         }
 
+        // The rules custom fields meet however they arrive, so a filter can
+        // find them and an answer showing the person stays under its limit.
+        if (is_array($fields['custom_fields'] ?? null) && $fields['custom_fields'] !== []) {
+            SetCustomFieldsAction::check($fields['custom_fields']);
+        }
+
         return $fields;
     }
 
@@ -195,6 +201,10 @@ class SyncRecordAction
 
         if (is_array($fields['custom_fields'] ?? null)) {
             $details['custom_fields'] = [...$subscriber->custom_fields ?? [], ...$fields['custom_fields']];
+
+            if (count($details['custom_fields']) > SetCustomFieldsAction::MAX_FIELDS) {
+                throw CampaignsException::invalidValue('custom fields', 'may number at most '.SetCustomFieldsAction::MAX_FIELDS.' per subscriber');
+            }
         }
 
         return $details;

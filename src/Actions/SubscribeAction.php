@@ -31,6 +31,12 @@ class SubscribeAction
 
     public function execute(Subscriber $subscriber, CampaignList $list, ConsentContext $context): Subscription
     {
+        // A refusal subscribing someone would record the opposite of what
+        // they chose.
+        if ($context->accepted === false) {
+            throw CampaignsException::declinedSubscribe();
+        }
+
         return $subscriber->getConnection()->transaction(function () use ($subscriber, $list, $context): Subscription {
             $subscription = $this->join($subscriber, $list, $context);
 

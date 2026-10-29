@@ -247,6 +247,15 @@ class PumpCampaignsAction
      */
     protected function complete(Campaign $campaign, CarbonInterface $now): bool
     {
+        // A plain read first: the update locks the campaign's row and then
+        // reads its messages under shared next-key locks on MySQL, which can
+        // deadlock a send job holding a message and reading the campaign. No
+        // message goes back to pending once none is pending, queued or
+        // sending, so the read can't let a finished campaign stay open.
+        if ($campaign->messages()->whereIn('status', [MessageStatus::Pending, MessageStatus::Queued, MessageStatus::Sending])->exists()) {
+            return false;
+        }
+
         $completed = Campaign::query()
             ->whereKey($campaign->id)
             ->where('status', CampaignStatus::Sending)

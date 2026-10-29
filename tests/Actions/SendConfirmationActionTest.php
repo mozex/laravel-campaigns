@@ -6,6 +6,7 @@ use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
 use Mozex\Campaigns\Actions\SendConfirmationAction;
+use Mozex\Campaigns\CampaignsException;
 use Mozex\Campaigns\Enums\SubscriptionStatus;
 use Mozex\Campaigns\Jobs\SendConfirmationJob;
 use Mozex\Campaigns\Mail\ConfirmSubscriptionMail;
@@ -87,7 +88,7 @@ it('gives the earlier link and the day back when the email can\'t be sent', func
     {
         public function send(RawMessage $message, ?Envelope $envelope = null): ?SentMessage
         {
-            throw new TransportException('The mail server is down.');
+            throw new TransportException('550 5.1.1 <ann@example.org>: Recipient address rejected');
         }
 
         public function __toString(): string
@@ -100,7 +101,19 @@ it('gives the earlier link and the day back when the email can\'t be sent', func
     $subscription = pendingOn(Subscriber::factory()->create(['confirmation_sent_at' => now()]));
     $subscription->forceFill(['confirm_token_hash' => Token::hash('the-earlier-emails-token')])->save();
 
-    expect(fn () => (new SendConfirmationJob($subscription->id))->handle())->toThrow(Exception::class)
+    $thrown = null;
+
+    try {
+        (new SendConfirmationJob($subscription->id))->handle();
+    } catch (Throwable $exception) {
+        $thrown = $exception;
+    }
+
+    // Failed jobs and error reports keep the message: never the address,
+    // never the mailer's exception chained.
+    expect($thrown)->toBeInstanceOf(CampaignsException::class)
+        ->and($thrown?->getMessage())->not->toContain('ann@example.org')
+        ->and($thrown?->getPrevious())->toBeNull()
         ->and($subscription->fresh()?->confirm_token_hash)->toBe(Token::hash('the-earlier-emails-token'))
         ->and($subscription->subscriber->fresh()?->confirmation_sent_at)->toBeNull();
 })->with([

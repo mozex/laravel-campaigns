@@ -91,6 +91,30 @@ readonly class ImportedContact
     }
 
     /**
+     * Only the opt-out and block a row carries, for a row whose other values
+     * can't be read or stored: a bad date or name must never cost the
+     * address its suppression. Null when it carries neither, or when they
+     * can't be read either.
+     *
+     * @param  self|array<array-key, mixed>  $row
+     */
+    public static function suppressionOf(self|array $row): ?self
+    {
+        try {
+            $email = $row instanceof self ? $row->email : static::text($row, 'email');
+            $suppression = $email === null ? null : new self(
+                $email,
+                optOut: $row instanceof self ? $row->optOut : static::flag($row, 'opted_out'),
+                block: $row instanceof self ? $row->block : static::reason($row, 'blocked'),
+            );
+        } catch (CampaignsException) {
+            return null;
+        }
+
+        return $suppression?->suppresses() === true ? $suppression : null;
+    }
+
+    /**
      * Whether the contact carries an opt-out or a block.
      */
     public function suppresses(): bool

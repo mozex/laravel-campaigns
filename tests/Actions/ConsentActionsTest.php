@@ -76,6 +76,17 @@ it('clears an opt-out only when the person asked, and never a block', function (
         ->and($offTheList->fresh()?->opted_out_at)->toBeNull();
 });
 
+it('finds or makes a sign-up\'s subscriber by address, and never subscribes on a refusal', function (): void {
+    $list = CampaignList::factory()->create();
+    $made = Subscriber::forEmail(' Ann@Example.com ');
+
+    expect(Subscriber::forEmail('ann@example.com')->is($made))->toBeTrue()
+        ->and($made->email)->toBe('ann@example.com')
+        ->and(fn () => Subscriber::forEmail('not an address'))->toThrow(CampaignsException::class)
+        ->and(fn () => app(SubscribeAction::class)->execute($made, $list, new ConsentContext('form', accepted: false)))->toThrow(CampaignsException::class, 'call DeclineAction')
+        ->and(Subscription::query()->count())->toBe(0);
+});
+
 it('waits for a double opt-in, and confirming it clears an earlier opt-out', function (): void {
     $list = CampaignList::factory()->doubleOptIn()->create();
     $subscriber = Subscriber::factory()->optedOut()->create();
@@ -147,8 +158,12 @@ it('tells the app of each opt-out and block once, after the commit, with a subsc
     [$first, $rolledBack, $declined] = Subscriber::query()->orderBy('id')->get()->all();
     $heard = [];
 
-    Event::listen(SubscriberUnsubscribedEvent::class, function (SubscriberUnsubscribedEvent $event) use (&$heard): void {
+    $payloads = [];
+
+    Event::listen(SubscriberUnsubscribedEvent::class, function (SubscriberUnsubscribedEvent $event) use (&$heard, &$payloads): void {
         $heard[] = ['unsubscribed', $event->subscriber->id, $event->context->source, $event->subscriber->subscriptions->count()];
+        // A queued listener's payload names the subscriber by id, never by address.
+        $payloads[] = str_contains(serialize($event), $event->subscriber->email);
     });
     Event::listen(SubscriberBlockedEvent::class, function (SubscriberBlockedEvent $event) use (&$heard): void {
         $heard[] = ['blocked', $event->subscriber->id, $event->reason, $event->subscriber->subscriptions->count()];
@@ -181,7 +196,8 @@ it('tells the app of each opt-out and block once, after the commit, with a subsc
             ['unsubscribed', $first->id, 'agent', 0],
             ['blocked', $first->id, BlockReason::Complaint, 0],
             ['unsubscribed', $declined->id, 'registration', 1],
-        ]);
+        ])
+        ->and($payloads)->toBe([false, false]);
 });
 
 it('reports a listener that fails, and never fails the change or the other events for it', function (): void {

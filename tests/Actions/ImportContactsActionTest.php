@@ -140,14 +140,17 @@ it('keeps a later row\'s opt-out whatever else it holds, and refuses what the da
         ['email' => 'b@example.com', 'blocked' => 'complaint'],
         ['email' => 'c@example.com', 'custom_fields' => ['bad name' => 1]],
         ['email' => 'd@example.com', 'custom_fields' => ['nested' => ['a' => 1]]],
+        // A first row's bad date still records its opt-out, with nothing else.
+        ['email' => 'e@example.com', 'opted_out' => 'yes', 'last_opened_at' => 'never', 'name' => 'Eve'],
+        ['email' => 'f@example.com', 'name' => "Jos\xE9"],
     ];
 
     $dryRun = import($rows, $list, dryRun: true);
     $result = import($rows, $list);
 
     expect($dryRun->toArray())->toBe([...$result->toArray(), 'dry_run' => true])
-        ->and(importCounts($result))->toBe(['created' => 2, 'joined' => 2, 'blocked' => 1, 'opted_out' => 1])
-        ->and($result->suppressed)->toBe(2)
+        ->and(importCounts($result))->toBe(['created' => 3, 'joined' => 2, 'blocked' => 1, 'opted_out' => 2])
+        ->and($result->suppressed)->toBe(3)
         ->and($result->problems)->toBe([
             'Row 2: the same address as row 1, which counts instead; this row\'s opt-out or block was added to it.',
             'Row 3: The custom field "city" is text of at most 1000 characters, a whole number, true, false or null.',
@@ -157,10 +160,16 @@ it('keeps a later row\'s opt-out whatever else it holds, and refuses what the da
             'Row 8: the same address as row 7, which counts instead.',
             'Row 9: The custom field names are letters, digits and underscores, starting with a letter or an underscore.',
             'Row 10: The custom field "nested" is text of at most 1000 characters, a whole number, true, false or null.',
+            'Row 11: The contact\'s last_opened_at can\'t be imported: it is not a date. Its opt-out or block was still recorded.',
+            'Row 12: The contact\'s name can\'t be imported: it isn\'t UTF-8 text.',
         ])
+        ->and(Subscriber::findByEmail('e@example.com'))
+        ->opted_out_at->not->toBeNull()
+        ->name->toBeNull()
+        ->and(Subscriber::findByEmail('f@example.com'))->toBeNull()
         ->and(Subscriber::findByEmail('a@example.com')?->opted_out_at)->not->toBeNull()
         ->and(Subscriber::findByEmail('b@example.com')?->blocked_reason)->toBe(BlockReason::HardBounce)
-        ->and(Subscriber::query()->count())->toBe(2);
+        ->and(Subscriber::query()->count())->toBe(3);
 })->with('databases');
 
 it('lets a row that found nobody leave the address to the next row that has it', function (): void {

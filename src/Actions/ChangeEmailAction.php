@@ -7,6 +7,7 @@ namespace Mozex\Campaigns\Actions;
 use Mozex\Campaigns\CampaignsException;
 use Mozex\Campaigns\Enums\ConsentAction;
 use Mozex\Campaigns\Enums\MessageStatus;
+use Mozex\Campaigns\Enums\SubscriptionStatus;
 use Mozex\Campaigns\Models\CampaignMessage;
 use Mozex\Campaigns\Models\ConsentRecord;
 use Mozex\Campaigns\Models\Subscriber;
@@ -80,6 +81,7 @@ class ChangeEmailAction
                 // Soft bounces are the old address's, like a block: the new
                 // one starts with none.
                 $subscriber->update(['email' => $address, 'soft_bounces' => 0]);
+                $this->voidConfirmations($subscriber);
 
                 return $subscriber;
             }
@@ -92,6 +94,7 @@ class ChangeEmailAction
 
             $this->movePerson($subscriber, $target);
             $this->moveSubscriptions($subscriber, $target);
+            $this->voidConfirmations($target);
             $this->moveMessages($subscriber, $target);
 
             // The person's consent history follows them; a block's stays with
@@ -192,12 +195,29 @@ class ChangeEmailAction
 
             $subscription->delete();
 
-            // The stricter row's whole state wins, a waiting confirmation's
-            // token included, so the link already sent still confirms. Its
-            // row goes first: the token hash is unique.
+            // The stricter row's state wins. A waiting confirmation's token
+            // doesn't come along: it went to the old address
+            // (voidConfirmations()).
             if (static::STRICTNESS[$subscription->status->value] > static::STRICTNESS[$existing->status->value]) {
-                $existing->update($subscription->only(['status', 'confirm_token_hash', 'subscribed_at', 'confirmed_at', 'unsubscribed_at']));
+                $existing->update($subscription->only(['status', 'subscribed_at', 'confirmed_at', 'unsubscribed_at']));
             }
         }
+    }
+
+    /**
+     * A confirmation link already sent went to the old address, so it proves
+     * nothing about the one the person holds now: their waiting double
+     * opt-ins lose it, and the address may get a new confirmation email
+     * today (SendConfirmationAction).
+     */
+    protected function voidConfirmations(Subscriber $holder): void
+    {
+        Subscription::query()
+            ->where('subscriber_id', $holder->id)
+            ->where('status', SubscriptionStatus::Pending)
+            ->whereNotNull('confirm_token_hash')
+            ->update(['confirm_token_hash' => null, 'updated_at' => now()]);
+
+        Subscriber::query()->whereKey($holder->id)->update(['confirmation_sent_at' => null]);
     }
 }

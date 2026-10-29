@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Mozex\Campaigns\Actions;
 
+use Illuminate\Database\Eloquent\Builder;
 use Mozex\Campaigns\CampaignsException;
 use Mozex\Campaigns\Enums\CampaignStatus;
 use Mozex\Campaigns\Events\CampaignFirstComplaintEvent;
@@ -165,8 +166,11 @@ class EnforceStopLossAction
         // writes it again.
         $measured = StopLoss::domainCampaigns($domain, $now->copy()->subHours(StopLoss::DOMAIN_HOURS))->modelKeys();
 
+        // Forward only: an earlier run that commits later must not move the
+        // floor back and count the bounces that paused the domain again.
         Campaign::query()
             ->whereIn('id', array_values(array_unique([...$measured, ...$running, ...$justPaused])))
+            ->where(fn (Builder $query): Builder => $query->whereNull('domain_limits_reset_at')->orWhere('domain_limits_reset_at', '<', $now))
             ->update(['domain_limits_reset_at' => $now, 'updated_at' => $now]);
     }
 }

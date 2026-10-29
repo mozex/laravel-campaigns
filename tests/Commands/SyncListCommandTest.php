@@ -86,6 +86,33 @@ it('changes nothing on a second run, and syncs one record with --id', function (
         ->and(ConsentRecord::query()->where('action', ConsentAction::OptOut)->count())->toBe(1);
 });
 
+it('forgets the people whose record was deleted without a model event, writing nothing on a dry run', function (string $driver): void {
+    useDatabase($driver);
+    // Created through the model, so the observer put them on the list.
+    $kept = Member::query()->create(['email' => 'kept@example.com']);
+    $gone = Member::query()->create(['email' => 'gone@example.com']);
+    $unsubscribed = Member::query()->create(['email' => 'left@example.com']);
+    app(OptOutAction::class)->execute(Subscriber::findFor($unsubscribed), new ConsentContext('unsubscribe-page'));
+
+    // A query-builder delete fires no model event, so the observer never hears of it.
+    Member::query()->whereKey([$gone->id, $unsubscribed->id])->delete();
+
+    $dryRun = syncList();
+    $before = Subscriber::query()->whereNotNull('subscribable_type')->count();
+    $forced = syncList('--force');
+
+    expect($dryRun)->toMatch('/Forgotten: their record is gone\s*\|\s*2\s/')
+        ->and($before)->toBe(3)
+        ->and($forced)->toMatch('/Forgotten: their record is gone\s*\|\s*2\s/')
+        ->and(Subscriber::findFor($kept))->not->toBeNull()
+        ->and(Subscriber::findByEmail('gone@example.com'))->toBeNull()
+        // An opted-out address keeps its row, stripped, so an import can't mail it again.
+        ->and(Subscriber::findByEmail('left@example.com'))
+        ->subscribable_type->toBeNull()
+        ->opted_out_at->not->toBeNull()
+        ->and(syncList('--force'))->toMatch('/Forgotten: their record is gone\s*\|\s*0\s/');
+})->with('databases');
+
 it('refuses a list without a source and a record that does not exist', function (): void {
     $missingList = Artisan::call('campaigns:sync-list', ['list' => 'missing']);
     $missingListOutput = Artisan::output();

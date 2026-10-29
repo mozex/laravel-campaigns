@@ -8,10 +8,12 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Mail;
+use Mozex\Campaigns\CampaignsException;
 use Mozex\Campaigns\Enums\SubscriptionStatus;
 use Mozex\Campaigns\Mail\ConfirmSubscriptionMail;
 use Mozex\Campaigns\Models\Subscriber;
 use Mozex\Campaigns\Models\Subscription;
+use Mozex\Campaigns\Sending\SendFailed;
 use Mozex\Campaigns\Support\Links;
 use Mozex\Campaigns\Support\PageLocale;
 use Mozex\Campaigns\Support\Token;
@@ -85,7 +87,10 @@ class SendConfirmationJob implements ShouldQueue
                 ->whereKey($subscription->subscriber_id)
                 ->update(['confirmation_sent_at' => null, 'updated_at' => now()]);
 
-            throw $exception;
+            // A mailer's refusal may quote the address ("550 <ann@...>:
+            // Recipient rejected"), so it fails the job scrubbed and unchained,
+            // never as itself, which would reach failed_jobs and error reports.
+            throw new CampaignsException(SendFailed::scrub('The confirmation email could not be sent: '.$exception->getMessage(), 1000));
         }
     }
 }

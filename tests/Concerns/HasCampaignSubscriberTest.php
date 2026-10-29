@@ -31,6 +31,17 @@ class MemberListWithPhone extends MemberList
 }
 
 /**
+ * Custom fields no filter could find, which every other path refuses.
+ */
+class MemberListWithBadFields extends MemberList
+{
+    public function fields(Model $record): array
+    {
+        return [...parent::fields($record), 'custom_fields' => ['signup-source' => 'ads']];
+    }
+}
+
+/**
  * Fails the way a deadlock does: Laravel recognises one by its message.
  */
 class MemberListThatDeadlocks extends MemberList
@@ -225,7 +236,7 @@ it('reports a failure instead of failing the app\'s own save', function (string 
 
     Exceptions::assertReported(fn (BindingResolutionException $exception): bool => str_contains($exception->getMessage(), 'Missing\\ListSource'));
     Exceptions::assertReported(CampaignsException::class);
-})->with([MemberListWithPhone::class, Member::class]);
+})->with([MemberListWithPhone::class, MemberListWithBadFields::class, Member::class]);
 
 it('rolls a failure back to its own savepoint, leaving the app\'s transaction usable', function (string $driver): void {
     useDatabase($driver);

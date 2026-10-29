@@ -178,8 +178,31 @@ it('leaves a message unknown when the provider may have it', function (string $d
         ->failure_reason->toBe('unclear')
         ->failure_code->toBe(504)
         ->token_hash->not->toBeNull()
-        ->and(Subscriber::query()->sole()->first_mailed_at)->toBeNull();
+        ->and(Subscriber::query()->sole()->first_mailed_at)->toBeNull()
+        // One unclear send slows the campaign; it takes a run of them to pause it.
+        ->and(Campaign::query()->sole())
+        ->rate_halved_until->toEqual(now()->addMinutes(10))
+        ->status->toBe(CampaignStatus::Sending);
 })->with('databases');
+
+it('pauses a campaign whose sends keep ending unclear, before it spends its audience', function (): void {
+    $campaign = sendingCampaign(SendMessageJob::UNCLEAR_LIMIT + 2, ['per_minute' => SendMessageJob::UNCLEAR_LIMIT + 2]);
+    $jobs = claimedJobs();
+    fakeProvider()->failNext(...array_fill(0, SendMessageJob::UNCLEAR_LIMIT, new SendFailed(SendFailure::Unclear, 'Connection lost.')));
+    Event::fake([CampaignPausedEvent::class]);
+
+    array_map(runJob(...), $jobs);
+
+    expect(CampaignMessage::query()->where('status', MessageStatus::Unknown)->count())->toBe(SendMessageJob::UNCLEAR_LIMIT)
+        // The rest go back to waiting rather than out.
+        ->and(fakeProvider()->sent())->toBe([])
+        ->and(CampaignMessage::query()->where('status', MessageStatus::Pending)->count())->toBe(2)
+        ->and($campaign->fresh())
+        ->status->toBe(CampaignStatus::Paused)
+        ->pause_reason->toStartWith(SendMessageJob::UNCLEAR_LIMIT.' sends in the last 5 minutes ended without a clear answer');
+
+    Event::assertDispatched(CampaignPausedEvent::class, fn (CampaignPausedEvent $event): bool => $event->automatic);
+});
 
 it('puts a queued message back, sending nothing', function (Closure $arrange): void {
     sendingCampaign(1);

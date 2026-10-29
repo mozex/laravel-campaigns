@@ -19,6 +19,7 @@ use Mozex\Campaigns\Enums\SubscriptionStatus;
 use Mozex\Campaigns\Models\CampaignList;
 use Mozex\Campaigns\Models\Subscriber;
 use Mozex\Campaigns\Support\ConsentContext;
+use Mozex\Campaigns\Support\Keys;
 use Mozex\Campaigns\Support\Rows;
 use Throwable;
 
@@ -80,6 +81,12 @@ class Campaigns
 
         if ($class === null) {
             throw CampaignsException::unknownList($key);
+        }
+
+        // Campaigns and audiences name lists by key, which the config could
+        // otherwise hold in a form they refuse.
+        if (! Keys::isValid($key)) {
+            throw CampaignsException::invalidListSourceKey($key);
         }
 
         $source = app($class);
@@ -220,7 +227,9 @@ class Campaigns
      */
     public function recordActivity(Model $record, ?CarbonInterface $at = null): bool
     {
-        $at ??= now();
+        // Never ahead of now, which would keep the person engaged and never
+        // sunset, and in the app's timezone, as stored timestamps are.
+        $at = $at === null || $at->greaterThan(now()) ? now() : $at->copy()->setTimezone((string) config('app.timezone'));
 
         $query = $record instanceof Subscriber
             ? Subscriber::query()->whereKey($record->getKey())

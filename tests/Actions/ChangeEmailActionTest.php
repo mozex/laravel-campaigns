@@ -24,8 +24,9 @@ function changeEmail(Subscriber $subscriber, string $email): Subscriber
 
 it('changes the address in place when nothing has to stay with the old one', function (): void {
     // The old address's soft bounces stay with it, as a block would.
-    $subscriber = Subscriber::factory()->create(['email' => 'old@example.com', 'soft_bounces' => 2]);
-    Subscription::factory()->for($subscriber)->create();
+    // A double opt-in still waits: its link went to the old address.
+    $subscriber = Subscriber::factory()->create(['email' => 'old@example.com', 'soft_bounces' => 2, 'confirmation_sent_at' => now()]);
+    $waiting = Subscription::factory()->for($subscriber)->pending()->create();
     $pending = CampaignMessage::factory()->for($subscriber)->create();
     $sent = CampaignMessage::factory()->for($subscriber)->create(['status' => MessageStatus::Sent]);
 
@@ -35,7 +36,12 @@ it('changes the address in place when nothing has to stay with the old one', fun
         ->and(Subscriber::query()->sole())
         ->email->toBe('new@example.com')
         ->soft_bounces->toBe(0)
-        ->and(Subscription::query()->sole()->subscriber_id)->toBe($subscriber->id)
+        ->confirmation_sent_at->toBeNull()
+        ->and($waiting->confirm_token_hash)->not->toBeNull()
+        ->and(Subscription::query()->sole())
+        ->subscriber_id->toBe($subscriber->id)
+        ->status->toBe(SubscriptionStatus::Pending)
+        ->confirm_token_hash->toBeNull()
         ->and($pending->fresh()?->status)->toBe(MessageStatus::Skipped)
         ->and($sent->fresh()?->status)->toBe(MessageStatus::Sent);
 });
@@ -89,7 +95,9 @@ it('joins an address that already has a row, the stricter state winning', functi
             $shared->id => SubscriptionStatus::Pending,
             $own->id => SubscriptionStatus::Subscribed,
         ])
-        ->and(Subscription::query()->where('subscriber_id', $contact->id)->where('list_id', $shared->id)->sole()->confirm_token_hash)->toBe($waiting->confirm_token_hash)
+        // The link already sent went to the old address: it confirms nothing.
+        ->and($waiting->confirm_token_hash)->not->toBeNull()
+        ->and(Subscription::query()->where('subscriber_id', $contact->id)->where('list_id', $shared->id)->sole()->confirm_token_hash)->toBeNull()
         ->and($old->fresh())
         ->email->toBe('old@example.com')
         ->opted_out_at->not->toBeNull()

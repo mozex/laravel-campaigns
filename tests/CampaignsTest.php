@@ -53,13 +53,21 @@ it('moves activity only forward, and only for a record with a subscriber', funct
 
     expect($results)->toBe([true, false, false, false, true])
         ->and(Subscriber::query()->sole()->last_active_at?->equalTo($latest))->toBeTrue();
+
+    // A time ahead of now counts as now, so no one stays engaged for good.
+    $this->freezeTime();
+    Campaigns::recordActivity($member, now()->addYear());
+
+    expect(Subscriber::query()->sole()->last_active_at?->equalTo(now()->startOfSecond()))->toBeTrue();
 });
 
 it('refuses a list that has no source, a source of the wrong kind, or a key a static list holds', function (): void {
-    config()->set('campaigns.list_sources', ['broken' => Member::class, 'members' => MemberList::class]);
+    config()->set('campaigns.list_sources', ['broken' => Member::class, 'members' => MemberList::class, 'All Members' => MemberList::class]);
     CampaignList::factory()->create(['key' => 'members']);
 
     expect(fn () => Campaigns::listSource('missing'))->toThrow(CampaignsException::class, 'No list source is configured for the list "missing"')
+        // Campaigns couldn't name a list by such a key.
+        ->and(fn () => Campaigns::listSource('All Members'))->toThrow(CampaignsException::class, 'needs a key of lower-case letters')
         ->and(fn () => Campaigns::listSource('broken'))->toThrow(CampaignsException::class, 'must implement')
         ->and(fn () => Campaigns::list('members'))->toThrow(CampaignsException::class, 'A static list already uses the key "members"');
 });

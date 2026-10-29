@@ -33,7 +33,7 @@ class SetCustomFieldsAction
             // Locked, so a sync merging its own fields at the same moment
             // can't lose these.
             $locked = Subscriber::query()->whereKey($subscriber->getKey())->lockForUpdate()->first()
-                ?? throw CampaignsException::subscriberGone();
+                ?? throw CampaignsException::subscriberDeleted();
 
             $merged = array_filter([...$locked->custom_fields ?? [], ...$fields], fn (mixed $value): bool => $value !== null);
 

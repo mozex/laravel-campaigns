@@ -124,6 +124,7 @@ class ImportContactsAction
             }
 
             $first = $seen[$address] ?? null;
+            $joins = $first === null ? $list : null;
 
             try {
                 $contact = $item instanceof ImportedContact ? $item : ImportedContact::fromArray($item);
@@ -133,9 +134,20 @@ class ImportContactsAction
                 // costs it its opt-out or block.
                 $dates = $first === null ? $this->engagement($contact) : array_fill_keys(Engagement::SIGNALS, null);
             } catch (CampaignsException $exception) {
-                $problems[] = "Row {$row}: {$exception->getMessage()}";
+                // A bad value never costs the row its opt-out or block: those
+                // are recorded alone, with no details, dates or list.
+                $suppression = ImportedContact::suppressionOf($item);
 
-                continue;
+                if ($suppression === null) {
+                    $problems[] = "Row {$row}: {$exception->getMessage()}";
+
+                    continue;
+                }
+
+                $problems[] = "Row {$row}: {$exception->getMessage()} Its opt-out or block was still recorded.";
+                $contact = $suppression;
+                $dates = array_fill_keys(Engagement::SIGNALS, null);
+                $joins = null;
             }
 
             // An address counts once, so a dry run's numbers match the real
@@ -158,7 +170,7 @@ class ImportContactsAction
 
             try {
                 [$changes, $suppressed] = $this->inTransaction(
-                    fn (): array => $this->import($contact, $dates, $address, $first === null ? $list : null, $context),
+                    fn (): array => $this->import($contact, $dates, $address, $joins, $context),
                     $dryRun,
                 );
             } catch (CampaignsException $exception) {
@@ -303,6 +315,14 @@ class ImportContactsAction
     {
         if ($contact->customFields !== []) {
             SetCustomFieldsAction::check($contact->customFields);
+        }
+
+        // Read before details() cleans them: cutting a value that isn't
+        // UTF-8 turns its bad bytes into "?", which would store "Jos?".
+        foreach (['name' => $contact->name, 'first_name' => $contact->firstName, 'locale' => $contact->locale, 'timezone' => $contact->timezone, 'country' => $contact->country] as $field => $value) {
+            if ($value !== null && ! mb_check_encoding($value, 'UTF-8')) {
+                throw CampaignsException::invalidImportValue($field, "it isn't UTF-8 text");
+            }
         }
 
         $values = [...$this->details($contact), 'custom_fields' => $contact->customFields, 'meta' => $contact->meta];

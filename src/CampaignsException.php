@@ -27,6 +27,21 @@ class CampaignsException extends RuntimeException
         return new self('The subscriber was deleted before its address could change.');
     }
 
+    public static function subscriberDeleted(): self
+    {
+        return new self('The subscriber was deleted before the change could be made.');
+    }
+
+    public static function declinedSubscribe(): self
+    {
+        return new self('A context whose accepted is false records a refusal: call DeclineAction, not SubscribeAction.');
+    }
+
+    public static function invalidListSourceKey(string $key): self
+    {
+        return new self('The list source "'.mb_strimwidth($key, 0, 40, '...').'" in campaigns.list_sources needs a key of lower-case letters, digits, dots, dashes and underscores, starting with a letter or digit, at most 125 characters: campaigns name their lists by it.');
+    }
+
     public static function unknownList(string $key): self
     {
         return new self("No list source is configured for the list \"{$key}\". Add it to campaigns.list_sources.");
