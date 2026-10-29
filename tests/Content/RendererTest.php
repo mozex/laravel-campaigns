@@ -118,6 +118,9 @@ describe('the preheader', function (): void {
         'a head never closed' => ["<!doctype html><html><head><meta charset=\"utf-8\"><title>Hi</title>\n<table></table>", "<!doctype html><html><head><meta charset=\"utf-8\"><title>Hi</title>\n", '<table></table>'],
         'no head' => ['<!DOCTYPE html><html><table></table></html>', '<!DOCTYPE html><html>', '<table></table></html>'],
         'a doctype alone' => ["\u{FEFF}<!-- built -->\n<!DOCTYPE html><table></table>", "\u{FEFF}<!-- built -->\n<!DOCTYPE html>", '<table></table>'],
+        'a head\'s tags without a head' => ['<!DOCTYPE html><meta charset="utf-8"><style>td{}</style><table></table>', '<!DOCTYPE html><meta charset="utf-8"><style>td{}</style>', '<table></table>'],
+        'an Outlook comment in a head never closed' => ['<html><head><!--[if mso]><xml><o:x/></xml><![endif]--><table></table>', '<html><head><!--[if mso]><xml><o:x/></xml><![endif]-->', '<table></table>'],
+        'text first' => ['Hi {{first_name}},<p>Body</p>', '', 'Hi Ann,<p>Body</p>'],
     ]);
 });
 

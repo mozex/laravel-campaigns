@@ -99,32 +99,41 @@ class Renderer
 
     /**
      * Where the body starts as a browser's parser builds it, for the hidden
-     * preheader: after <body>; else after </head>; else, for a head never
-     * closed, before the first tag a head can't hold; else after <html>;
-     * else after a leading doctype; else at the start. Never before a
-     * doctype, which the parser would then drop (laying the email out in
-     * quirks mode), and never inside the head, whose styles would move into
-     * the body.
+     * preheader: after <body>; else after </head>; else past whatever a head
+     * may hold (its tags may stand without a head tag), from after <head>,
+     * <html> or a leading doctype, whichever comes last, to the first text
+     * or other tag. Never before a doctype, which the parser would then drop
+     * (laying the email out in quirks mode), and never among the head's
+     * tags, whose styles would move into the body. Comments and the text of
+     * a head's elements are skipped, Outlook's conditional comments
+     * included.
      */
     protected static function bodyStart(string $html): int
     {
-        $after = fn (string $pattern, int $from = 0): ?int => preg_match($pattern, $html, $match, PREG_OFFSET_CAPTURE, $from) === 1
+        $blank = fn (array $match): string => str_repeat(' ', strlen($match[0]));
+        $scanned = (string) preg_replace_callback('/<!--.*?-->/s', $blank, $html);
+        $scanned = (string) preg_replace_callback('/<(title|style|script|noscript|template)\b[^>]*>.*?<\/\1\s*>/is', $blank, $scanned);
+
+        $after = fn (string $pattern, int $from = 0): ?int => preg_match($pattern, $scanned, $match, PREG_OFFSET_CAPTURE, $from) === 1
             ? $match[0][1] + strlen($match[0][0])
             : null;
 
-        $head = $after('/<head\b[^>]*>/i');
+        $start = $after('/<body\b[^>]*>/i') ?? $after('/<\/head\s*>/i');
 
-        if ($head !== null && $after('/<\/head\s*>/i') === null && $after('/<body\b[^>]*>/i') === null) {
-            return preg_match('/<(?![\/!?]|(?:title|style|meta|link|base|script|noscript|template)\b)[a-z]/i', $html, $tag, PREG_OFFSET_CAPTURE, $head) === 1
-                ? $tag[0][1]
-                : strlen($html);
+        if ($start !== null) {
+            return $start;
         }
 
-        return $after('/<body\b[^>]*>/i')
-            ?? $after('/<\/head\s*>/i')
+        $from = $after('/<head\b[^>]*>/i')
             ?? $after('/<html\b[^>]*>/i')
-            ?? $after('/^(?:\xEF\xBB\xBF)?\s*(?:<!--.*?-->\s*)*<!doctype\b[^>]*>/is')
+            ?? $after('/^(?:\xEF\xBB\xBF)?\s*<!doctype\b[^>]*>/i')
             ?? 0;
+
+        // What a head may hold without starting the body, the elements with
+        // text already blanked.
+        preg_match('/\G(?:\s+|<(?:meta|link|base)\b[^>]*>)*/i', $scanned, $headStuff, 0, $from);
+
+        return $from + strlen($headStuff[0] ?? '');
     }
 
     /**

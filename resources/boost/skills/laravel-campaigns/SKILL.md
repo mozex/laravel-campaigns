@@ -67,6 +67,9 @@ $user = User::withCampaignConsent(
 Agents create static lists through the MCP tools; app code can call `CreateListAction` (`key`, `name`, `description`, `doubleOptIn`, `basis`). A newsletter form:
 
 ```php
+// email:filter_unicode checks the address as the package does; a plain email rule passes some it refuses.
+$request->validate(['email' => ['required', 'string', 'max:254', 'email:filter_unicode']]);
+
 $subscription = app(SubscribeAction::class)->execute(
     Subscriber::forEmail($request->input('email')),   // cleans the address, makes the row once even when two requests race
     CampaignList::forKey('newsletter'),

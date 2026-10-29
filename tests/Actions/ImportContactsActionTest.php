@@ -160,7 +160,7 @@ it('keeps a later row\'s opt-out whatever else it holds, and refuses what the da
             'Row 8: the same address as row 7, which counts instead.',
             'Row 9: The custom field names are letters, digits and underscores, starting with a letter or an underscore.',
             'Row 10: The custom field "nested" is text of at most 1000 characters, a whole number, true, false or null.',
-            'Row 11: The contact\'s last_opened_at can\'t be imported: it is not a date. Its opt-out or block was still recorded.',
+            'Row 11: The contact\'s last_opened_at can\'t be imported: it is not a date. Its opt-out or block was kept.',
             'Row 12: The contact\'s name can\'t be imported: it isn\'t UTF-8 text.',
         ])
         ->and(Subscriber::findByEmail('e@example.com'))

@@ -236,7 +236,22 @@ it('reports a failure instead of failing the app\'s own save', function (string 
 
     Exceptions::assertReported(fn (BindingResolutionException $exception): bool => str_contains($exception->getMessage(), 'Missing\\ListSource'));
     Exceptions::assertReported(CampaignsException::class);
-})->with([MemberListWithPhone::class, MemberListWithBadFields::class, Member::class]);
+})->with([MemberListWithPhone::class, Member::class]);
+
+it('leaves out custom fields a source gives that the rules refuse, still syncing the record', function (): void {
+    config()->set('campaigns.list_sources', ['members' => MemberListWithBadFields::class]);
+    Exceptions::fake();
+
+    $member = Member::query()->create(['email' => 'jane@example.com']);
+    $member->update(['banned_at' => now()]);
+
+    // The ban still takes the record off its list.
+    expect(Subscriber::findFor($member))
+        ->custom_fields->toBeNull()
+        ->and(Subscription::query()->sole()->status)->toBe(SubscriptionStatus::Unsubscribed);
+
+    Exceptions::assertReported(fn (CampaignsException $exception): bool => str_contains($exception->getMessage(), MemberListWithBadFields::class.' gave custom fields that were left out'));
+});
 
 it('rolls a failure back to its own savepoint, leaving the app\'s transaction usable', function (string $driver): void {
     useDatabase($driver);
@@ -253,7 +268,10 @@ it('rolls a failure back to its own savepoint, leaving the app\'s transaction us
     expect($member->fresh()?->name)->toBe('Jane Doe')
         ->and(CampaignList::query()->count())->toBe(0);
 
-    Exceptions::assertReported(QueryException::class);
+    // Reported by its code alone: the database's message holds the SQL with
+    // the person's address.
+    Exceptions::assertReported(fn (CampaignsException $exception): bool => str_contains($exception->getMessage(), 'SQLSTATE') && ! str_contains($exception->getMessage(), '@'));
+    Exceptions::assertNotReported(QueryException::class);
 })->with('databases');
 
 it('passes a deadlock on to the app\'s transaction, and only reports one outside it', function (): void {
@@ -270,5 +288,6 @@ it('passes a deadlock on to the app\'s transaction, and only reports one outside
 
     expect(Member::query()->count())->toBe(1);
 
-    Exceptions::assertReported(DeadlockException::class);
+    Exceptions::assertReported(fn (CampaignsException $exception): bool => str_contains($exception->getMessage(), 'SQLSTATE'));
+    Exceptions::assertNotReported(DeadlockException::class);
 });

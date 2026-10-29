@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Mozex\Campaigns\Jobs;
 
 use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Mail;
@@ -63,9 +64,14 @@ class SendConfirmationJob implements ShouldQueue
             // the earlier email's link is replaced.
             $mailer = Mail::mailer(config('campaigns.mail.mailer'));
 
+            // Only while the person still holds the address read above: an
+            // address change voids waiting links, and a link stored after it
+            // would go to the old address and confirm the new one.
             $stored = Subscription::query()
                 ->whereKey($subscription->id)
+                ->where('subscriber_id', $subscription->subscriber_id)
                 ->where('status', SubscriptionStatus::Pending)
+                ->whereHas('subscriber', fn (Builder $query): Builder => $query->where('email', $subscription->subscriber->email))
                 ->update(['confirm_token_hash' => $hash, 'updated_at' => now()]);
 
             if ($stored === 0) {
@@ -90,7 +96,7 @@ class SendConfirmationJob implements ShouldQueue
             // A mailer's refusal may quote the address ("550 <ann@...>:
             // Recipient rejected"), so it fails the job scrubbed and unchained,
             // never as itself, which would reach failed_jobs and error reports.
-            throw new CampaignsException(SendFailed::scrub('The confirmation email could not be sent: '.$exception->getMessage(), 1000));
+            throw new CampaignsException(SendFailed::scrub('The confirmation email could not be sent: '.mb_scrub($exception->getMessage(), 'UTF-8'), 1000));
         }
     }
 }

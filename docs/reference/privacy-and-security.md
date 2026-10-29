@@ -40,7 +40,7 @@ Error trackers record request paths, bodies and outgoing requests. Some of the p
 | outgoing requests to `api.*.mailgun.net/v3/<domain>/bounces`, `/complaints` and `/unsubscribes`, path and query | one address's lookup puts the address in the path, and the lists' next pages carry one in the query |
 | the `Authorization` header | an MCP token or an OAuth bearer |
 
-The package keeps addresses out of its own exception messages and never chains an HTTP client's exception whose message quotes a request URL.
+The package keeps addresses out of its own exception messages and reports, and never chains an HTTP client's exception whose message quotes a request URL. One exception reaches your app as the database wrote it: a deadlock while a list syncs inside your own transaction is rethrown untouched, since Laravel needs it whole to retry the transaction, and its message holds the SQL with the address. Redact the SQL of database exceptions in your error tracker if that matters to you.
 
 ## Pages that render agents' HTML
 

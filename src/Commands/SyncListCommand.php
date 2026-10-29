@@ -112,6 +112,15 @@ class SyncListCommand extends Command
      */
     protected function forgetOrphans(Model $model, ForgetSubscriberAction $forget, bool $dryRun): int
     {
+        $connection = (new Subscriber)->getConnection();
+
+        // The records' subquery runs on the subscribers' connection: a model
+        // on another one would be looked for in the wrong database, and
+        // every subscriber would look orphaned.
+        if ($model->getConnection()->getName() !== $connection->getName()) {
+            return 0;
+        }
+
         $records = $model->newQueryWithoutScopes()->select($model->getQualifiedKeyName());
 
         // A model using SoftDeletes.
@@ -119,7 +128,6 @@ class SyncListCommand extends Command
             $records->whereNull($model->getQualifiedDeletedAtColumn());
         }
 
-        $connection = (new Subscriber)->getConnection();
         $forgotten = 0;
 
         Subscriber::query()

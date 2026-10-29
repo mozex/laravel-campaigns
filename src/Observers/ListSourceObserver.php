@@ -7,9 +7,11 @@ namespace Mozex\Campaigns\Observers;
 use Closure;
 use Illuminate\Database\DeadlockException;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\QueryException;
 use Mozex\Campaigns\Actions\ForgetSubscriberAction;
 use Mozex\Campaigns\Actions\SyncRecordAction;
 use Mozex\Campaigns\Campaigns;
+use Mozex\Campaigns\CampaignsException;
 use Mozex\Campaigns\Models\Subscriber;
 use Mozex\Campaigns\Support\ConsentContext;
 use Throwable;
@@ -96,7 +98,13 @@ class ListSourceObserver
                 throw $exception;
             }
 
-            report($exception);
+            // Laravel gives a deadlock code 0 when the state is a string
+            // ("40001"); the query exception it wraps has the real one.
+            report(CampaignsException::syncFailed($exception->getPrevious()?->getCode() ?? $exception->getCode()));
+        } catch (QueryException $exception) {
+            // Its message is the SQL with the person's address, which an
+            // error report must not carry: only its code goes.
+            report(CampaignsException::syncFailed($exception->getCode()));
         } catch (Throwable $exception) {
             report($exception);
         }

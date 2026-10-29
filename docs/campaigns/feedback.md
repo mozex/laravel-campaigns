@@ -48,7 +48,7 @@ Every 15 minutes, whether or not sending is switched on:
 
 - emails whose job was lost go back to waiting;
 - events stored but never applied are queued again;
-- Mailgun's logs are replayed per sending domain from half an hour behind (its logs fill in out of order), storing every event no webhook brought;
+- Mailgun's logs are replayed per sending domain from half an hour behind (its logs fill in out of order), storing every event no webhook brought except `accepted`, which the others prove;
 - a send that ended unclear is looked up by its id. If the logs show it, it's marked sent; if they hold nothing an hour after it went, it fails as `not_accepted` and is never resent. Past what the logs reach, it stays `unknown`.
 
 It needs the [reading key](../getting-started/mailgun.md#the-reading-key).

@@ -260,6 +260,11 @@ describe('making and changing templates', function (): void {
     it('renames, describes and archives a template, which the list follows', function (): void {
         app(CreateTemplateAction::class)->execute('welcome', 'Welcome', [campaignEmail()], description: 'Old');
 
+        // A client that sends "" for what it leaves out changes nothing else.
+        $blank = structuredContent(agent()->tool(UpdateTemplateTool::class, ['key' => 'welcome', 'name' => 'Hi', 'description' => '', 'is_default' => ''])->assertOk());
+
+        expect($blank['template'])->toMatchArray(['name' => 'Hi', 'description' => 'Old', 'is_default' => false]);
+
         $updated = structuredContent(agent()->tool(UpdateTemplateTool::class, ['key' => 'welcome', 'name' => 'Hello', 'description' => null, 'is_default' => true])->assertOk());
         $named = structuredContent(agent()->tool(UpdateTemplateTool::class, ['key' => 'welcome', 'name' => 'Hello there'])->assertOk());
         $archived = structuredContent(agent()->tool(ArchiveTemplateTool::class, ['key' => 'welcome'])->assertOk());

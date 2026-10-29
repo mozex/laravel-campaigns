@@ -39,7 +39,7 @@ Each class's docblock gives the reasons for its own behaviour; read it before ch
 
 ### Schema and databases
 
-- `laravel/framework`, not `illuminate/*` components: the package is app-shaped (routes, views, mail, jobs, scheduler, signed links). forge's WARN about it is deliberate.
+- `laravel/framework`, not `illuminate/*` components: the package is app-shaped (routes, views, mail, jobs, scheduler, signed links). A dependency checker's warning about it is deliberate.
 - MySQL, MariaDB, PostgreSQL and SQLite; never SQL Server (its unique indexes allow one NULL).
 - One stub, no `down()`. Until the first tag, schema changes edit the stub in place; after it, every change is a new additive stub.
 - Every string column has an explicit length (addresses 254); tests run at a default string length of 125 so an unsized column fails. Every foreign key has its own index; JSON columns are `jsonb`. A NOT NULL timestamp gets `useCurrent()` (MySQL without `explicit_defaults_for_timestamp`).
@@ -59,8 +59,9 @@ Each class's docblock gives the reasons for its own behaviour; read it before ch
 - The observer never breaks the app's save: failures are reported and rolled back to a savepoint; a deadlock or lock timeout is rethrown, since the database ended the transaction. The consent context is scoped to one model class and one callback (`withCampaignConsent()`), restored in `finally`; a record made without one counts as made by staff, one older than its list as `legacy`.
 - A choice made at creation is recorded even when the record isn't eligible yet.
 - Leaving keeps a suppressed address stripped to the address (`ForgetSubscriberAction`); other addresses are deleted, and the person's details, IPs, browsers and sent mail's addresses go.
-- An address change moves the person, not the block (`ChangeEmailAction`): consent records except block and unblock follow, sent mail moves with the old address on it, engagement merges, soft bounces start at 0, and a waiting double opt-in's link is voided (it proved the old address).
-- `campaigns:sync-list` forgets subscribers whose record went without a model event (`forgetOrphans()`: the table read without global scopes, a soft-deleted record counting as gone).
+- An address change moves the person, not the block (`ChangeEmailAction`): consent records except block and unblock follow, sent mail moves with the old address on it, engagement merges, soft bounces start at 0, and the old row's waiting double opt-in links are voided (they proved the old address; the new address's own stay), so such a wait never outranks the new address's subscription.
+- `campaigns:sync-list` forgets subscribers whose record went without a model event (`forgetOrphans()`: the table read without global scopes, a soft-deleted record counting as gone, skipped for a model on another connection).
+- A list source's custom fields meet `SetCustomFieldsAction::check()`; refused ones are reported and left out, never stopping the record's eligibility or address syncing.
 - Imports never undo what the app knows (`ImportContactsAction`): no cleared opt-out or block, no changed subscription, no details for a record-linked subscriber, engagement only forward, the context's meta winning over a row's; a row whose other values fail still records its opt-out or block (`ImportedContact::suppressionOf()`), and details that aren't UTF-8 are refused before cleaning would turn them into "?". One transaction per row through `transaction()`, a dry run throwing `RolledBackRow`; the first read is a locking read by address. Problems name rows, never addresses.
 - Tiers and the sunset are worked out, never stored (`Support\Engagement`), PHP and SQL side by side and tested to agree. The queries compare each column on its own, never `GREATEST()` or a `NOT` over NULLs.
 - Filters target; the `mailable` scope decides who may be mailed. An unknown filter, list or campaign key is refused rather than matching nobody.
@@ -114,7 +115,7 @@ Each class's docblock gives the reasons for its own behaviour; read it before ch
 - Rights: a token's own `read` or `full`; anyone else by the app's `campaigns.full` then `campaigns.read` abilities, which the package never defines.
 - A tool is a read tool exactly when it carries `#[IsReadOnly]`; one a principal can't use isn't listed. `RegistryTest` holds every tool's hints, schema and the approval set.
 - A refusal is a tool error with `error` in its structured content; every output schema requires nothing at the top level.
-- A blank argument counts as not given (`CampaignsTool::handle()`: laravel/mcp reads the raw body, past `ConvertEmptyStringsToNull`); every `page` takes `PAGE_RULES`, bounded so an offset never overflows. `Principal::current()` is worked out once a request.
+- A blank argument is dropped, as if not given, never made null, which an update tool reads as "clear it" (`CampaignsTool::handle()`: laravel/mcp reads the raw body, past `ConvertEmptyStringsToNull`); every `page` takes `PAGE_RULES`, bounded so an offset never overflows. `Principal::current()` is worked out once a request.
 - No answer is over 50,000 characters, measured as JSON (a quote two, a control character or U+2028/U+2029 six). Free text goes through `ShownText`; answers are cut where they grow, and size tests run over the `costly characters` dataset. An empty map is cast to an object.
 - The approval meta is per tool, so a risky action is its own tool: start, resume, speed-up, test send, archiving a list or template, unblock, an import's run.
 - An agent's consent change never carries the request's IP or browser; its meta names the token or person.

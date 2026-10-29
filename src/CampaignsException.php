@@ -37,6 +37,11 @@ class CampaignsException extends RuntimeException
         return new self('A context whose accepted is false records a refusal: call DeclineAction, not SubscribeAction.');
     }
 
+    public static function refusedSourceFields(string $class, string $reason): self
+    {
+        return new self("The list source {$class} gave custom fields that were left out of its subscribers: {$reason}");
+    }
+
     public static function invalidListSourceKey(string $key): self
     {
         return new self('The list source "'.mb_strimwidth($key, 0, 40, '...').'" in campaigns.list_sources needs a key of lower-case letters, digits, dots, dashes and underscores, starting with a letter or digit, at most 125 characters: campaigns name their lists by it.');
@@ -233,6 +238,15 @@ class CampaignsException extends RuntimeException
     public static function freezeFailed(string|int $sqlState): self
     {
         return new self("The database refused part of the campaign's freeze (SQLSTATE {$sqlState}). Start it again.");
+    }
+
+    /**
+     * A database error met while syncing a record onto its list, without
+     * the original, whose message holds the SQL with the person's address.
+     */
+    public static function syncFailed(string|int $sqlState): self
+    {
+        return new self("A record couldn't be synced onto its campaign list (SQLSTATE {$sqlState}); campaigns:sync-list repairs it.");
     }
 
     public static function scheduleTooFar(): self

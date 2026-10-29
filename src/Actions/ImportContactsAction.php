@@ -125,6 +125,7 @@ class ImportContactsAction
 
             $first = $seen[$address] ?? null;
             $joins = $first === null ? $list : null;
+            $refusal = null;
 
             try {
                 $contact = $item instanceof ImportedContact ? $item : ImportedContact::fromArray($item);
@@ -144,7 +145,9 @@ class ImportContactsAction
                     continue;
                 }
 
-                $problems[] = "Row {$row}: {$exception->getMessage()} Its opt-out or block was still recorded.";
+                // Named once the write is done, so the note never claims what
+                // didn't happen.
+                $refusal = "Row {$row}: {$exception->getMessage()}";
                 $contact = $suppression;
                 $dates = array_fill_keys(Engagement::SIGNALS, null);
                 $joins = null;
@@ -162,7 +165,7 @@ class ImportContactsAction
                 );
 
                 if (! $contact->suppresses()) {
-                    $problems[] = 'Row '.$row.': the same address as row '.($first >> 3).', which counts instead.';
+                    $problems[] = $refusal ?? 'Row '.$row.': the same address as row '.($first >> 3).', which counts instead.';
 
                     continue;
                 }
@@ -174,7 +177,7 @@ class ImportContactsAction
                     $dryRun,
                 );
             } catch (CampaignsException $exception) {
-                $problems[] = "Row {$row}: {$exception->getMessage()}";
+                $problems[] = $refusal ?? "Row {$row}: {$exception->getMessage()}";
 
                 continue;
             } catch (QueryException $exception) {
@@ -183,6 +186,10 @@ class ImportContactsAction
                 $problems[] = "Row {$row}: the database refused it (SQLSTATE {$exception->getCode()}), so the import stopped there.";
 
                 break;
+            }
+
+            if ($refusal !== null) {
+                $problems[] = "{$refusal} Its opt-out or block was kept.";
             }
 
             if ($first !== null) {

@@ -56,7 +56,9 @@ use Mozex\Campaigns\Models\CampaignList;
 use Mozex\Campaigns\Models\Subscriber;
 use Mozex\Campaigns\Support\ConsentContext;
 
-$request->validate(['email' => ['required', 'email', 'max:254']]);
+// filter_unicode checks the address the way the package does, so every
+// address that passes can be mailed.
+$request->validate(['email' => ['required', 'string', 'max:254', 'email:filter_unicode']]);
 
 $subscription = app(SubscribeAction::class)->execute(
     Subscriber::forEmail($request->input('email')),

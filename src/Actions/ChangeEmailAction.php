@@ -93,8 +93,10 @@ class ChangeEmailAction
             }
 
             $this->movePerson($subscriber, $target);
+            // The old row's links only: the address's own row may hold a
+            // link sent to the address the person now has.
+            $this->voidConfirmations($subscriber);
             $this->moveSubscriptions($subscriber, $target);
-            $this->voidConfirmations($target);
             $this->moveMessages($subscriber, $target);
 
             // The person's consent history follows them; a block's stays with
@@ -195,10 +197,11 @@ class ChangeEmailAction
 
             $subscription->delete();
 
-            // The stricter row's state wins. A waiting confirmation's token
-            // doesn't come along: it went to the old address
-            // (voidConfirmations()).
-            if (static::STRICTNESS[$subscription->status->value] > static::STRICTNESS[$existing->status->value]) {
+            // The stricter row's state wins, except a waiting confirmation:
+            // its link went to the old address (voidConfirmations()), so it
+            // proves nothing against the address's own subscription.
+            if ($subscription->status !== SubscriptionStatus::Pending
+                && static::STRICTNESS[$subscription->status->value] > static::STRICTNESS[$existing->status->value]) {
                 $existing->update($subscription->only(['status', 'subscribed_at', 'confirmed_at', 'unsubscribed_at']));
             }
         }

@@ -25,7 +25,7 @@ class CourseBuyers implements Audience
     public function parameters(JsonSchema $schema): array
     {
         return [
-            'course' => $schema->string()->description('The course key, such as "intro-to-cfd"')->required(),
+            'course' => $schema->string()->description('The course key, such as "intro-to-photography"')->required(),
         ];
     }
 
@@ -49,11 +49,11 @@ Register it by name in `config/campaigns.php`:
 ],
 ```
 
-- `parameters()` declares the input the way an MCP tool declares its own. `list_audiences` shows it to agents as a JSON Schema, and a campaign names it as `{"audience": {"name": "course-buyers", "parameters": {"course": "intro-to-cfd"}}}`.
+- `parameters()` declares the input the way an MCP tool declares its own. `list_audiences` shows it to agents as a JSON Schema, and a campaign names it as `{"audience": {"name": "course-buyers", "parameters": {"course": "intro-to-photography"}}}`.
 - `rules()` validates the parameters before `query()` runs, and `query()` gets only the validated values. A refusal reaches the agent as the validator's message.
 - `query()` returns a query on your own model or on `Mozex\Campaigns\Models\Subscriber`. A query on your model reaches the subscribers linked to those records, so the model must feed a [dynamic list](../lists-and-subscribers/dynamic-lists.md). The package uses it as a subquery selecting only the key: leave out limits, and filter with `where()`, `has()` and `whereHas()`.
 
-A named audience only narrows. A campaign still reaches only people subscribed on its target lists, and never anyone opted out, blocked or past the sunset. `Campaigns::audienceSubscribers('course-buyers', ['course' => 'intro-to-cfd'])` gives you the same subscriber query in your own code.
+A named audience only narrows. A campaign still reaches only people subscribed on its target lists, and never anyone opted out, blocked or past the sunset. `Campaigns::audienceSubscribers('course-buyers', ['course' => 'intro-to-photography'])` gives you the same subscriber query in your own code.
 
 ## Resources
 

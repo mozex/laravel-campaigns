@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use Illuminate\Contracts\Filesystem\Filesystem;
+use Illuminate\Support\Facades\Exceptions;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Testing\TestResponse;
 use Mozex\Campaigns\Actions\CreateUploadAction;
@@ -133,6 +135,22 @@ describe('the upload link', function (): void {
         expect([$counted->status(), $declared->status(), $empty->status(), $taken->status(), $largeImage->status()])->toBe([413, 413, 400, 201, 413])
             ->and($counted->json('error'))->toContain('over the upload limit')
             ->and($upload->refresh()->size)->toBe(5);
+    });
+
+    it('answers a disk that fails itself, never through the app\'s handler', function (): void {
+        $link = Links::upload(app(CreateUploadAction::class)->execute(UploadPurpose::Email));
+        $disk = Mockery::mock(Filesystem::class);
+        $disk->shouldReceive('writeStream')->andThrow(new RuntimeException('The disk is full.'));
+        $disk->shouldReceive('delete')->andReturnTrue();
+        Storage::shouldReceive('disk')->andReturn($disk);
+        Exceptions::fake();
+
+        $response = sendTo($link, 'PUT', '<p>Hi</p>');
+
+        expect($response->status())->toBe(500)
+            ->and($response->json('error'))->toBe('The server failed to handle the file. Try again later.');
+
+        Exceptions::assertReported(fn (RuntimeException $exception): bool => $exception->getMessage() === 'The disk is full.');
     });
 
     it('answers 404 for an upload that is gone', function (): void {

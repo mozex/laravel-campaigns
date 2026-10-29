@@ -24,7 +24,7 @@ use Mozex\Campaigns\Sending\Suppression;
 
 #[Name('unblock_contact')]
 #[Title('Unblock an address')]
-#[Description('Lets a blocked address get email again (a bounce that was the receiver\'s fault, a block made by mistake); an opt-out, the person\'s own choice, stays. Then asks the provider whether it still holds the address on the sending domain\'s bounce, complaint or unsubscribe list: while it does, the provider drops mail to it, and taking it off there is a change at the provider the owner approves.')]
+#[Description('Lets a blocked address get email again (a bounce that was the receiver\'s fault, a block made by mistake); an opt-out, the person\'s own choice, stays. Then asks the provider whether it still holds the address on the sending domain\'s bounce, complaint or unsubscribe list: while it does, the provider drops mail to it, and taking it off there is a change at the provider the person you work for approves.')]
 #[IsIdempotent]
 #[IsOpenWorld]
 #[IsDestructive]
@@ -77,7 +77,7 @@ class UnblockContactTool extends CampaignsTool
             ];
 
             if ($lists !== []) {
-                $notes[] = 'The provider still holds the address, so mail to it is dropped there until it is taken off the provider\'s list: a change at the provider that the owner approves.';
+                $notes[] = 'The provider still holds the address, so mail to it is dropped there until it is taken off the provider\'s list: a change at the provider that the person you work for approves.';
             }
         } catch (CampaignsException $exception) {
             $provider = ['checked' => false, 'lists' => [], 'error' => $exception->getMessage()];

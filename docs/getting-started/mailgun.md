@@ -17,7 +17,7 @@ Point Mailgun's webhooks for the sending domain at:
 https://your-app.example.com/campaigns/webhooks/mailgun
 ```
 
-Subscribe the `delivered`, `permanent_fail`, `temporary_fail`, `complained`, `unsubscribed`, `opened` and `clicked` events (`accepted` is read too, though the reconciler covers it). Then give the package the account's HTTP webhook signing key, from Mailgun's API Security settings. It's neither the API key nor a sending key:
+Subscribe the `delivered`, `permanent_fail`, `temporary_fail`, `complained`, `unsubscribed`, `opened` and `clicked` events. `accepted` may be added too; every other event of an email already proves Mailgun took it. Then give the package the account's HTTP webhook signing key, from Mailgun's API Security settings. It's neither the API key nor a sending key:
 
 ```dotenv
 MAILGUN_WEBHOOK_SIGNING_KEY=your-webhook-signing-key

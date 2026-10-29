@@ -89,4 +89,7 @@ it('pages the lists so the longest page stays under the limit', function (string
         ->and(mb_strlen($first['lists'][0]['description']))->toBe(ListSummary::DESCRIPTION_LENGTH + 3)
         ->and(json_encode($first))->not->toContain('\u0001')
         ->and($second['lists'])->toHaveCount(5);
+
+    // Bounded, so a page whose offset would overflow is refused, not a crash.
+    agent(Rights::Read)->tool(ListListsTool::class, ['page' => PHP_INT_MAX])->assertHasErrors(['page']);
 })->with('costly characters');

@@ -152,8 +152,11 @@ it('serves the app\'s own resources to readers, their first page and the rest th
     $first = json_decode((string) mcp('resources/read', ['uri' => 'campaigns://resources/members'], 'read-token')->assertOk()->json('result.contents.0.text'), true);
     $second = json_decode((string) mcp('resources/read', ['uri' => 'campaigns://resources/members/pages/2'], 'read-token')->assertOk()->json('result.contents.0.text'), true);
     $unknown = json_decode((string) mcp('resources/read', ['uri' => 'campaigns://resources/nope/pages/1'], 'read-token')->assertOk()->json('result.contents.0.text'), true);
+    // A page past any offset the database can take reads as the last allowed, empty.
+    $far = json_decode((string) mcp('resources/read', ['uri' => 'campaigns://resources/members/pages/9223372036854775807'], 'read-token')->assertOk()->json('result.contents.0.text'), true);
 
-    expect($resources->keys()->all())->toBe(['campaigns://guide', 'campaigns://resources/members'])
+    expect($far)->toMatchArray(['page' => 100000, 'items' => []])
+        ->and($resources->keys()->all())->toBe(['campaigns://guide', 'campaigns://resources/members'])
         ->and($resources['campaigns://resources/members'])->toMatchArray(['name' => 'members', 'mimeType' => 'application/json'])
         ->and($resources['campaigns://resources/members']['description'])->toStartWith('The members, by name.')
         ->and(array_column($templates, 'uriTemplate'))->toBe(['campaigns://resources/{name}/pages/{page}'])
@@ -162,6 +165,20 @@ it('serves the app\'s own resources to readers, their first page and the rest th
         ->and($unknown['error'])->toContain('nope');
 
     mcp('resources/list', token: 'person-none')->assertForbidden();
+});
+
+it('asks the app\'s gate about a person once a request, however many tools it lists', function (): void {
+    $asked = 0;
+    Gate::after(function () use (&$asked): void {
+        $asked++;
+    });
+
+    $tools = mcp('tools/list', token: 'person-read')->assertOk()->json('result.tools');
+
+    // The middleware's check, then one Principal for every tool and
+    // resource, each asking full, then read: never once per tool.
+    expect(count($tools))->toBeGreaterThan(0)
+        ->and($asked)->toBe(4);
 });
 
 it('lets a full token and a person with full rights call every tool, sending switched off or not', function (): void {

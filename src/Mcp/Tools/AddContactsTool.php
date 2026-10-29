@@ -39,7 +39,7 @@ class AddContactsTool extends CampaignsTool
                 'name' => $schema->string(),
                 'first_name' => $schema->string(),
                 'locale' => $schema->string()->description('Like en, pt_BR.'),
-                'timezone' => $schema->string()->description('Like Europe/Istanbul.'),
+                'timezone' => $schema->string()->description('Like America/New_York.'),
                 'country' => $schema->string()->description('Two letters, like TR.'),
                 'custom_fields' => $schema->object()->description('Names (letters, digits, underscores) to text, whole numbers, true or false.'),
             ]))->min(1)->max(AddContactsAction::MAX_CONTACTS)->required(),

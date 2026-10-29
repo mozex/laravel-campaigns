@@ -80,24 +80,35 @@ it('joins an address that already has a row, the stricter state winning', functi
     $old?->forceFill(['opted_out_at' => now()])->save();
     $shared = CampaignList::factory()->create();
     $own = CampaignList::factory()->create();
-    $waiting = Subscription::factory()->for($old)->for($shared, 'list')->pending()->create();
+    $bothWaiting = CampaignList::factory()->create();
+    $moved = CampaignList::factory()->create();
+    Subscription::factory()->for($old)->for($shared, 'list')->pending()->create();
     Subscription::factory()->for($old)->for($own, 'list')->create();
+    Subscription::factory()->for($old)->for($bothWaiting, 'list')->pending()->create();
+    $waiting = Subscription::factory()->for($old)->for($moved, 'list')->pending()->create();
     $contact = Subscriber::factory()->create(['email' => 'new@example.com']);
     app(SubscribeAction::class)->execute($contact, $shared, new ConsentContext('import'));
+    $theirs = Subscription::factory()->for($contact)->for($bothWaiting, 'list')->pending()->create();
 
     $result = changeEmail($old, 'new@example.com');
+    $tokens = Subscription::query()->where('subscriber_id', $contact->id)->pluck('confirm_token_hash', 'list_id');
 
     expect($result->is($contact))->toBeTrue()
         ->and($result->fresh())
         ->opted_out_at->not->toBeNull()
         ->and($result->fresh()?->subscribable?->is($member))->toBeTrue()
-        ->and(Subscription::query()->where('subscriber_id', $contact->id)->whereIn('list_id', [$shared->id, $own->id])->orderBy('list_id')->pluck('status', 'list_id')->all())->toBe([
-            $shared->id => SubscriptionStatus::Pending,
+        // A waiting confirmation proves nothing against the address's own
+        // subscription, since its link went to the old address.
+        ->and(Subscription::query()->where('subscriber_id', $contact->id)->whereIn('list_id', [$shared->id, $own->id, $bothWaiting->id, $moved->id])->orderBy('list_id')->pluck('status', 'list_id')->all())->toBe([
+            $shared->id => SubscriptionStatus::Subscribed,
             $own->id => SubscriptionStatus::Subscribed,
+            $bothWaiting->id => SubscriptionStatus::Pending,
+            $moved->id => SubscriptionStatus::Pending,
         ])
-        // The link already sent went to the old address: it confirms nothing.
+        // The address's own link still confirms; the old address's doesn't.
+        ->and($tokens[$bothWaiting->id])->toBe($theirs->confirm_token_hash)->not->toBeNull()
         ->and($waiting->confirm_token_hash)->not->toBeNull()
-        ->and(Subscription::query()->where('subscriber_id', $contact->id)->where('list_id', $shared->id)->sole()->confirm_token_hash)->toBeNull()
+        ->and($tokens[$moved->id])->toBeNull()
         ->and($old->fresh())
         ->email->toBe('old@example.com')
         ->opted_out_at->not->toBeNull()

@@ -120,11 +120,12 @@ abstract class CampaignsTool extends Tool
 
         // Some clients send "" for every optional argument they leave out,
         // and laravel/mcp reads the raw body, past Laravel's
-        // ConvertEmptyStringsToNull: a blank counts as not given.
+        // ConvertEmptyStringsToNull: a blank is dropped, as if not given.
+        // Never made null, which an update tool reads as "clear it".
         if (app()->bound('mcp.request')) {
             /** @var Request $request */
             $request = app('mcp.request');
-            $request->setArguments(array_map(fn (mixed $value): mixed => $value === '' ? null : $value, $request->all()));
+            $request->setArguments(array_filter($request->all(), fn (mixed $value): bool => $value !== ''));
         }
 
         try {

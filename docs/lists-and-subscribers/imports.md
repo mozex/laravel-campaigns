@@ -57,7 +57,7 @@ An import never undoes what your app knows:
 - Engagement dates only move forward.
 - An address kept only so it's never mailed (blocked or opted out, on no list) gains nothing but the import's own block or opt-out.
 
-Each row is its own transaction. A row that fails is a problem in the result, and the rest go on. Values are checked before anything is written (an engagement date before 1970 or in the future, text that isn't UTF-8), because a database error's message would carry the row's address.
+Each row is its own transaction. A row that fails is a problem in the result, and the rest go on. A row whose opt-out or block can be read still keeps it when another of its values fails (a date in a format nobody can read, say): the address is recorded with that alone, with no details and on no list. Values are checked before anything is written (an engagement date before 1970 or in the future, text that isn't UTF-8), because a database error's message would carry the row's address.
 
 ## From agents
 

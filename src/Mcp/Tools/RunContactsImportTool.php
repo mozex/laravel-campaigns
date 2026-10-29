@@ -20,7 +20,7 @@ use Mozex\Campaigns\Mcp\Tools\Concerns\ImportsUploadedContacts;
 
 #[Name('run_contacts_import')]
 #[Title('Run a contacts import')]
-#[Description('Imports an uploaded CSV of contacts for real, after preview_contacts_import showed the owner its numbers: the same arguments, the same counts. It uses the upload up. Opt-outs and blocks it brings in are kept for good; nothing it does clears one.')]
+#[Description('Imports an uploaded CSV of contacts for real, after preview_contacts_import showed the person you work for its numbers: the same arguments, the same counts. It uses the upload up. Opt-outs and blocks it brings in are kept for good; nothing it does clears one.')]
 #[IsOpenWorld(false)]
 #[IsDestructive]
 class RunContactsImportTool extends CampaignsTool
