@@ -138,3 +138,11 @@ it('refuses a list without a source and a record that does not exist', function 
         ->and($missingRecord)->toBe(1)
         ->and(Artisan::output())->toContain('No record has the key 999.');
 });
+
+it('refuses a key of the wrong type as a record that does not exist, on every database', function (string $driver): void {
+    useDatabase($driver);
+
+    // PostgreSQL answers "abc" for an integer key with an error, not nothing.
+    expect(Artisan::call('campaigns:sync-list', ['list' => 'members', '--id' => 'abc']))->toBe(1)
+        ->and(Artisan::output())->toContain('No record has the key abc.');
+})->with('databases');

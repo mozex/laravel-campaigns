@@ -36,7 +36,7 @@ class SubscriberDetails
 
         if (array_key_exists('country', $fields)) {
             $country = strtoupper(trim((string) $fields['country']));
-            $details['country'] = preg_match('/^[A-Z]{2}$/', $country) === 1 ? $country : null;
+            $details['country'] = preg_match('/^[A-Z]{2}\z/', $country) === 1 ? $country : null;
         }
 
         return $details;

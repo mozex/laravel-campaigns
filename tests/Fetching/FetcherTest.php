@@ -53,6 +53,9 @@ describe('public addresses', function (): void {
         ['64:ff9b:1::a00:1', false],
         ['::ffff:0:7f00:1', false],
         ['fec0::1', false],
+        // 127.0.0.1 as an IPv4-compatible address, the way PHP's filter lets it by.
+        ['::7f00:1', false],
+        ['0:0:0:0:0:0:a9fe:a9fe', false],
         ['not an address', false],
     ]);
 });

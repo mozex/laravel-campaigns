@@ -164,8 +164,8 @@ class Pace
     {
         $valid = is_array($value) && array_is_list($value) && count($value) === 2
             && is_string($value[0]) && is_string($value[1])
-            && preg_match('/^([01]\d|2[0-3]):[0-5]\d$/', $value[0]) === 1
-            && preg_match('/^([01]\d|2[0-3]):[0-5]\d$/', $value[1]) === 1
+            && preg_match('/^([01]\d|2[0-3]):[0-5]\d\z/', $value[0]) === 1
+            && preg_match('/^([01]\d|2[0-3]):[0-5]\d\z/', $value[1]) === 1
             && $value[0] !== $value[1];
 
         if (! $valid) {

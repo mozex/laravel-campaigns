@@ -24,6 +24,9 @@ class PublicAddress
         // IPv4-translated addresses (SIIT) and the old site-local range.
         '::ffff:0:0:0/96',
         'fec0::/10',
+        // IPv4-compatible addresses: PHP's filter refuses ::127.0.0.1 but
+        // takes the same address written ::7f00:1.
+        '::/96',
     ];
 
     public static function isPublic(string $address): bool

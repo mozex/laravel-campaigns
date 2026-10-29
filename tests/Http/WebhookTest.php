@@ -257,6 +257,8 @@ describe('storing', function (): void {
 
         expect(postWebhook($forged))->toBe(406)
             ->and(postWebhook(mailgunWebhook(mailgunEvent('delivered', ['event' => 'stored', 'id' => 'stored-event']))))->toBe(200)
+            // A time Carbon can't place: dropped, not a 500 Mailgun retries.
+            ->and(postWebhook(mailgunWebhook(eventFor($message, 'delivered', ['timestamp' => 1e30]))))->toBe(200)
             ->and(ProviderEvent::query()->count())->toBe(0);
 
         Queue::assertNothingPushed();

@@ -73,7 +73,7 @@ class StartCampaignTool extends CampaignsTool
             return null;
         }
 
-        if (preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})$/i', $at) !== 1) {
+        if (preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})\z/i', $at) !== 1) {
             throw CampaignsException::invalidValue('time', 'must be an ISO 8601 time with its offset, like 2026-11-02T09:00:00+01:00 or 2026-11-02T08:00:00Z');
         }
 

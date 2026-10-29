@@ -60,7 +60,7 @@ class ListSubscribersTool extends CampaignsTool
     {
         $input = $request->validate([
             'filters' => ['nullable', 'array'],
-            'cursor' => ['nullable', 'string', 'regex:/^[0-9]{1,19}$/'],
+            'cursor' => ['nullable', 'string', 'regex:/^[0-9]{1,19}\z/'],
             'per_page' => ['nullable', 'integer', 'min:1', 'max:'.static::MAX_PER_PAGE],
         ]);
 

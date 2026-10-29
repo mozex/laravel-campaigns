@@ -52,7 +52,14 @@ readonly class SubscriberFilters
      * first. A dot or an arrow would reach into a nested value, and
      * PostgreSQL reads a name of digits as an array index.
      */
-    public const CUSTOM_FIELD_NAME = '/^[A-Za-z_][A-Za-z0-9_]{0,63}$/';
+    public const CUSTOM_FIELD_NAME = '/^[A-Za-z_][A-Za-z0-9_]{0,63}\z/';
+
+    /**
+     * The most values one filter takes: each is a binding, and a list past
+     * a database's binding limit (65,535 on PostgreSQL) fails the query
+     * rather than the filter.
+     */
+    public const MAX_VALUES = 100;
 
     /**
      * The dates a "dates" filter can bound, and their columns.
@@ -325,6 +332,8 @@ readonly class SubscriberFilters
             throw CampaignsException::invalidFilter($key, 'it takes a list');
         }
 
+        static::bounded($key, $values);
+
         foreach ($values as $value) {
             if ($value === null && $nullable) {
                 continue;
@@ -336,6 +345,16 @@ readonly class SubscriberFilters
         }
 
         return $values;
+    }
+
+    /**
+     * @param  array<array-key, mixed>  $values
+     */
+    protected static function bounded(string $key, array $values): void
+    {
+        if (count($values) > static::MAX_VALUES) {
+            throw CampaignsException::invalidFilter($key, 'it takes at most '.static::MAX_VALUES.' values');
+        }
     }
 
     protected static function listStatus(mixed $status): SubscriptionStatus
@@ -352,7 +371,7 @@ readonly class SubscriberFilters
     {
         $country = strtoupper($country);
 
-        if (preg_match('/^[A-Z]{2}$/', $country) !== 1) {
+        if (preg_match('/^[A-Z]{2}\z/', $country) !== 1) {
             throw CampaignsException::invalidFilter('countries', 'use two-letter country codes');
         }
 
@@ -382,6 +401,8 @@ readonly class SubscriberFilters
             throw CampaignsException::invalidFilter('custom_fields', 'it takes a map of field names to values');
         }
 
+        static::bounded('custom_fields', $fields);
+
         foreach ($fields as $name => $value) {
             if (preg_match(static::CUSTOM_FIELD_NAME, (string) $name) !== 1) {
                 throw CampaignsException::invalidFilter('custom_fields', 'a field name is letters, digits and underscores, starting with a letter or an underscore');
@@ -404,6 +425,8 @@ readonly class SubscriberFilters
         if (! is_array($dates) || ! array_is_list($dates)) {
             throw CampaignsException::invalidFilter('dates', 'it takes a list of {field, after, before}');
         }
+
+        static::bounded('dates', $dates);
 
         return array_map(function (mixed $date): array {
             $field = is_array($date) ? $date['field'] ?? null : null;
@@ -437,6 +460,8 @@ readonly class SubscriberFilters
             throw CampaignsException::invalidFilter('campaigns', 'it takes a list of {campaign, outcome}');
         }
 
+        static::bounded('campaigns', $outcomes);
+
         return array_map(function (mixed $outcome): array {
             $valid = is_array($outcome)
                 && array_diff(array_keys($outcome), ['campaign', 'outcome']) === []
@@ -462,8 +487,9 @@ readonly class SubscriberFilters
             return null;
         }
 
-        if (! is_string($value)) {
-            throw CampaignsException::invalidFilter('dates', 'a date is text');
+        // A blank would parse as now: "after now" would quietly match nobody.
+        if (! is_string($value) || trim($value) === '') {
+            throw CampaignsException::invalidFilter('dates', 'a date is text, never blank');
         }
 
         try {

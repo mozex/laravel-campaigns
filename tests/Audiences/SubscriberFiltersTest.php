@@ -129,6 +129,13 @@ it('refuses a filter it can\'t use, naming what to use instead', function (array
     'a date on no field' => [['dates' => [['after' => '2026-01-01']]], 'each date names a field'],
     'a date with no bound' => [['dates' => [['field' => 'created']]], 'each date has an "after", a "before" or both'],
     'a date that can\'t be read' => [['dates' => [['field' => 'created', 'after' => 'someday soon']]], 'a date can\'t be read'],
+    // Parsed, a blank is now, and "after now" would match nobody.
+    'a blank date' => [['dates' => [['field' => 'created', 'after' => ' ']]], 'a date is text, never blank'],
+    // $ matches before a final line break; the name would be stored with it.
+    'a custom field name ending in a line break' => [['custom_fields' => ["plan\n" => 'pro']], 'a field name is letters, digits and underscores'],
+    'a country ending in a line break' => [['countries' => ["fr\n"]], 'use two-letter country codes'],
+    'more values than a filter takes' => [['locales' => array_fill(0, 101, 'en')], 'it takes at most 100 values'],
+    'more custom fields than a filter takes' => [['custom_fields' => array_combine(array_map(fn (int $i): string => "f{$i}", range(1, 101)), array_fill(0, 101, 'x'))], 'it takes at most 100 values'],
 ]);
 
 it('refuses a list that doesn\'t exist, rather than finding nobody', function (): void {

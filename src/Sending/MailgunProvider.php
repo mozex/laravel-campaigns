@@ -455,7 +455,8 @@ class MailgunProvider implements CampaignProvider
     protected function metricsDay(array $item): ?string
     {
         foreach (is_array($item['dimensions'] ?? null) ? $item['dimensions'] : [] as $dimension) {
-            if (is_array($dimension) && ($dimension['dimension'] ?? null) === 'time' && is_string($dimension['value'] ?? null)) {
+            // A blank would parse as now.
+            if (is_array($dimension) && ($dimension['dimension'] ?? null) === 'time' && is_string($dimension['value'] ?? null) && trim($dimension['value']) !== '') {
                 try {
                     return Carbon::parse($dimension['value'])->utc()->toDateString();
                 } catch (Throwable) {
@@ -601,7 +602,7 @@ class MailgunProvider implements CampaignProvider
         }
 
         try {
-            $since = is_string($item['created_at'] ?? null) ? Carbon::parse($item['created_at']) : null;
+            $since = is_string($item['created_at'] ?? null) && trim($item['created_at']) !== '' ? Carbon::parse($item['created_at']) : null;
         } catch (Throwable) {
             $since = null;
         }
@@ -835,8 +836,14 @@ class MailgunProvider implements CampaignProvider
      */
     protected function time(mixed $timestamp, mixed $iso): ?Carbon
     {
+        // A number Carbon can't place (1e30) is no time, never a 500 that
+        // Mailgun retries for hours.
         if (is_numeric($timestamp)) {
-            return Carbon::createFromTimestampUTC((float) $timestamp);
+            try {
+                return Carbon::createFromTimestampUTC((float) $timestamp);
+            } catch (Throwable) {
+                return null;
+            }
         }
 
         if (! is_string($iso) || trim($iso) === '') {

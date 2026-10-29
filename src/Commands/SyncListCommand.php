@@ -16,6 +16,7 @@ use Mozex\Campaigns\Enums\SyncChange;
 use Mozex\Campaigns\Lists\SyncResult;
 use Mozex\Campaigns\Models\Subscriber;
 use Mozex\Campaigns\Support\DatabaseErrors;
+use PDOException;
 use Throwable;
 
 class SyncListCommand extends Command
@@ -45,7 +46,15 @@ class SyncListCommand extends Command
         if ($id !== null) {
             $query->whereKey($id);
 
-            if (! $query->exists()) {
+            // PostgreSQL refuses a key of the wrong type (abc for an integer
+            // key) with an error, where the others find nothing.
+            try {
+                $exists = $query->exists();
+            } catch (PDOException) {
+                $exists = false;
+            }
+
+            if (! $exists) {
                 $this->error("No record has the key {$id}.");
 
                 return self::FAILURE;
