@@ -94,6 +94,20 @@ class CampaignsException extends RuntimeException
         return new self('A Mailgun webhook arrived, but no webhook signing key is configured (campaigns.mailgun.webhook_signing_key, MAILGUN_WEBHOOK_SIGNING_KEY), so it can\'t be verified.');
     }
 
+    public static function missingMailgunApiKey(): self
+    {
+        return new self('Reading Mailgun\'s logs and suppressions needs an API key that can read them (campaigns.mailgun.api_key, CAMPAIGNS_MAILGUN_API_KEY); the campaigns mailer\'s sending key can only send.');
+    }
+
+    /**
+     * The provider couldn't be read. The message never holds the request's
+     * address or the provider's answer, which can name a recipient.
+     */
+    public static function providerUnreadable(string $what): self
+    {
+        return new self($what);
+    }
+
     public static function recipientForgotten(): self
     {
         return new self('The person this email is for was forgotten, so it can no longer be sent or shown.');

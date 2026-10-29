@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Carbon\CarbonInterface;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
@@ -233,6 +234,48 @@ function mailgunEvent(string $name, array $changes = []): array
     $event = json_decode((string) file_get_contents(__DIR__."/Fixtures/Mailgun/{$name}.json"), true, flags: JSON_THROW_ON_ERROR);
 
     return array_replace_recursive($event, $changes);
+}
+
+/**
+ * One of Mailgun's documented webhook payloads as its Logs API gives the same
+ * event (POST /v1/analytics/logs): an ISO "@timestamp" for the Unix
+ * "timestamp", user-variables as a JSON string, delivered-at as a time.
+ *
+ * @param  array<string, mixed>  $changes
+ * @return array<string, mixed>
+ */
+function mailgunLogItem(string $name, array $changes = []): array
+{
+    $event = mailgunEvent($name, $changes);
+    $variables = $event['user-variables'] ?? [];
+
+    $event['@timestamp'] = Carbon::createFromTimestampUTC((float) $event['timestamp'])->format('Y-m-d\TH:i:s.v\Z');
+    $event['user-variables'] = (string) json_encode($variables === [] ? new stdClass : $variables);
+    unset($event['timestamp']);
+
+    if (is_numeric($event['delivered-at'] ?? null)) {
+        $event['delivered-at'] = Carbon::createFromTimestampUTC((float) $event['delivered-at'])->format('Y-m-d\TH:i:s.v\Z');
+    }
+
+    return $event;
+}
+
+/**
+ * A Logs API answer in the documented shape (tests/Fixtures/Mailgun/logs.json)
+ * holding the given items, and the next page's token (none: the last page).
+ *
+ * @param  list<array<string, mixed>>  $items
+ * @return array<string, mixed>
+ */
+function mailgunLogs(array $items, ?string $next = null): array
+{
+    /** @var array<string, mixed> $answer */
+    $answer = json_decode((string) file_get_contents(__DIR__.'/Fixtures/Mailgun/logs.json'), true, flags: JSON_THROW_ON_ERROR);
+
+    $answer['items'] = $items;
+    $answer['pagination'] = array_filter(['next' => $next, 'total' => count($items)]);
+
+    return $answer;
 }
 
 /**

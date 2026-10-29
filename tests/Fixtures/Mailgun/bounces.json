@@ -1,0 +1,16 @@
+{
+    "items": [
+        {
+            "address": "foo@bar.com",
+            "code": "550",
+            "error": "No such mailbox",
+            "created_at": "Thu, 11 Dec 2025 01:49:40 UTC"
+        }
+    ],
+    "paging": {
+        "previous": "<previous page url>",
+        "first": "<first page url>",
+        "next": "<next page url>",
+        "last": "<last page url>"
+    }
+}

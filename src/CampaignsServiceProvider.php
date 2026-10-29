@@ -15,7 +15,10 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\RateLimiter;
+use Mozex\Campaigns\Commands\ImportProviderSuppressionsCommand;
+use Mozex\Campaigns\Commands\PruneCommand;
 use Mozex\Campaigns\Commands\PumpCommand;
+use Mozex\Campaigns\Commands\ReconcileCommand;
 use Mozex\Campaigns\Commands\SyncListCommand;
 use Mozex\Campaigns\Contracts\CampaignProvider;
 use Mozex\Campaigns\Events\CampaignFirstComplaintEvent;
@@ -59,7 +62,13 @@ class CampaignsServiceProvider extends PackageServiceProvider
             ->hasTranslations()
             ->hasRoute('campaigns')
             ->hasMigration('create_campaigns_tables')
-            ->hasCommands([SyncListCommand::class, PumpCommand::class])
+            ->hasCommands([
+                SyncListCommand::class,
+                PumpCommand::class,
+                ReconcileCommand::class,
+                PruneCommand::class,
+                ImportProviderSuppressionsCommand::class,
+            ])
             ->hasInstallCommand(function (InstallCommand $command): void {
                 $command
                     ->publishConfigFile()
@@ -109,10 +118,13 @@ class CampaignsServiceProvider extends PackageServiceProvider
     }
 
     /**
-     * The pump every minute, unless the app schedules it itself. Its overlap
-     * lock lives on campaigns.cache_store, a store the app's deploys don't
-     * flush, through a mutex of its own so the app's other scheduled
-     * commands keep theirs.
+     * The pump every minute, the reconciler every 15 minutes and pruning
+     * daily, unless the app schedules them itself. Each overlap lock lives on
+     * campaigns.cache_store, a store the app's deploys don't flush, through a
+     * mutex of its own so the app's other scheduled commands keep theirs; each
+     * expires a little after the command's longest run. The reconciler and
+     * pruning run in the background, so the app's tasks due in the same
+     * minute don't wait minutes behind them.
      */
     protected function schedule(Schedule $schedule): void
     {
@@ -120,11 +132,18 @@ class CampaignsServiceProvider extends PackageServiceProvider
             return;
         }
 
-        $pump = $schedule->command(PumpCommand::class)->everyMinute()->withoutOverlapping(5);
         $store = config('campaigns.cache_store');
 
+        $events = [
+            $schedule->command(PumpCommand::class)->everyMinute()->withoutOverlapping(5),
+            $schedule->command(ReconcileCommand::class)->everyFifteenMinutes()->withoutOverlapping(20)->runInBackground(),
+            $schedule->command(PruneCommand::class)->daily()->withoutOverlapping(120)->runInBackground(),
+        ];
+
         if (is_string($store) && $store !== '') {
-            $pump->preventOverlapsUsing($this->app->make(CacheEventMutex::class)->useStore($store));
+            foreach ($events as $event) {
+                $event->preventOverlapsUsing($this->app->make(CacheEventMutex::class)->useStore($store));
+            }
         }
     }
 

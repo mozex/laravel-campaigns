@@ -2,17 +2,27 @@
 
 declare(strict_types=1);
 
+use GuzzleHttp\Promise\PromiseInterface;
+use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\Client\Request as ClientRequest;
 use Illuminate\Http\Request;
 use Illuminate\Mail\Events\MessageSending;
 use Illuminate\Mail\Events\MessageSent;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Exceptions;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Str;
+use Mozex\Campaigns\CampaignsException;
 use Mozex\Campaigns\Enums\DeliveryFailure;
+use Mozex\Campaigns\Enums\FeedbackType;
 use Mozex\Campaigns\Enums\SendFailure;
+use Mozex\Campaigns\Enums\SuppressionType;
 use Mozex\Campaigns\Sending\MailgunProvider;
 use Mozex\Campaigns\Sending\OutgoingMessage;
 use Mozex\Campaigns\Sending\SendFailed;
+use Mozex\Campaigns\Sending\Suppression;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
 use Symfony\Component\Mailer\Bridge\Mailgun\Transport\MailgunApiTransport;
@@ -285,3 +295,240 @@ it('tells what a failure means: still being tried, a hard or soft bounce, a supp
     'any other permanent failure' => [['reason' => 'generic', 'delivery-status' => ['bounce-type' => null]], DeliveryFailure::Other],
     'no failure at all' => [['event' => 'delivered'], null],
 ]);
+
+describe('reading Mailgun\'s logs and suppressions', function (): void {
+    beforeEach(function (): void {
+        Http::preventStrayRequests();
+        config()->set('campaigns.mailgun.api_key', 'key-reader');
+        config()->set('mail.mailers.campaigns', ['transport' => 'mailgun', 'scheme' => 'api', 'secret' => 'key-sending', 'domain' => 'news.example.com', 'endpoint' => 'api.eu.mailgun.net']);
+    });
+
+    it('looks a message up by its uuid in the Logs API, page by page, keeping only its own events', function (): void {
+        $this->freezeTime();
+        $uuid = (string) Str::uuid();
+        $posted = [];
+
+        Http::fake(function (ClientRequest $request) use (&$posted, $uuid): PromiseInterface {
+            $posted[] = $request;
+
+            return Http::response(match ($request['pagination']['token'] ?? null) {
+                null => mailgunLogs([
+                    mailgunLogItem('accepted', ['user-variables' => ['campaign-message' => strtoupper($uuid)]]),
+                    // Another email's event a looser filter let through.
+                    mailgunLogItem('delivered', ['id' => 'other-email', 'user-variables' => ['campaign-message' => (string) Str::uuid()]]),
+                ], 'page-2'),
+                default => mailgunLogs([mailgunLogItem('delivered', ['user-variables' => ['campaign-message' => $uuid]])], 'page-2'),
+            });
+        });
+
+        $events = app(MailgunProvider::class)->eventsForMessage($uuid, now()->subHour());
+
+        expect($events)->toHaveCount(2)
+            ->and($events[0]->type)->toBe(FeedbackType::Accepted)
+            ->and($events[0]->occurredAt->format('Y-m-d H:i:s.v'))->toBe(Carbon::createFromTimestampUTC(mailgunEvent('accepted')['timestamp'])->format('Y-m-d H:i:s.v'))
+            ->and($events[0]->replayKey)->toBeNull()
+            ->and($events[1]->type)->toBe(FeedbackType::Delivered)
+            ->and($events[1]->messageUuid)->toBe($uuid)
+            // The second page named itself as the next: no third request.
+            ->and($posted)->toHaveCount(2)
+            ->and($posted[0]->url())->toBe('https://api.eu.mailgun.net/v1/analytics/logs')
+            ->and($posted[0]->method())->toBe('POST')
+            ->and($posted[0]->header('Authorization'))->toBe(['Basic '.base64_encode('api:key-reader')])
+            ->and($posted[0]->data())->toBe([
+                'start' => now()->subHour()->utc()->toRfc2822String(),
+                'end' => now()->utc()->toRfc2822String(),
+                'events' => ['accepted', 'delivered', 'failed', 'opened', 'clicked', 'unsubscribed', 'complained'],
+                'filter' => ['AND' => [['attribute' => 'user_variables', 'comparator' => 'contains', 'values' => [['label' => $uuid, 'value' => $uuid]]]]],
+                'pagination' => ['sort' => 'timestamp:asc', 'limit' => 100],
+            ])
+            ->and($posted[1]['pagination'])->toBe(['sort' => 'timestamp:asc', 'limit' => 100, 'token' => 'page-2']);
+    });
+
+    it('tells nothing about a message whose lookup leaves pages unread', function (): void {
+        $page = 0;
+
+        // A filter matching far more than the one email: page after page of
+        // others' events.
+        Http::fake(function () use (&$page): PromiseInterface {
+            $page++;
+
+            return Http::response(mailgunLogs([mailgunLogItem('delivered', ['id' => "other-{$page}", 'user-variables' => ['campaign-message' => (string) Str::uuid()]])], "page-{$page}"));
+        });
+
+        expect(app(MailgunProvider::class)->eventsForMessage((string) Str::uuid(), now()->subHour()))->toBeNull()
+            ->and($page)->toBe(5);
+    });
+
+    it('replays a domain\'s events oldest first from no further back than the logs reach, and asks nothing for an empty period', function (): void {
+        $this->freezeTime();
+        $posted = [];
+
+        Http::fake(function (ClientRequest $request) use (&$posted): PromiseInterface {
+            $posted[] = $request->data();
+
+            return Http::response(count($posted) === 1 ? mailgunLogs([mailgunLogItem('opened')], 'next') : mailgunLogs([], 'next'));
+        });
+
+        $provider = app(MailgunProvider::class);
+        $events = $provider->eventsBetween('news.example.com', now()->subDays(30), now()->subMinutes(30));
+
+        // Lazy: nothing is asked until the events are read.
+        expect($posted)->toBe([])
+            ->and(iterator_to_array($events, false))->toHaveCount(1)
+            ->and($posted)->toHaveCount(2)
+            ->and($posted[0]['start'])->toBe(now()->subDays(5)->addMinute()->utc()->toRfc2822String())
+            ->and($posted[0]['end'])->toBe(now()->subMinutes(30)->utc()->toRfc2822String())
+            ->and($posted[0]['filter'])->toBe(['AND' => [['attribute' => 'domain', 'comparator' => '=', 'values' => [['label' => 'news.example.com', 'value' => 'news.example.com']]]]])
+            ->and($provider->logDays())->toBe(5);
+
+        config()->set('campaigns.mailgun.log_days', 30);
+
+        expect(iterator_to_array($provider->eventsBetween('news.example.com', now(), now()->subMinute())))->toBe([])
+            ->and($posted)->toHaveCount(2)
+            ->and($provider->logDays())->toBe(30);
+    });
+
+    it('reads a log item as the webhook\'s event: its ISO time, its variables as a string, its delivery time kept as a number', function (): void {
+        $docs = json_decode((string) file_get_contents(__DIR__.'/../Fixtures/Mailgun/logs.json'), true);
+
+        Http::fake(['*' => Http::response(mailgunLogs([
+            $docs['items'][0],
+            mailgunLogItem('clicked', ['user-variables' => ['campaign-message' => 'abc'], 'delivered-at' => 1770146431.5]),
+        ]))]);
+
+        [$failure, $clicked] = iterator_to_array(app(MailgunProvider::class)->eventsBetween('news.example.com', now()->subHour(), now()), false);
+
+        expect($failure->providerEventId)->toBe('JDhSWf9mT5OFxCkZfpDU5d')
+            ->and($failure->type)->toBe(FeedbackType::Failed)
+            ->and($failure->occurredAt->toIso8601ZuluString('millisecond'))->toBe('2024-07-08T16:30:18.530Z')
+            ->and($failure->code)->toBe(680)
+            ->and($failure->messageUuid)->toBeNull()
+            ->and($clicked->type)->toBe(FeedbackType::Clicked)
+            ->and($clicked->messageUuid)->toBe('abc')
+            ->and($clicked->payload['delivered-at'])->toBe(1770146431.5);
+    });
+
+    it('reads every suppression list to its end, scrubbing addresses from the reasons, and never follows a page off Mailgun\'s API', function (): void {
+        $docs = json_decode((string) file_get_contents(__DIR__.'/../Fixtures/Mailgun/bounces.json'), true);
+        $base = 'https://api.eu.mailgun.net/v3/news.example.com';
+        $asked = [];
+
+        Http::fake(function (ClientRequest $request) use (&$asked, $docs, $base): PromiseInterface {
+            $asked[] = $request->url();
+
+            return Http::response(match ($request->url()) {
+                "{$base}/bounces?limit=1000" => [
+                    'items' => [...$docs['items'], ['address' => 'b@example.org', 'code' => 550, 'error' => 'Mailbox b@example.org unknown', 'created_at' => 'not a date'], ['code' => '550']],
+                    'paging' => ['next' => "{$base}/bounces?page=next&address=b%40example.org"],
+                ],
+                "{$base}/bounces?page=next&address=b%40example.org" => ['items' => [], 'paging' => ['next' => "{$base}/bounces?page=next&address=b%40example.org"]],
+                "{$base}/complaints?limit=1000" => ['items' => [['address' => 'c@example.org', 'created_at' => 'Thu, 11 Dec 2025 01:49:40 UTC']], 'paging' => ['next' => "{$base}/complaints?limit=1000"]],
+                default => ['items' => [
+                    ['address' => 'u@example.org', 'tags' => ['*']],
+                    // Unsubscribed from one tag only, which no campaign carries.
+                    ['address' => 'tag@example.org', 'tags' => ['spring-sale']],
+                ], 'paging' => ['next' => 'https://elsewhere.example.com/unsubscribes?page=next']],
+            });
+        });
+
+        $read = [];
+        $exception = null;
+
+        try {
+            foreach (app(MailgunProvider::class)->suppressions('news.example.com') as $suppression) {
+                $read[] = $suppression;
+            }
+        } catch (CampaignsException $exception) {
+        }
+
+        expect(array_map(fn (Suppression $s): array => [$s->email, $s->type, $s->since?->toIso8601String(), $s->reason], $read))->toBe([
+            ['foo@bar.com', SuppressionType::Bounce, '2025-12-11T01:49:40+00:00', '550 No such mailbox'],
+            ['b@example.org', SuppressionType::Bounce, null, '550 Mailbox [address] unknown'],
+            // A page naming itself as the next ends the list.
+            ['c@example.org', SuppressionType::Complaint, '2025-12-11T01:49:40+00:00', null],
+            ['u@example.org', SuppressionType::Unsubscribe, null, null],
+        ])
+            ->and($exception?->getMessage())->toContain('away from its API')
+            ->and($asked)->toHaveCount(4)
+            ->each->toStartWith('https://api.eu.mailgun.net/');
+    });
+
+    it('looks one address up on each list, a 404 meaning it isn\'t there once the domain is known', function (): void {
+        Http::fake([
+            'api.eu.mailgun.net/v3/domains/news.example.com' => Http::response(['domain' => ['name' => 'news.example.com']]),
+            'api.eu.mailgun.net/v3/news.example.com/bounces/a%2Bb%40example.org' => Http::response(['address' => 'a+b@example.org', 'code' => '550', 'error' => 'No such mailbox', 'created_at' => 'Thu, 11 Dec 2025 01:49:40 UTC']),
+            'api.eu.mailgun.net/v3/news.example.com/complaints/a%2Bb%40example.org' => Http::response(['message' => 'No spam complaints found for this address'], 404),
+            'api.eu.mailgun.net/v3/news.example.com/unsubscribes/a%2Bb%40example.org' => Http::response(['address' => 'a+b@example.org', 'tags' => ['*'], 'created_at' => 'Thu, 11 Dec 2025 01:49:40 UTC']),
+            'api.eu.mailgun.net/v3/domains/elsewhere.example.com' => Http::response(['message' => 'Domain not found'], 404),
+        ]);
+
+        $held = app(MailgunProvider::class)->suppressionsFor('news.example.com', 'a+b@example.org');
+
+        expect(array_map(fn (Suppression $s): SuppressionType => $s->type, $held))->toBe([SuppressionType::Bounce, SuppressionType::Unsubscribe])
+            ->and($held[0]->email)->toBe('a+b@example.org')
+            ->and(fn (): array => app(MailgunProvider::class)->suppressionsFor('elsewhere.example.com', 'a+b@example.org'))
+            ->toThrow(CampaignsException::class, 'Mailgun has no domain elsewhere.example.com');
+    });
+
+    it('asks for the marketing domain by the Mailgun domain the campaigns mailer sends through', function (): void {
+        config()->set('campaigns.mail.domain', 'example.com');
+        config()->set('mail.mailers.campaigns.domain', 'mg.example.com');
+        Http::fake(fn (ClientRequest $request): PromiseInterface => Http::response(str_contains($request->url(), '/domains/') ? ['domain' => []] : mailgunLogs([]), str_contains($request->url(), '/bounces/') || str_contains($request->url(), '/complaints/') || str_contains($request->url(), '/unsubscribes/') ? 404 : 200));
+
+        app(MailgunProvider::class)->suppressionsFor('example.com', 'a@example.org');
+        iterator_to_array(app(MailgunProvider::class)->suppressions('example.com'));
+        iterator_to_array(app(MailgunProvider::class)->eventsBetween('example.com', now()->subHour(), now()));
+        iterator_to_array(app(MailgunProvider::class)->eventsBetween('other.example.org', now()->subHour(), now()));
+
+        $domain = fn (ClientRequest $request): mixed => data_get($request->data(), 'filter.AND.0.values.0.value');
+
+        Http::assertSent(fn (ClientRequest $request): bool => $request->url() === 'https://api.eu.mailgun.net/v3/mg.example.com/bounces/a%40example.org');
+        Http::assertSent(fn (ClientRequest $request): bool => $request->url() === 'https://api.eu.mailgun.net/v3/mg.example.com/unsubscribes?limit=1000');
+        Http::assertSent(fn (ClientRequest $request): bool => $domain($request) === 'mg.example.com');
+        Http::assertSent(fn (ClientRequest $request): bool => $domain($request) === 'other.example.org');
+        Http::assertNotSent(fn (ClientRequest $request): bool => str_contains($request->url(), '/v3/example.com/') || $domain($request) === 'example.com');
+    });
+
+    it('reads from the region the config names, else the campaigns mailer\'s, else Laravel\'s Mailgun service\'s, else the US', function (array $config, string $host): void {
+        foreach ($config as $key => $value) {
+            config()->set($key, $value);
+        }
+
+        Http::fake(fn (ClientRequest $request): PromiseInterface => Http::response([], str_contains($request->url(), '/domains/') ? 200 : 404));
+
+        app(MailgunProvider::class)->suppressionsFor('news.example.com', 'a@example.org');
+
+        Http::assertSent(fn (ClientRequest $request): bool => str_starts_with($request->url(), "https://{$host}/v3/"));
+    })->with([
+        'the config' => [['campaigns.mailgun.endpoint' => 'https://api.mailgun.net/'], 'api.mailgun.net'],
+        'the mailer' => [[], 'api.eu.mailgun.net'],
+        'the service' => [['mail.mailers.campaigns' => ['transport' => 'mailgun', 'scheme' => 'api'], 'services.mailgun.endpoint' => 'api.eu.mailgun.net'], 'api.eu.mailgun.net'],
+        'Symfony\'s default' => [['mail.mailers.campaigns.endpoint' => 'default'], 'api.mailgun.net'],
+        'none' => [['mail.mailers.campaigns' => ['transport' => 'mailgun', 'secret' => 'key']], 'api.mailgun.net'],
+    ]);
+
+    it('refuses to read without a reading key, and fails without the address it asked for or Mailgun\'s answer', function (Closure $answer, string $says): void {
+        Http::fake(['*' => $answer]);
+
+        $read = fn (): array => app(MailgunProvider::class)->suppressionsFor('news.example.com', 'person@example.org');
+        $exception = null;
+
+        try {
+            $read();
+        } catch (CampaignsException $exception) {
+        }
+
+        expect($exception?->getMessage())->toContain($says)
+            ->not->toContain('person')
+            ->and($exception?->getPrevious())->toBeNull();
+
+        config()->set('campaigns.mailgun.api_key', '');
+        Http::fake(fn (): never => throw new RuntimeException('A request went out.'));
+
+        expect($read)->toThrow(CampaignsException::class, 'CAMPAIGNS_MAILGUN_API_KEY');
+    })->with([
+        'a refused key' => [fn (): PromiseInterface => Http::response(['message' => 'Invalid private key for person@example.org'], 401), 'Mailgun answered 401'],
+        'a lost connection' => [fn (): never => throw new ConnectionException('cURL error 7 for https://api.eu.mailgun.net/v3/news.example.com/bounces/person%40example.org'), 'couldn\'t be reached (ConnectionException)'],
+        'an answer that isn\'t JSON' => [fn (): PromiseInterface => Http::response('<html>person@example.org</html>'), 'couldn\'t be read'],
+    ]);
+});

@@ -286,10 +286,7 @@ class SendMessageJob implements ShouldQueue
     {
         $this->ours($from)->update([
             'status' => MessageStatus::Pending,
-            'claim_id' => null,
-            'claimed_at' => null,
-            'sending_at' => null,
-            'token_hash' => null,
+            ...CampaignMessage::UNCLAIMED,
             'updated_at' => now(),
         ]);
     }

@@ -62,9 +62,21 @@ return [
      * /campaigns/webhooks/mailgun and are verified with the account's HTTP
      * webhook signing key (Settings, API Security in Mailgun), which is
      * neither the API key nor a domain sending key.
+     *
+     * api_key reads Mailgun's logs and suppression lists, which the
+     * reconciler, the suppressions import and an unblock's check need: an
+     * account API key, since a domain sending key can only send. Where your
+     * plan offers roles, the Support role is the narrowest that reads logs
+     * and suppressions. endpoint is the region's API host, such as
+     * api.eu.mailgun.net (default: the campaigns mailer's endpoint, else
+     * api.mailgun.net). log_days is how many days back your plan keeps logs
+     * (5 on Foundation, 30 on Scale): nothing older is looked for.
      */
     'mailgun' => [
         'webhook_signing_key' => env('MAILGUN_WEBHOOK_SIGNING_KEY'),
+        'api_key' => env('CAMPAIGNS_MAILGUN_API_KEY'),
+        'endpoint' => env('CAMPAIGNS_MAILGUN_ENDPOINT'),
+        'log_days' => 5,
     ],
 
     /*
@@ -214,8 +226,9 @@ return [
     /*
      * The cache store that holds the scheduled commands' overlap locks, the
      * one waiting stop-loss check per campaign, when the pump last ran, and
-     * the marks that limit a misconfigured webhook's error report to one an
-     * hour and the stalled-queue alert to one every six. Point it at a store
+     * the marks that limit a misconfigured webhook's or an unreadable
+     * provider's error report to one an hour and the stalled-queue alert to
+     * one every six. Point it at a store
      * your deploys don't flush, so a release can't free a lock a running pump
      * still holds. Null uses the app's default store.
      */
@@ -227,6 +240,14 @@ return [
      * to schedule them yourself. Default: true.
      */
     'schedule' => true,
+
+    /*
+     * How many days the provider's events are kept (who opened, clicked or
+     * bounced, without addresses). A finished campaign's report is frozen
+     * before its events go; a campaign still sending or paused keeps them
+     * until it completes or is cancelled. Default: 180.
+     */
+    'event_retention_days' => 180,
 
     /*
      * The pace a campaign falls back to for any value it leaves unset. Each

@@ -5,19 +5,21 @@ declare(strict_types=1);
 namespace Mozex\Campaigns\Sending;
 
 use Carbon\CarbonInterface;
+use Generator;
 use Illuminate\Contracts\Mail\Mailer as MailerContract;
 use Illuminate\Http\Request;
 use Illuminate\Mail\Mailer;
 use Illuminate\Mail\Transport\ArrayTransport;
 use Illuminate\Mail\Transport\LogTransport;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Mail;
-use LogicException;
 use Mozex\Campaigns\CampaignsException;
 use Mozex\Campaigns\Contracts\CampaignProvider;
 use Mozex\Campaigns\Enums\DeliveryFailure;
 use Mozex\Campaigns\Enums\FeedbackType;
 use Mozex\Campaigns\Enums\SendFailure;
+use Mozex\Campaigns\Enums\SuppressionType;
 use Mozex\Campaigns\Mail\CampaignEmail;
 use Mozex\Campaigns\Support\Sender;
 use Symfony\Component\Mailer\Bridge\Mailgun\Transport\MailgunApiTransport;
@@ -33,7 +35,9 @@ use Throwable;
  * transport turns the message's tag, metadata and o: options into the API's
  * own fields, where the MIME and SMTP ones would put them in the email as
  * headers. The log and array mailers are allowed too, for local runs and
- * tests, since they deliver nothing.
+ * tests, since they deliver nothing. Its logs and suppression lists are read
+ * with campaigns.mailgun.api_key, since the mailer's sending key can only
+ * send.
  */
 class MailgunProvider implements CampaignProvider
 {
@@ -81,6 +85,20 @@ class MailgunProvider implements CampaignProvider
      * to, which counts as a soft bounce.
      */
     protected const UNREACHABLE = 612;
+
+    /**
+     * The most pages of 100 one message's lookup reads.
+     */
+    protected const MESSAGE_PAGES = 5;
+
+    /**
+     * Mailgun's suppression lists, by their path.
+     */
+    protected const SUPPRESSION_LISTS = [
+        'bounces' => SuppressionType::Bounce,
+        'complaints' => SuppressionType::Complaint,
+        'unsubscribes' => SuppressionType::Unsubscribe,
+    ];
 
     public function send(OutgoingMessage $message): SendReceipt
     {
@@ -192,24 +210,315 @@ class MailgunProvider implements CampaignProvider
         return $feedback === null ? [] : [$feedback];
     }
 
-    public function eventsForMessage(string $messageUuid): array
+    /**
+     * Read through the Logs API, filtered by the uuid in the message's
+     * user-variables. Only events carrying exactly that uuid are returned,
+     * so a filter Mailgun read differently can't pass another email's events
+     * off as this one's; a message has a handful, so a few pages are read at
+     * most, and a lookup that leaves pages unread tells nothing (null).
+     */
+    public function eventsForMessage(string $messageUuid, CarbonInterface $since): ?array
     {
-        throw $this->notYet();
+        $uuid = strtolower($messageUuid);
+        $found = [];
+
+        $events = $this->logs(
+            [['attribute' => 'user_variables', 'comparator' => 'contains', 'values' => [['label' => $uuid, 'value' => $uuid]]]],
+            $since,
+            now(),
+            static::MESSAGE_PAGES,
+        );
+
+        foreach ($events as $feedback) {
+            if (strtolower((string) $feedback->messageUuid) === $uuid) {
+                $found[] = $feedback;
+            }
+        }
+
+        // Pages left unread may hold this email's events.
+        return $events->getReturn() ? null : $found;
     }
 
     public function eventsBetween(string $domain, CarbonInterface $from, CarbonInterface $to): iterable
     {
-        throw $this->notYet();
+        $domain = $this->mailgunDomain($domain);
+
+        return $this->logs(
+            [['attribute' => 'domain', 'comparator' => '=', 'values' => [['label' => $domain, 'value' => $domain]]]],
+            $from,
+            $to,
+        );
     }
 
+    public function logDays(): int
+    {
+        return max(1, (int) config('campaigns.mailgun.log_days', 5));
+    }
+
+    /**
+     * Mailgun's bounce, complaint and unsubscribe lists for the domain, each
+     * read in pages of 1,000 to its end (an empty page).
+     */
     public function suppressions(string $domain): iterable
     {
-        throw $this->notYet();
+        $domain = $this->mailgunDomain($domain);
+
+        foreach (static::SUPPRESSION_LISTS as $list => $type) {
+            $url = $this->apiBase().'/v3/'.rawurlencode($domain).'/'.$list.'?limit=1000';
+            $seen = [];
+
+            while (! isset($seen[$url])) {
+                $seen[$url] = true;
+                $json = $this->read('GET', $url);
+                $items = is_array($json['items'] ?? null) ? $json['items'] : [];
+
+                if ($items === []) {
+                    break;
+                }
+
+                foreach ($items as $item) {
+                    $suppression = is_array($item) ? $this->suppression($item, $type) : null;
+
+                    if ($suppression !== null) {
+                        yield $suppression;
+                    }
+                }
+
+                $url = $this->nextPage(data_get($json, 'paging.next'));
+            }
+        }
+    }
+
+    /**
+     * The domain is checked first: Mailgun answers 404 for a domain the key
+     * or region can't see as it does for an address no list holds, which
+     * would read as "not held".
+     */
+    public function suppressionsFor(string $domain, string $email): array
+    {
+        $domain = $this->mailgunDomain($domain);
+
+        if ($this->read('GET', $this->apiBase().'/v3/domains/'.rawurlencode($domain), notFound: true) === null) {
+            throw CampaignsException::providerUnreadable("Mailgun has no domain {$domain} for this key in this region (campaigns.mailgun.endpoint).");
+        }
+
+        $found = [];
+
+        foreach (static::SUPPRESSION_LISTS as $list => $type) {
+            $json = $this->read('GET', $this->apiBase().'/v3/'.rawurlencode($domain).'/'.$list.'/'.rawurlencode($email), notFound: true);
+            $suppression = $json === null ? null : $this->suppression($json, $type);
+
+            if ($suppression !== null) {
+                $found[] = $suppression;
+            }
+        }
+
+        return $found;
     }
 
     public function tracks(): bool
     {
         return true;
+    }
+
+    /**
+     * The Logs API's events matching a filter in a period, oldest first, a
+     * page of 100 at a time, following its page token to the end or the
+     * page limit. The period starts no earlier than the logs reach. Events
+     * the package doesn't act on are left out. The generator returns true
+     * when it stopped at the page limit with pages left.
+     *
+     * @param  list<array<string, mixed>>  $filter
+     * @return Generator<int, Feedback, mixed, bool>
+     */
+    protected function logs(array $filter, CarbonInterface $from, CarbonInterface $to, int $pages = PHP_INT_MAX): Generator
+    {
+        // A minute inside the retention, so a start at its edge is never
+        // refused as too old.
+        $oldest = now()->subDays($this->logDays())->addMinute();
+        $from = $from->lessThan($oldest) ? $oldest : $from;
+
+        if ($from->greaterThanOrEqualTo($to)) {
+            return false;
+        }
+
+        $token = null;
+        $seen = [];
+
+        for ($page = 0; $page < $pages; $page++) {
+            $json = $this->read('POST', $this->apiBase().'/v1/analytics/logs', [
+                'start' => Carbon::instance($from)->utc()->toRfc2822String(),
+                'end' => Carbon::instance($to)->utc()->toRfc2822String(),
+                'events' => array_keys(static::EVENT_TYPES),
+                'filter' => ['AND' => $filter],
+                'pagination' => array_filter([
+                    'sort' => 'timestamp:asc',
+                    'limit' => 100,
+                    'token' => $token,
+                ]),
+            ]);
+
+            $items = is_array($json['items'] ?? null) ? $json['items'] : [];
+
+            foreach ($items as $item) {
+                $feedback = is_array($item) ? $this->feedback($item, null) : null;
+
+                if ($feedback !== null) {
+                    yield $feedback;
+                }
+            }
+
+            $token = data_get($json, 'pagination.next');
+
+            if ($items === [] || ! is_string($token) || $token === '' || isset($seen[$token])) {
+                return false;
+            }
+
+            $seen[$token] = true;
+        }
+
+        return true;
+    }
+
+    /**
+     * The domain Mailgun knows the marketing domain's mail by: the campaigns
+     * mailer's own Mailgun domain when it names one (a From address on
+     * example.com can send through mg.example.com), since Mailgun keeps logs
+     * and suppressions by the domain it sent through. Any other domain is
+     * asked for as given.
+     */
+    protected function mailgunDomain(string $domain): string
+    {
+        try {
+            $marketing = Sender::domain();
+        } catch (CampaignsException) {
+            return $domain;
+        }
+
+        $sendsThrough = $this->mailerSetting('domain');
+
+        return strtolower($domain) === $marketing && is_string($sendsThrough) && trim($sendsThrough) !== ''
+            ? strtolower(trim($sendsThrough))
+            : $domain;
+    }
+
+    /**
+     * One request to Mailgun's API with the reading key, its JSON answer, or
+     * null for a 404 where one means "not there". Nothing that fails here is
+     * chained or quotes the request: its address can hold a recipient's, and
+     * Mailgun's answer can name one.
+     *
+     * @param  array<string, mixed>  $body
+     * @return ?array<mixed>
+     *
+     * @throws CampaignsException
+     */
+    protected function read(string $method, string $url, array $body = [], bool $notFound = false): ?array
+    {
+        $key = config('campaigns.mailgun.api_key');
+
+        if (! is_string($key) || $key === '') {
+            throw CampaignsException::missingMailgunApiKey();
+        }
+
+        $request = Http::withBasicAuth('api', $key)->acceptJson()->connectTimeout(10)->timeout(30);
+
+        try {
+            $response = $method === 'POST' ? $request->post($url, $body) : $request->get($url);
+        } catch (Throwable $exception) {
+            throw CampaignsException::providerUnreadable('Mailgun couldn\'t be reached ('.class_basename($exception).').');
+        }
+
+        if ($notFound && $response->status() === 404) {
+            return null;
+        }
+
+        if (! $response->successful()) {
+            throw CampaignsException::providerUnreadable("Mailgun answered {$response->status()} when its logs or suppressions were read.");
+        }
+
+        $json = $response->json();
+
+        if (! is_array($json)) {
+            throw CampaignsException::providerUnreadable('Mailgun\'s answer couldn\'t be read.');
+        }
+
+        return $json;
+    }
+
+    /**
+     * The API's address for the region: campaigns.mailgun.endpoint, else the
+     * campaigns mailer's endpoint (or services.mailgun's, which Laravel uses
+     * for a mailer with no secret of its own), else Mailgun's US host.
+     */
+    protected function apiBase(): string
+    {
+        $endpoint = config('campaigns.mailgun.endpoint');
+
+        if (! is_string($endpoint) || trim($endpoint) === '') {
+            $endpoint = $this->mailerSetting('endpoint');
+        }
+
+        $host = is_string($endpoint) ? trim((string) preg_replace('#^https?://#i', '', trim($endpoint)), '/') : '';
+
+        return 'https://'.($host === '' || $host === 'default' ? 'api.mailgun.net' : $host);
+    }
+
+    /**
+     * One of the campaigns mailer's Mailgun settings, or services.mailgun's,
+     * which Laravel uses for a mailer with no secret of its own.
+     */
+    protected function mailerSetting(string $key): mixed
+    {
+        $mailer = config('mail.mailers.'.trim(Sender::mailer()));
+
+        return is_array($mailer) && isset($mailer['secret']) ? ($mailer[$key] ?? null) : config('services.mailgun.'.$key);
+    }
+
+    /**
+     * A suppression list's next page, which Mailgun gives as a whole address:
+     * followed only on the same host, so the key never goes anywhere else.
+     */
+    protected function nextPage(mixed $url): string
+    {
+        $base = $this->apiBase().'/';
+
+        if (! is_string($url) || ! str_starts_with($url, $base)) {
+            throw CampaignsException::providerUnreadable('Mailgun\'s suppression list pointed its next page away from its API.');
+        }
+
+        return $url;
+    }
+
+    /**
+     * One record of a suppression list. Its error text is scrubbed of
+     * addresses, since a mail server's refusal often quotes one.
+     *
+     * @param  array<mixed>  $item
+     */
+    protected function suppression(array $item, SuppressionType $type): ?Suppression
+    {
+        $email = $this->string($item['address'] ?? null);
+        $tags = $item['tags'] ?? null;
+
+        // An unsubscribe from some tags only ('*' is every tag) stops only
+        // mail carrying them, and a campaign's tag is its own key.
+        if ($email === null || ($type === SuppressionType::Unsubscribe && is_array($tags) && $tags !== [] && ! in_array('*', $tags, true))) {
+            return null;
+        }
+
+        try {
+            $since = is_string($item['created_at'] ?? null) ? Carbon::parse($item['created_at']) : null;
+        } catch (Throwable) {
+            $since = null;
+        }
+
+        $reason = trim(implode(' ', array_filter([
+            is_scalar($item['code'] ?? null) ? (string) $item['code'] : null,
+            is_string($item['error'] ?? null) ? $item['error'] : null,
+        ])));
+
+        return new Suppression($email, $type, $since, $reason === '' ? null : SendFailed::scrub($reason, 255));
     }
 
     /**
@@ -319,11 +628,13 @@ class MailgunProvider implements CampaignProvider
         $name = $event['event'] ?? null;
         $type = is_string($name) ? (static::EVENT_TYPES[$name] ?? null) : null;
         $id = $event['id'] ?? null;
-        $timestamp = $event['timestamp'] ?? null;
+        $occurredAt = $this->time($event['timestamp'] ?? null, $event['@timestamp'] ?? null);
 
-        if ($type === null || ! is_string($id) || $id === '' || strlen($id) > 255 || ! is_numeric($timestamp)) {
+        if ($type === null || ! is_string($id) || $id === '' || strlen($id) > 255 || $occurredAt === null) {
             return null;
         }
+
+        $deliveredAt = $this->time($event['delivered-at'] ?? null, $event['delivered-at'] ?? null);
 
         $variables = $event['user-variables'] ?? [];
 
@@ -347,7 +658,7 @@ class MailgunProvider implements CampaignProvider
         return new Feedback(
             providerEventId: $id,
             type: $type,
-            occurredAt: Carbon::createFromTimestampUTC((float) $timestamp),
+            occurredAt: $occurredAt,
             recipient: $this->string($event['recipient'] ?? null) ?? '',
             messageUuid: $this->string($variables[OutgoingMessage::MESSAGE_KEY] ?? null),
             testSendUuid: $this->string($variables[OutgoingMessage::TEST_KEY] ?? null),
@@ -373,7 +684,8 @@ class MailgunProvider implements CampaignProvider
                     'device-type' => $this->string($client['device-type'] ?? null),
                     'user-agent' => $this->string($client['user-agent'] ?? null),
                 ], fn (?string $value): bool => $value !== null),
-                'delivered-at' => is_numeric($event['delivered-at'] ?? null) ? (float) $event['delivered-at'] : null,
+                // A number, as webhooks give it; the logs give a time.
+                'delivered-at' => $deliveredAt === null ? null : (float) $deliveredAt->format('U.u'),
                 'recipient-provider' => $this->string($event['recipient-provider'] ?? null),
                 'is-test-mode' => is_bool($flags['is-test-mode'] ?? null) ? $flags['is-test-mode'] : null,
                 'is-routed' => is_bool($flags['is-routed'] ?? null) ? $flags['is-routed'] : null,
@@ -424,8 +736,24 @@ class MailgunProvider implements CampaignProvider
         return mb_strimwidth(trim($value), 0, $max);
     }
 
-    protected function notYet(): LogicException
+    /**
+     * An event's time: a webhook's event-data has a Unix "timestamp", a
+     * Logs API item an ISO "@timestamp".
+     */
+    protected function time(mixed $timestamp, mixed $iso): ?Carbon
     {
-        return new LogicException('Reading Mailgun\'s logs and suppressions comes in a later version of the package.');
+        if (is_numeric($timestamp)) {
+            return Carbon::createFromTimestampUTC((float) $timestamp);
+        }
+
+        if (! is_string($iso) || trim($iso) === '') {
+            return null;
+        }
+
+        try {
+            return Carbon::parse($iso)->utc();
+        } catch (Throwable) {
+            return null;
+        }
     }
 }

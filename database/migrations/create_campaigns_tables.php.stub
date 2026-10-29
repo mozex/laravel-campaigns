@@ -259,6 +259,10 @@ return new class extends Migration
             // numbers that paused it.
             $table->timestamp('limits_reset_at')->nullable();
             $table->timestamp('domain_limits_reset_at')->nullable();
+            // How far the reconciler has read the provider's logs for its
+            // sending domain, so each run reads only what came since. A
+            // column, not a cache value, since a release clears the cache.
+            $table->timestamp('events_read_until')->nullable();
             $table->timestamp('started_at')->nullable();
             $table->timestamp('paused_at')->nullable();
             $table->timestamp('completed_at')->nullable();

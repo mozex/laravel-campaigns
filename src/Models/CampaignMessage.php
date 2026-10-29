@@ -53,6 +53,19 @@ class CampaignMessage extends Model
 
     use HasUuids;
 
+    /**
+     * What a message going back to pending clears (its claim, the claim's
+     * time, when its job took it and its links' token), so the pace counts it
+     * as never sent and its next claim starts afresh. The send job and the
+     * reconciler both write it.
+     */
+    public const UNCLAIMED = [
+        'claim_id' => null,
+        'claimed_at' => null,
+        'sending_at' => null,
+        'token_hash' => null,
+    ];
+
     protected $table = 'campaign_messages';
 
     protected $fillable = [
