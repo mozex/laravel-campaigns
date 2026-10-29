@@ -253,6 +253,16 @@ class CampaignsException extends RuntimeException
         return new self("A {$kind} with the key \"{$key}\" already exists.");
     }
 
+    public static function instructionsTooLong(int $length, int $limit): self
+    {
+        return new self("The MCP server's instructions, the package's and campaigns.mcp.instructions together, are {$length} characters long, over the {$limit} a client keeps. Shorten campaigns.mcp.instructions, and move the rest into a resource in campaigns.resources.");
+    }
+
+    public static function tokenNameTaken(string $name): self
+    {
+        return new self("A token named \"{$name}\" already exists. Revoke it first, or choose another name.");
+    }
+
     public static function reservedKey(string $key): self
     {
         return new self("\"{$key}\" is the key of one of the package's starter templates. Choose another.");

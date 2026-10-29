@@ -200,6 +200,27 @@ return [
     'resources' => [],
 
     /*
+     * The MCP server agents run campaigns through, at "path" on this app.
+     * It answers only to a principal of one of "guards", tried in order:
+     * "campaigns" is the package's own tokens
+     * (`php artisan campaigns:token create <name>`), which carry read or
+     * full rights. Add your OAuth guard after it (such as Passport's "api")
+     * to let people sign in, and define the gate abilities campaigns.read
+     * and campaigns.full for the people who may; anyone signed in with
+     * neither is refused (403). "middleware" runs after sign-in.
+     * "instructions" is your own text for agents, added after the package's
+     * (both together stay under 4,096 characters, which is what Claude Code
+     * keeps). Default path: mcp/campaigns.
+     */
+    'mcp' => [
+        'enabled' => (bool) env('CAMPAIGNS_MCP_ENABLED', true),
+        'path' => env('CAMPAIGNS_MCP_PATH', 'mcp/campaigns'),
+        'guards' => ['campaigns'],
+        'middleware' => [],
+        'instructions' => null,
+    ],
+
+    /*
      * How recently someone must have opened or clicked an email, or done
      * something in your app (Campaigns::recordActivity()), to count as
      * engaged or active; anyone else is silent. An address that stays

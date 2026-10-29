@@ -1,2 +1,3 @@
 providers:
+  - Laravel\Mcp\Server\McpServiceProvider
   - Mozex\Campaigns\CampaignsServiceProvider

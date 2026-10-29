@@ -7,6 +7,7 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
+use Laravel\Mcp\Server\Testing\TestResponse as McpTestResponse;
 use Mozex\Campaigns\Actions\CreateCampaignAction;
 use Mozex\Campaigns\Actions\StartCampaignAction;
 use Mozex\Campaigns\Audiences\CampaignAudience;
@@ -115,6 +116,18 @@ function zipOf(array $files, array $links = [], array $encrypted = []): string
     } finally {
         @unlink($path);
     }
+}
+
+/**
+ * A tool's structured answer, from laravel/mcp's test response, which
+ * offers only assertions on it.
+ *
+ * @return array<string, mixed>
+ */
+function structuredContent(McpTestResponse $response): array
+{
+    /** @var array<string, mixed> */
+    return (fn (): ?array => $this->structuredContent())->call($response) ?? [];
 }
 
 /**

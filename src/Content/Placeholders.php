@@ -34,6 +34,22 @@ class Placeholders
     ];
 
     /**
+     * What each placeholder becomes, as agents are told.
+     */
+    public const DESCRIPTIONS = [
+        'first_name' => 'The recipient\'s first name. Give a fallback for anyone without one: {{first_name|there}}.',
+        'name' => 'The recipient\'s full name.',
+        'email' => 'The recipient\'s email address.',
+        'unsubscribe_url' => 'The page where the recipient unsubscribes from all of this app\'s email, or subscribes again.',
+        'preferences_url' => 'The same page as unsubscribe_url.',
+        'web_version_url' => 'The email as a web page, for a "view in your browser" link.',
+        'footer' => 'Who the email went to, the unsubscribe and privacy links and the postal address, in the email\'s language.',
+        'postal_address' => 'The sender\'s postal address (campaigns.postal_address).',
+        'privacy_url' => 'The privacy policy\'s address (campaigns.privacy_url).',
+        'preheader' => 'Where the preheader goes. Without it, the preheader goes in a hidden block right after <body>.',
+    ];
+
+    /**
      * Placeholders that give an unsubscribe link: the address itself, or the
      * footer, which carries it.
      */

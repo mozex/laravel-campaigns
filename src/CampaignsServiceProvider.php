@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Mozex\Campaigns;
 
+use Illuminate\Auth\AuthManager;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Config\Repository;
 use Illuminate\Console\Scheduling\CacheEventMutex;
@@ -20,6 +21,7 @@ use Mozex\Campaigns\Commands\PruneCommand;
 use Mozex\Campaigns\Commands\PumpCommand;
 use Mozex\Campaigns\Commands\ReconcileCommand;
 use Mozex\Campaigns\Commands\SyncListCommand;
+use Mozex\Campaigns\Commands\TokenCommand;
 use Mozex\Campaigns\Contracts\CampaignProvider;
 use Mozex\Campaigns\Events\CampaignFirstComplaintEvent;
 use Mozex\Campaigns\Events\CampaignPausedEvent;
@@ -60,7 +62,7 @@ class CampaignsServiceProvider extends PackageServiceProvider
             ->hasConfigFile()
             ->hasViews()
             ->hasTranslations()
-            ->hasRoute('campaigns')
+            ->hasRoutes(['campaigns', 'mcp'])
             ->hasMigration('create_campaigns_tables')
             ->hasCommands([
                 SyncListCommand::class,
@@ -68,6 +70,7 @@ class CampaignsServiceProvider extends PackageServiceProvider
                 ReconcileCommand::class,
                 PruneCommand::class,
                 ImportProviderSuppressionsCommand::class,
+                TokenCommand::class,
             ])
             ->hasInstallCommand(function (InstallCommand $command): void {
                 $command
@@ -115,6 +118,12 @@ class CampaignsServiceProvider extends PackageServiceProvider
             ->by('campaigns.links:'.Token::hash((string) $request->route('token'))));
 
         $this->callAfterResolving(Schedule::class, fn (Schedule $schedule) => $this->schedule($schedule));
+
+        // The MCP server's own tokens, sent as a bearer token.
+        $this->callAfterResolving('auth', fn (AuthManager $auth) => $auth->viaRequest(
+            'campaigns',
+            fn (Request $request): ?ApiToken => ApiToken::findByToken($request->bearerToken()),
+        ));
     }
 
     /**
@@ -174,6 +183,14 @@ class CampaignsServiceProvider extends PackageServiceProvider
         $config = $this->app->make('config');
 
         $this->mergePublishedConfig($config);
+
+        // The token guard the MCP route signs in with; an app's own entry
+        // under that name wins.
+        $config->set('auth.guards.campaigns', [
+            'driver' => 'campaigns',
+            'provider' => null,
+            ...(array) $config->get('auth.guards.campaigns', []),
+        ]);
         $this->boundMailgunClient($config);
 
         // The language every email holds, read before any middleware runs:
