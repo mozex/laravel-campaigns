@@ -17,26 +17,37 @@ use Mozex\Campaigns\Mcp\Tools\AddRevisionTool;
 use Mozex\Campaigns\Mcp\Tools\ArchiveListTool;
 use Mozex\Campaigns\Mcp\Tools\ArchiveTemplateTool;
 use Mozex\Campaigns\Mcp\Tools\BlockContactTool;
+use Mozex\Campaigns\Mcp\Tools\CreateCampaignTool;
 use Mozex\Campaigns\Mcp\Tools\CreateListTool;
 use Mozex\Campaigns\Mcp\Tools\CreateTemplateTool;
 use Mozex\Campaigns\Mcp\Tools\CreateUploadLinkTool;
+use Mozex\Campaigns\Mcp\Tools\DuplicateCampaignTool;
+use Mozex\Campaigns\Mcp\Tools\GetCampaignTool;
 use Mozex\Campaigns\Mcp\Tools\GetCheckResultsTool;
+use Mozex\Campaigns\Mcp\Tools\GetPreviewLinkTool;
 use Mozex\Campaigns\Mcp\Tools\GetSubscriberTool;
 use Mozex\Campaigns\Mcp\Tools\GetTemplateTool;
+use Mozex\Campaigns\Mcp\Tools\GetTestSendsTool;
 use Mozex\Campaigns\Mcp\Tools\ListAssetsTool;
+use Mozex\Campaigns\Mcp\Tools\ListAudiencesTool;
+use Mozex\Campaigns\Mcp\Tools\ListCampaignsTool;
 use Mozex\Campaigns\Mcp\Tools\ListListsTool;
 use Mozex\Campaigns\Mcp\Tools\ListRevisionsTool;
 use Mozex\Campaigns\Mcp\Tools\ListSubscribersTool;
 use Mozex\Campaigns\Mcp\Tools\ListTemplatesTool;
 use Mozex\Campaigns\Mcp\Tools\OverviewTool;
+use Mozex\Campaigns\Mcp\Tools\PreviewAudienceTool;
 use Mozex\Campaigns\Mcp\Tools\PreviewContactsImportTool;
 use Mozex\Campaigns\Mcp\Tools\RemoveContactsTool;
 use Mozex\Campaigns\Mcp\Tools\RestoreRevisionTool;
 use Mozex\Campaigns\Mcp\Tools\RunChecksTool;
 use Mozex\Campaigns\Mcp\Tools\RunContactsImportTool;
+use Mozex\Campaigns\Mcp\Tools\SaveAudienceTool;
+use Mozex\Campaigns\Mcp\Tools\SendTestTool;
 use Mozex\Campaigns\Mcp\Tools\SetContactFieldsTool;
 use Mozex\Campaigns\Mcp\Tools\UnblockContactTool;
 use Mozex\Campaigns\Mcp\Tools\UnsubscribeContactTool;
+use Mozex\Campaigns\Mcp\Tools\UpdateCampaignTool;
 use Mozex\Campaigns\Mcp\Tools\UpdateListTool;
 use Mozex\Campaigns\Mcp\Tools\UpdateTemplateTool;
 
@@ -89,6 +100,17 @@ class CampaignsServer extends Server
         RestoreRevisionTool::class,
         RunChecksTool::class,
         GetCheckResultsTool::class,
+        GetPreviewLinkTool::class,
+        ListCampaignsTool::class,
+        GetCampaignTool::class,
+        CreateCampaignTool::class,
+        UpdateCampaignTool::class,
+        DuplicateCampaignTool::class,
+        ListAudiencesTool::class,
+        SaveAudienceTool::class,
+        PreviewAudienceTool::class,
+        SendTestTool::class,
+        GetTestSendsTool::class,
     ];
 
     /** @var array<int, class-string<McpResource>> */

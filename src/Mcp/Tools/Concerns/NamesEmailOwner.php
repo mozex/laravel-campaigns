@@ -20,6 +20,18 @@ use Mozex\Campaigns\Models\Template;
 trait NamesEmailOwner
 {
     /**
+     * The rules of a revision's number: within the column's integer, since
+     * PostgreSQL answers a larger one with a database error rather than no
+     * row.
+     *
+     * @return list<string>
+     */
+    protected static function revisionRules(bool $required = false): array
+    {
+        return [$required ? 'required' : 'nullable', 'integer', 'min:1', 'max:2147483647'];
+    }
+
+    /**
      * @return array<string, Type>
      */
     protected static function ownerInput(JsonSchema $schema): array

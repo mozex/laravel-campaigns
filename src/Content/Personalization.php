@@ -14,6 +14,16 @@ use Mozex\Campaigns\Support\Token;
  */
 readonly class Personalization
 {
+    /**
+     * The made-up recipient previews and sizes are rendered for, on a domain
+     * no one can own.
+     */
+    public const SAMPLE_EMAIL = 'someone@example.com';
+
+    public const SAMPLE_FIRST_NAME = 'Alexandra';
+
+    public const SAMPLE_NAME = 'Alexandra Example';
+
     public function __construct(
         public string $email,
         public string $unsubscribeUrl,
@@ -47,17 +57,16 @@ readonly class Personalization
 
     /**
      * Made-up values, as long as real ones, for previews and for measuring
-     * an email's size: never a real subscriber's.
+     * an email's size: never a real subscriber's. A preview passes the token
+     * its links open (Support\PreviewToken); without one they lead nowhere.
      */
-    public static function sample(?string $locale = null): self
+    public static function sample(?string $locale = null, ?string $token = null): self
     {
-        $token = str_repeat('x', strlen(Token::generate()));
-
         return self::forToken(
-            token: $token,
-            email: 'someone@example.com',
-            firstName: 'Alexandra',
-            name: 'Alexandra Example',
+            token: $token ?? str_repeat('x', strlen(Token::generate())),
+            email: self::SAMPLE_EMAIL,
+            firstName: self::SAMPLE_FIRST_NAME,
+            name: self::SAMPLE_NAME,
             locale: $locale,
         );
     }

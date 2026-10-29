@@ -293,6 +293,11 @@ class CampaignsException extends RuntimeException
         return new self('It has no email yet.');
     }
 
+    public static function missingAppKey(): self
+    {
+        return new self('The app has no key (app.key, APP_KEY), which previews make their links\' tokens with.');
+    }
+
     public static function noSendingDomain(): self
     {
         return new self('No sending domain is configured: set campaigns.mail.domain (CAMPAIGNS_DOMAIN), or a sender address in campaigns.mail.from.address or the campaigns mailer.');

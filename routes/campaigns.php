@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Illuminate\Support\Facades\Route;
 use Mozex\Campaigns\Http\Controllers\ConfirmationController;
+use Mozex\Campaigns\Http\Controllers\PreviewController;
 use Mozex\Campaigns\Http\Controllers\UnsubscribeController;
 use Mozex\Campaigns\Http\Controllers\WebhookController;
 use Mozex\Campaigns\Http\Controllers\WebVersionController;
@@ -25,6 +26,7 @@ Route::prefix('campaigns')
             Route::get('u/{token}', [UnsubscribeController::class, 'show'])->name('unsubscribe');
             Route::get('c/{token}', [ConfirmationController::class, 'show'])->name('confirm');
             Route::get('v/{token}', WebVersionController::class)->name('web-version');
+            Route::get('preview/{revision}', PreviewController::class)->name('preview')->whereUuid('revision');
         });
 
         // Per link: mail apps post one-click unsubscribes from a few shared

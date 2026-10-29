@@ -11,6 +11,7 @@ use Mozex\Campaigns\Mcp\Tools\ArchiveListTool;
 use Mozex\Campaigns\Mcp\Tools\ArchiveTemplateTool;
 use Mozex\Campaigns\Mcp\Tools\CampaignsTool;
 use Mozex\Campaigns\Mcp\Tools\RunContactsImportTool;
+use Mozex\Campaigns\Mcp\Tools\SendTestTool;
 use Mozex\Campaigns\Mcp\Tools\UnblockContactTool;
 
 /**
@@ -85,6 +86,6 @@ it('asks the person before exactly the risky calls', function (): void {
     $asking = array_values(array_filter(toolClasses(), fn (string $class): bool => app($class)->requiresApproval()));
     sort($asking);
 
-    expect($asking)->toBe([ArchiveListTool::class, ArchiveTemplateTool::class, RunContactsImportTool::class, UnblockContactTool::class])
+    expect($asking)->toBe([ArchiveListTool::class, ArchiveTemplateTool::class, RunContactsImportTool::class, SendTestTool::class, UnblockContactTool::class])
         ->and(app(ArchiveListTool::class)->toArray()['_meta'] ?? null)->toBe([CampaignsTool::APPROVAL_META => true]);
 });

@@ -6,11 +6,8 @@ use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use Mozex\Campaigns\Actions\AddRevisionAction;
 use Mozex\Campaigns\Actions\CreateTemplateAction;
-use Mozex\Campaigns\Actions\CreateUploadAction;
-use Mozex\Campaigns\Actions\ReceiveUploadAction;
 use Mozex\Campaigns\Content\ContentRules;
 use Mozex\Campaigns\Enums\Rights;
-use Mozex\Campaigns\Enums\UploadPurpose;
 use Mozex\Campaigns\Jobs\RunChecksJob;
 use Mozex\Campaigns\Mcp\Tools\AddRevisionTool;
 use Mozex\Campaigns\Mcp\Tools\ArchiveTemplateTool;
@@ -26,7 +23,6 @@ use Mozex\Campaigns\Models\Asset;
 use Mozex\Campaigns\Models\Campaign;
 use Mozex\Campaigns\Models\Revision;
 use Mozex\Campaigns\Models\Template;
-use Mozex\Campaigns\Models\Upload;
 use Mozex\Campaigns\Reports\CheckSummary;
 use Mozex\Campaigns\Reports\TemplateSummary;
 
@@ -34,14 +30,6 @@ beforeEach(function (): void {
     Storage::fake('local');
     Storage::fake('public', ['url' => 'https://cdn.example.com/storage']);
 });
-
-/**
- * An email received through an upload link, ready for a tool to read.
- */
-function emailUpload(string $bytes): Upload
-{
-    return app(ReceiveUploadAction::class)->execute(app(CreateUploadAction::class)->execute(UploadPurpose::Email)->uuid, $bytes);
-}
 
 /**
  * A zip of an email in English and French, with an image it uses and one it
@@ -146,6 +134,9 @@ describe('listing and reading templates', function (): void {
             ->and($first['revision'])->toMatchArray(['number' => 1, 'note' => 'First', 'locales' => ['en']]);
 
         agent(Rights::Read)->tool(GetTemplateTool::class, ['key' => 'welcome', 'revision' => 3])->assertHasErrors(['The revision 3 doesn\'t exist.']);
+        // Past the column's integer, which PostgreSQL answers with an error rather than no row.
+        agent(Rights::Read)->tool(GetTemplateTool::class, ['key' => 'welcome', 'revision' => 3_000_000_000])->assertHasErrors(['revision']);
+        agent()->tool(RestoreRevisionTool::class, ['template' => 'welcome', 'revision' => 3_000_000_000])->assertHasErrors(['revision']);
         agent(Rights::Read)->tool(GetTemplateTool::class, ['key' => 'nope'])->assertHasErrors(['There is no template with the key "nope".']);
     })->with('databases');
 

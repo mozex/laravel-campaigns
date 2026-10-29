@@ -7,12 +7,14 @@ namespace Mozex\Campaigns\Mcp;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\JsonSchema\Types\Type;
 use Mozex\Campaigns\Enums\BlockReason;
+use Mozex\Campaigns\Enums\CampaignStatus;
 use Mozex\Campaigns\Enums\ConsentBasis;
 use Mozex\Campaigns\Enums\EngagementTier;
 use Mozex\Campaigns\Enums\ImportChange;
 use Mozex\Campaigns\Enums\ListKind;
 use Mozex\Campaigns\Enums\SubscriptionStatus;
 use Mozex\Campaigns\Reports\AssetSummary;
+use Mozex\Campaigns\Reports\CampaignSummary;
 use Mozex\Campaigns\Reports\ListSummary;
 use Mozex\Campaigns\Reports\SubscriberSummary;
 
@@ -21,6 +23,18 @@ use Mozex\Campaigns\Reports\SubscriberSummary;
  */
 class Schemas
 {
+    /**
+     * The built-in subscriber filters, as list_subscribers, a saved audience
+     * and a campaign's audience take them.
+     */
+    public const FILTERS = 'lists (keys; list_status subscribed by default, or pending or unsubscribed), locales, countries, tiers (engaged, active, silent), opted_out, blocked, sunset (true or false), custom_fields (name to value; null matches missing), dates (a list of {field, after, before}, field one of created, last_opened, last_clicked, last_active, first_mailed, opted_out, blocked), campaigns (a list of {campaign key, outcome}, outcome one of received, not_received, opened, not_opened, clicked, not_clicked). Filters combine with AND, a filter\'s values with OR';
+
+    /**
+     * A campaign's audience within its lists, as update_campaign and
+     * preview_audience take it.
+     */
+    public const AUDIENCE = 'Who it goes to within its lists; every part given narrows (AND), and with none it goes to everyone subscribed on them: audience ({"name": a named audience from list_audiences, "parameters": {...}}), saved_audience (a key), filters (the built-in filters: '.self::FILTERS.'), subscribers (ids) and emails (addresses), one set of people, and records ({"<dynamic list key>": [app record ids]}). Each names at most 10,000. Opted-out, blocked and sunset people are never mailed whatever it says.';
+
     /**
      * A list with its counts and details (ListSummary::rows() with details).
      */
@@ -221,6 +235,63 @@ class Schemas
                 'html' => $schema->string()->required()->description('The default language\'s HTML alone.'),
                 'expires_at' => $schema->string()->required(),
             ])->required(),
+        ]);
+    }
+
+    /**
+     * The fields of a campaign's row in a list (CampaignSummary::row()).
+     *
+     * @return array<string, Type>
+     */
+    public static function campaignRow(JsonSchema $schema): array
+    {
+        return [
+            'uuid' => $schema->string()->required(),
+            'key' => $schema->string()->required(),
+            'name' => $schema->string()->required(),
+            'status' => $schema->string()->enum(array_column(CampaignStatus::cases(), 'value'))->required(),
+            'from_email' => $schema->string()->required(),
+            'lists' => $schema->array()->items($schema->string())->required()->description('Its target lists\' keys: the first '.CampaignSummary::ROW_LISTS.' in a list of campaigns, '.CampaignSummary::DETAIL_LISTS.' for one campaign.'),
+            'lists_total' => $schema->integer()->required(),
+            'recipient_count' => $schema->integer()->nullable()->required()->description('How many it was frozen for, once started or scheduled.'),
+            'created_at' => $schema->string()->nullable()->required(),
+            'scheduled_at' => $schema->string()->nullable()->required(),
+            'started_at' => $schema->string()->nullable()->required(),
+            'completed_at' => $schema->string()->nullable()->required(),
+            'canceled_at' => $schema->string()->nullable()->required(),
+        ];
+    }
+
+    /**
+     * One campaign whole (CampaignSummary::detail()).
+     */
+    public static function campaign(JsonSchema $schema): Type
+    {
+        return $schema->object([
+            ...static::campaignRow($schema),
+            'from_name' => $schema->string()->nullable()->required(),
+            'reply_to' => $schema->string()->nullable()->required(),
+            'track_opens' => $schema->boolean()->required(),
+            'track_clicks' => $schema->boolean()->required(),
+            'utm' => $schema->object()->required()->description('The UTM tags its start adds to links to the app\'s own sites; empty for none.'),
+            'pace' => $schema->object()->required()->description('The pace settings given; the rest follow the app\'s config.'),
+            'thresholds' => $schema->object()->required()->description('Its own stop-loss limits; the rest follow the app\'s config.'),
+            'audience' => $schema->object([
+                'audience' => $schema->string()->nullable()->required()->description('A named audience the app defines.'),
+                'parameters' => $schema->string()->nullable()->required()->description('Its parameters as JSON, cut to '.CampaignSummary::AUDIENCE_TEXT_LENGTH.' characters.'),
+                'saved_audience' => $schema->string()->nullable()->required(),
+                'filters' => $schema->string()->nullable()->required()->description('As JSON, cut to '.CampaignSummary::AUDIENCE_TEXT_LENGTH.' characters.'),
+                'subscribers' => $schema->integer()->nullable()->required()->description('How many people it names by id or address; 0 names nobody, null none were named.'),
+                'records' => $schema->object()->required()->description('How many app records it names, by dynamic list.'),
+                'unmatched_emails' => $schema->integer()->required()->description('Addresses given that matched no subscriber.'),
+            ])->required()->description('Who it goes to within its lists; every part given narrows.'),
+            'template' => $schema->string()->nullable()->required()->description('The template it was made from.'),
+            'duplicated_from' => $schema->string()->nullable()->required(),
+            'start_error' => $schema->string()->nullable()->required()->description('Why its last start was handed back to a draft.'),
+            'paused_at' => $schema->string()->nullable()->required(),
+            'pause_reason' => $schema->string()->nullable()->required(),
+            'revisions' => $schema->integer()->required()->description('How many revisions its email has; list_revisions lists them.'),
+            'revision' => static::revision($schema)->nullable()->required()->description('Its current email.'),
         ]);
     }
 

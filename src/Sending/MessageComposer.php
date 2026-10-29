@@ -116,19 +116,25 @@ class MessageComposer
             throw CampaignsException::recipientForgotten();
         }
 
+        // A preview's row (the web version a preview links to) holds the
+        // sample address and shows the sample's details, as the preview did.
+        $sample = $email instanceof TestSend && $email->email === Personalization::SAMPLE_EMAIL;
+
         // A test goes to an app's own address: its subscriber, when it is
         // one, fills the details in as a real recipient's would.
-        $subscriber = $email instanceof CampaignMessage
-            ? $email->subscriber
-            : Subscriber::query()->where('email', $email->email)->first();
+        $subscriber = match (true) {
+            $email instanceof CampaignMessage => $email->subscriber,
+            $sample => null,
+            default => Subscriber::query()->where('email', $email->email)->first(),
+        };
 
         $content = $revision->contentFor($email->locale);
 
         return [$content, Personalization::forToken(
             token: $token,
             email: $email->email,
-            firstName: $subscriber?->first_name,
-            name: $subscriber?->name,
+            firstName: $sample ? Personalization::SAMPLE_FIRST_NAME : $subscriber?->first_name,
+            name: $sample ? Personalization::SAMPLE_NAME : $subscriber?->name,
             locale: $content->locale,
         ), $subscriber];
     }

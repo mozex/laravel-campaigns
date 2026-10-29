@@ -4,10 +4,10 @@
 
 @section('content')
     <h1>
-        {{ __('campaigns::pages.invalid.heading') }}
+        {{ $heading ?? __('campaigns::pages.invalid.heading') }}
     </h1>
 
     <p>
-        {{ __('campaigns::pages.invalid.body') }}
+        {{ $body ?? __('campaigns::pages.invalid.body') }}
     </p>
 @endsection

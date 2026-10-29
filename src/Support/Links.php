@@ -24,6 +24,9 @@ class Links
     /** How long a download link works. */
     public const DOWNLOAD_MINUTES = 60;
 
+    /** How long a preview link works. */
+    public const PREVIEW_DAYS = 7;
+
     public static function unsubscribe(string $token): string
     {
         return static::to('campaigns.unsubscribe', $token);
@@ -67,6 +70,20 @@ class Links
     public static function downloadsExpireAt(): CarbonInterface
     {
         return now()->addMinutes(static::DOWNLOAD_MINUTES)->startOfSecond();
+    }
+
+    /**
+     * A revision's preview page, valid until $expires (previewExpiresAt()).
+     * Its language tabs add a `locale` the signature leaves out.
+     */
+    public static function preview(Revision $revision, CarbonInterface $expires): string
+    {
+        return static::signed('campaigns.preview', $expires, ['revision' => $revision->uuid]);
+    }
+
+    public static function previewExpiresAt(): CarbonInterface
+    {
+        return now()->addDays(static::PREVIEW_DAYS)->startOfSecond();
     }
 
     /**

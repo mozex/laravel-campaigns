@@ -46,7 +46,7 @@ class RestoreRevisionTool extends CampaignsTool
     {
         $input = $request->validate([
             ...static::ownerRules(),
-            'revision' => ['required', 'integer', 'min:1'],
+            'revision' => static::revisionRules(required: true),
         ]);
 
         $revision = static::revision(static::owner($input), (int) $input['revision']);

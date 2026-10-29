@@ -67,7 +67,7 @@ class GetTemplateTool extends CampaignsTool
     {
         $input = $request->validate([
             'key' => ['required', 'string'],
-            'revision' => ['nullable', 'integer', 'min:1'],
+            'revision' => static::revisionRules(),
         ]);
 
         $starter = StarterTemplates::find($input['key']);

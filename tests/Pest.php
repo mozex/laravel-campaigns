@@ -180,6 +180,15 @@ function contactsUpload(string $csv): Upload
 }
 
 /**
+ * An email (one HTML file or a zip) sent through an upload link, ready for
+ * a tool to read. Fake the uploads disk first (Storage::fake('local')).
+ */
+function emailUpload(string $bytes): Upload
+{
+    return app(ReceiveUploadAction::class)->execute(app(CreateUploadAction::class)->execute(UploadPurpose::Email)->uuid, $bytes);
+}
+
+/**
  * Campaigns come from news.example.com, and sending is on.
  */
 function sendFromExample(): void

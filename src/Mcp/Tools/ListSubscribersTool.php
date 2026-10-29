@@ -23,7 +23,7 @@ use Mozex\Campaigns\Reports\SubscriberSummary;
 
 #[Name('list_subscribers')]
 #[Title('List subscribers')]
-#[Description('Subscribers a page at a time, oldest first, narrowed by the built-in filters: lists (keys; list_status subscribed by default, or pending or unsubscribed), locales, countries, tiers (engaged, active, silent), opted_out, blocked, sunset (true or false), custom_fields (name to value; null matches missing), dates (a list of {field, after, before}, field one of created, last_opened, last_clicked, last_active, first_mailed, opted_out, blocked), campaigns (a list of {campaign key, outcome}, outcome one of received, not_received, opened, not_opened, clicked, not_clicked). Filters combine with AND, a filter\'s values with OR. Pass next_cursor back as cursor for the next page. One person whole, with their consent history: get_subscriber.')]
+#[Description('Subscribers a page at a time, oldest first, narrowed by the built-in filters: '.Schemas::FILTERS.'. Pass next_cursor back as cursor for the next page. One person whole, with their consent history: get_subscriber.')]
 #[IsReadOnly]
 #[IsIdempotent]
 #[IsOpenWorld(false)]

@@ -31,13 +31,15 @@ class TestCase extends Orchestra
     /**
      * Testbench's in-memory SQLite leaves foreign keys off, while Laravel's
      * own SQLite config turns them on, and the package relies on its
-     * cascades and nulled keys.
+     * cascades and nulled keys. Testbench sets no app key, which every app
+     * has and previews make their tokens with.
      *
      * @param  Application  $app
      */
     protected function defineEnvironment($app): void
     {
         $app['config']->set('database.connections.testing.foreign_key_constraints', true);
+        $app['config']->set('app.key', 'base64:'.base64_encode(str_repeat('k', 32)));
         $app['config']->set('campaigns.list_sources', ['members' => MemberList::class]);
     }
 
