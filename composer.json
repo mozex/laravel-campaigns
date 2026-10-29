@@ -48,6 +48,10 @@
         "phpstan/phpstan-deprecation-rules": "^2.0",
         "phpstan/phpstan-phpunit": "^2.0"
     },
+    "suggest": {
+        "ext-intl": "Fetches links and images on host names written in other scripts",
+        "laravel/passport": "Signs people in over OAuth, for chat apps such as claude.ai and ChatGPT"
+    },
     "autoload": {
         "psr-4": {
             "Mozex\\Campaigns\\": "src/",

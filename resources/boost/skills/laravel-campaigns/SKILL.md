@@ -123,7 +123,7 @@ Redact: paths under `/campaigns/u/`, `/campaigns/c/` and `/campaigns/v/` (link t
 
 ## Testing
 
-- `CAMPAIGNS_PROVIDER=fake` in `phpunit.xml`; `app(CampaignProvider::class)` is the `FakeProvider`: `sent()`, `failNext()`, `count($date, $counts)`, `log()`, `suppress()`, `failReads()`.
+- `CAMPAIGNS_PROVIDER=fake` in `phpunit.xml`; `app(CampaignProvider::class)` is the `FakeProvider`: `sent()`, `failNext()`, `count($date, $counts)`, `log()`, `suppress()`, `failReads()` and `readsWork()`.
 - `Queue::fake([SendMessageJob::class])` only, so a started campaign still freezes. Travel time with UTC instants.
 - Bind `StaticHostResolver` in place of `HostResolver` so link checks and image fetches never look up real hosts.
 - Factories for every model ship with the package: `Subscriber::factory()`, `CampaignList::factory()`, `Campaign::factory()`.

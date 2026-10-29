@@ -252,9 +252,9 @@ return [
      * one waiting stop-loss check per campaign, when the pump last ran, and
      * the marks that limit a misconfigured webhook's or an unreadable
      * provider's error report to one an hour and the stalled-queue alert to
-     * one every six. Point it at a store
-     * your deploys don't flush, so a release can't free a lock a running pump
-     * still holds. Null uses the app's default store.
+     * one every six hours. Point it at a store your deploys don't flush, so a
+     * release can't free a lock a running pump still holds. Null uses the
+     * app's default store.
      */
     'cache_store' => env('CAMPAIGNS_CACHE_STORE'),
 

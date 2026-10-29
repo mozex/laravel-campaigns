@@ -19,7 +19,7 @@ use Symfony\Component\HttpFoundation\Response;
 
 beforeEach(function (): void {
     Storage::fake('local');
-    config(['campaigns.url' => 'https://portal.example.com']);
+    config(['campaigns.url' => 'https://links.example.com']);
 });
 
 /**
@@ -32,9 +32,9 @@ beforeEach(function (): void {
  */
 function sendTo(string $link, string $method = 'GET', ?string $body = null, array $server = []): TestResponse
 {
-    expect($link)->toStartWith('https://portal.example.com/mcp/campaigns/');
+    expect($link)->toStartWith('https://links.example.com/mcp/campaigns/');
 
-    return test()->call($method, 'http://localhost'.substr($link, strlen('https://portal.example.com')), [], [], [], $server, $body);
+    return test()->call($method, 'http://localhost'.substr($link, strlen('https://links.example.com')), [], [], [], $server, $body);
 }
 
 /**
@@ -81,7 +81,7 @@ describe('the upload link', function (): void {
         $received = sendTo($link, 'PUT', "email\nann@example.com\n", ['CONTENT_TYPE' => 'text/csv']);
         $again = sendTo($link, 'PUT', "email\nbob@example.com\n");
 
-        expect($link)->toStartWith("https://portal.example.com/mcp/campaigns/uploads/{$upload->uuid}?expires=")
+        expect($link)->toStartWith("https://links.example.com/mcp/campaigns/uploads/{$upload->uuid}?expires=")
             ->and($received->status())->toBe(201)
             ->and($received->json())->toMatchArray(['upload_id' => $upload->uuid, 'size' => 22])
             ->and($received->headers->get('X-Robots-Tag'))->toBe('noindex, nofollow')

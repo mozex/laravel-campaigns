@@ -162,7 +162,7 @@ If the provider refuses the sending domain itself (a key or domain problem), the
 
 - The pump, every minute: starts scheduled campaigns, hands out each sending campaign's next emails, and completes a campaign with nothing left.
 - The reconciler, every 15 minutes: puts back emails whose job was lost, replays the provider's logs from half an hour behind (deliveries and failures a webhook missed), and looks up sends that ended unclear. It runs while sending is off too.
-- Pruning, daily: the provider's events older than 180 days go once their campaign is completed or cancelled and its report kept; a campaign still sending or paused keeps its own.
+- Pruning, daily: the provider's events older than the app's retention (180 days unless it sets another) go once their campaign is completed or cancelled and its report kept; a campaign still sending or paused keeps its own.
 
 ## Unblocking
 

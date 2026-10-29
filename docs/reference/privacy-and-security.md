@@ -54,7 +54,7 @@ SVG images are refused, since an SVG can carry script, and an image's type comes
 
 ## Requests the server makes
 
-The pre-send checks fetch every link in an email, and an agent can add an image from an address. Every such request goes through one guard: each hop, redirects included, must name a host whose every address is public, the connection is pinned to the address that was checked, and no proxy is used. An address that points into your own network, such as `127.0.0.1` or a cloud metadata service, is refused, and the refusal never names the private address.
+The pre-send checks fetch every link in an email, and an agent can add an image from an address. Every such request goes through one guard: each hop, redirects included, must name a host whose every address is public, the connection is pinned to the address that was checked, and no proxy is used. An address that points into your own network, such as `127.0.0.1` or a cloud metadata service, is refused, and the refusal never names the private address. A host name written in another script (`bücher.example`) is fetched only when PHP has the `intl` extension, which turns it into the form DNS reads; without it, such an address is refused until it is written in its `xn--` form.
 
 ## Pages and links
 

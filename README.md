@@ -50,7 +50,7 @@ Business sponsors get logo placement in package READMEs. [**See sponsorship tier
 
 ## What You Get
 
-**Agents do the work, you approve it.** An MCP server with 48 tools lets an agent write, upload, preview and test an email, count its audience, and start, pace, pause and report on a campaign. Read-only and full tokens, or your own OAuth sign-in, decide who can do what, and the risky calls (starting, resuming, speeding up, test emails) ask the person first in Claude Code.
+**Agents do the work, you approve it.** An MCP server with 48 tools lets an agent write, upload, preview and test an email, count its audience, and start, pace, pause and report on a campaign. Read-only and full tokens, or your own OAuth sign-in, decide who can do what, and the risky calls (starting, resuming or speeding up a campaign, a test email, archiving a list or template, unblocking an address, running an import) ask the person first in Claude Code.
 
 **Lists that are your users.** A dynamic list follows one of your models, so sign-ups, address changes, bans and deletions reach it as they happen. Static lists hold everyone else: newsletter sign-ups, imports from another service.
 
@@ -92,7 +92,14 @@ Add a `campaigns` mailer on Mailgun's API to `config/mail.php`, on a domain kept
 Turn one of your models into a list. The source says who belongs on it and what to keep in step:
 
 ```php
-class AccountList implements \Mozex\Campaigns\Contracts\ListSource
+namespace App\Campaigns;
+
+use App\Models\User;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
+use Mozex\Campaigns\Contracts\ListSource;
+
+class AccountList implements ListSource
 {
     public function name(): string
     {
@@ -121,9 +128,10 @@ class AccountList implements \Mozex\Campaigns\Contracts\ListSource
 'list_sources' => ['accounts' => App\Campaigns\AccountList::class],
 ```
 
-Add `use Mozex\Campaigns\Concerns\HasCampaignSubscriber;` to the `User` model, then bring in the accounts you already have and make a token for your agent:
+Add `use Mozex\Campaigns\Concerns\HasCampaignSubscriber;` to the `User` model, then bring in the accounts you already have (a dry run first, then with `--force`) and make a token for your agent:
 
 ```bash
+php artisan campaigns:sync-list accounts
 php artisan campaigns:sync-list accounts --force
 php artisan campaigns:token create laptop
 claude mcp add --transport http campaigns https://your-app.example.com/mcp/campaigns \

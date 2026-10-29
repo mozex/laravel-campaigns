@@ -27,7 +27,7 @@ return [
     'blocked' => [
         'title' => 'Not sending',
         'heading' => "We've stopped emailing this address",
-        'body' => 'Emails from :app to this address bounced or were marked as spam, so we no longer send any.',
+        'body' => 'We no longer send emails from :app to this address.',
     ],
 
     'gone' => [

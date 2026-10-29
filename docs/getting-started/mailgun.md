@@ -38,7 +38,7 @@ CAMPAIGNS_MAILGUN_ENDPOINT=api.eu.mailgun.net
 
 Where your plan offers roles, the Support role is the narrowest one that reads logs, metrics and suppressions (the Analyst role can't read suppressions). The region comes from `CAMPAIGNS_MAILGUN_ENDPOINT`, else the campaigns mailer's `endpoint`, else Mailgun's US host. Set `campaigns.mailgun.log_days` to the number of days your plan keeps logs (5 by default): nothing older is looked for.
 
-Without the key, nothing is reconciled and `campaigns:reconcile` fails every run, and the overview says so.
+Without the key, Mailgun's logs aren't read: events a webhook missed and sends that ended unclear stay unsettled, `campaigns:reconcile` fails every run (after putting back lost jobs and queueing unprocessed events again), and the overview says so.
 
 ## Suppressions you already have
 

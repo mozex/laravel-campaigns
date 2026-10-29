@@ -24,7 +24,8 @@ $provider = app(CampaignProvider::class);   // a FakeProvider
 $provider->sent();                          // every OutgoingMessage sent: to, subject, html, text...
 $provider->failNext(new SendFailed(SendFailure::NotAccepted, 'Rate limited', 429));
 $provider->count('2026-01-15', ['sent' => 1200, 'hard_bounces' => 3]);  // the domain's counts that day
-$provider->failReads();                     // every read of logs or suppression lists throws
+$provider->failReads();                     // every read of logs, suppression lists or metrics throws
+$provider->readsWork();                     // until this
 $provider->keepLogsFor(30);
 ```
 

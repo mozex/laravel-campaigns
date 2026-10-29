@@ -30,7 +30,7 @@ Each part names at most 10,000 people or records. Addresses become subscriber id
 | `dates` | `created`, `last_opened`, `last_clicked`, `last_active`, `first_mailed`, `opted_out` or `blocked`, after or before a time |
 | `campaigns` | what someone did with an earlier campaign: `received`, `not_received`, `opened`, `not_opened`, `clicked`, `not_clicked` |
 
-An unknown filter, list or campaign is refused rather than matching nobody, so a typo never quietly empties a campaign.
+An unknown filter, list or campaign is refused rather than matching nobody, so a typo never quietly empties a campaign. Each filter takes at most 100 values, and a blank date is refused rather than read as now.
 
 A saved audience is read when the campaign starts, so replacing it changes every campaign that names it and hasn't started yet.
 

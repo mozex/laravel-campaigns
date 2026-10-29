@@ -133,7 +133,7 @@ Each class's docblock gives the reasons for its own behaviour; read it before ch
 
 ## Extension points
 
-- `CampaignProvider` (`campaigns.provider`): `mailgun`, `fake` (tests: `sent()`, `failNext()`, `log()`, `suppress()`, `count()`, `failReads()`, `keepLogsFor()`) or a class.
+- `CampaignProvider` (`campaigns.provider`): `mailgun`, `fake` (tests: `sent()`, `failNext()`, `log()`, `suppress()`, `count()`, `failReads()`, `readsWork()`, `keepLogsFor()`) or a class.
 - `ListSource` with the `HasCampaignSubscriber` trait (`campaigns.list_sources`); `Model::withCampaignConsent()`; `Campaigns::recordActivity()`.
 - `Audience` (`campaigns.audiences`) and `AgentResource` (`campaigns.resources`).
 - `ImportContactsAction` for an app's own imports; `SendConfirmationAction` after a pending double opt-in subscribe.
