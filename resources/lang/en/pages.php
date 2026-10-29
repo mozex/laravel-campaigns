@@ -80,7 +80,7 @@ return [
         'checks_queued' => 'Queued, not finished yet.',
         'checks_failed' => 'The run failed: :message',
         'checks_done' => ':passed passed, :failed failed.',
-        'check_items' => ':count items',
+        'check_items' => ':count item|:count items',
         'expired' => [
             'heading' => 'This preview has expired',
             'body' => 'A preview link lasts :days days. Ask for a new one.',

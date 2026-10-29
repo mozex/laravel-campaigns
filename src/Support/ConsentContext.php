@@ -79,8 +79,19 @@ readonly class ConsentContext
             noticeVersion: $noticeVersion,
             accepted: $accepted,
             ipAddress: $request->ip(),
-            userAgent: $request->userAgent(),
+            userAgent: static::browser($request->userAgent()),
             meta: $meta,
         );
+    }
+
+    /**
+     * A browser string as its column takes it: bytes that aren't UTF-8, or
+     * a NUL, would make the database refuse the whole change and roll back
+     * the person's unsubscribe, so they become "?" or go, and it is cut to
+     * 1,000 characters.
+     */
+    protected static function browser(?string $userAgent): ?string
+    {
+        return $userAgent === null ? null : mb_substr(str_replace("\0", '', mb_scrub($userAgent, 'UTF-8')), 0, 1000);
     }
 }

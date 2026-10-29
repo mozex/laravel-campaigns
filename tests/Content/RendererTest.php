@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Illuminate\Support\Str;
 use Mozex\Campaigns\Content\EmailContent;
 use Mozex\Campaigns\Content\Personalization;
 use Mozex\Campaigns\Content\RenderedEmail;
@@ -105,6 +106,19 @@ describe('the preheader', function (): void {
             ->and($bodiless->html)->toStartWith('<div style="display: none;')
             ->and($bodiless->html)->toEndWith('>Pre</div><p>Body</p>');
     });
+
+    it('goes where the parser starts the body when the HTML has no body tag, never before its doctype', function (string $html, string $before, string $after): void {
+        $email = renderEmail(new EmailContent(locale: 'en', subject: 'Hi', html: $html, preheader: 'Pre'));
+        [$head, $tail] = explode('<div style="display: none;', $email->html, 2);
+
+        expect($head)->toBe($before)
+            ->and(Str::after($tail, '>Pre</div>'))->toBe($after);
+    })->with([
+        'a closed head' => ['<!DOCTYPE html><html lang="en"><head><style>p{}</style></head><table></table></html>', '<!DOCTYPE html><html lang="en"><head><style>p{}</style></head>', '<table></table></html>'],
+        'a head never closed' => ["<!doctype html><html><head><meta charset=\"utf-8\"><title>Hi</title>\n<table></table>", "<!doctype html><html><head><meta charset=\"utf-8\"><title>Hi</title>\n", '<table></table>'],
+        'no head' => ['<!DOCTYPE html><html><table></table></html>', '<!DOCTYPE html><html>', '<table></table></html>'],
+        'a doctype alone' => ["\u{FEFF}<!-- built -->\n<!DOCTYPE html><table></table>", "\u{FEFF}<!-- built -->\n<!DOCTYPE html>", '<table></table>'],
+    ]);
 });
 
 describe('the footer', function (): void {
@@ -150,9 +164,12 @@ describe('the footer', function (): void {
         ], 'fr', 'campaigns');
 
         $french = renderEmail(new EmailContent(locale: 'fr', subject: 'Salut', html: '{{footer}}', text: '{{footer}}'));
+        $canadian = renderEmail(new EmailContent(locale: 'fr_CA', subject: 'Salut', html: '{{footer}}', text: '{{footer}}'));
         $unknown = renderEmail(new EmailContent(locale: 'xx', subject: 'Hi', html: '{{footer}}', text: '{{footer}}'));
 
         expect($french->text)->toStartWith('Laravel a envoyé cet e-mail à ann@example.com.')
+            // A regional version takes its language's strings before the app's.
+            ->and($canadian->text)->toStartWith('Laravel a envoyé cet e-mail à ann@example.com.')
             ->and($unknown->text)->toStartWith('Laravel sent this email to ann@example.com.')
             ->and(app()->getLocale())->toBe('en');
     });

@@ -63,7 +63,7 @@ class GetGuideTool extends CampaignsTool
     {
         $input = $request->validate([
             'resource' => ['nullable', 'string'],
-            'page' => ['nullable', 'integer', 'min:1'],
+            'page' => static::PAGE_RULES,
         ]);
 
         $resource = $input['resource'] ?? null;

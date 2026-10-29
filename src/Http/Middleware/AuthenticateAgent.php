@@ -57,7 +57,7 @@ class AuthenticateAgent
             }
 
             if (Principal::for($user)->rights === null) {
-                return response()->json(['message' => 'This account may not use the campaigns server.'], 403);
+                return response()->json(['message' => 'This account may not use the campaigns server: the app grants it through the campaigns.read or campaigns.full gate ability.'], 403);
             }
 
             return $next($request);

@@ -31,7 +31,23 @@ class Principal
     {
         $user = auth()->user();
 
-        return $user === null ? null : static::for($user);
+        if ($user === null) {
+            return null;
+        }
+
+        // Worked out once a request: every one of the server's tools asks
+        // before it is listed, and a person's rights cost the app's Gate two
+        // checks each time.
+        $known = request()->attributes->get(self::class);
+
+        if ($known instanceof self && $known->user === $user) {
+            return $known;
+        }
+
+        $principal = static::for($user);
+        request()->attributes->set(self::class, $principal);
+
+        return $principal;
     }
 
     public static function for(Authenticatable $user): self

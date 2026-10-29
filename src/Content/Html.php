@@ -39,8 +39,8 @@ class Html
         foreach ($document->getElementsByTagName('img') as $image) {
             $urls[] = $image->getAttribute('src');
 
-            foreach (array_filter(explode(',', $image->getAttribute('srcset'))) as $candidate) {
-                $urls[] = (string) preg_split('/\s+/', trim($candidate))[0];
+            foreach (static::srcset($image->getAttribute('srcset')) as $candidate) {
+                $urls[] = $candidate['url'];
             }
         }
 
@@ -66,6 +66,48 @@ class Html
 
         preg_match_all('/\burl\(\s*([\'"]?)(.*?)\1\s*\)/i', implode("\n", $css), $matches);
 
-        return array_map(fn (string $url): string => trim($url), [...$urls, ...$matches[2]]);
+        // A url(#id) points into the document (Outlook's VML behavior, an
+        // SVG filter) and loads nothing.
+        $loaded = array_filter($matches[2], fn (string $url): bool => ! str_starts_with(trim($url), '#'));
+
+        return array_map(fn (string $url): string => trim($url), [...$urls, ...$loaded]);
+    }
+
+    /**
+     * A srcset's image candidates, read as the HTML spec reads them: an
+     * address runs to the next whitespace, commas inside it included (an
+     * image service's w_400,h_300), and only trailing commas end it; the
+     * descriptor runs to the next comma.
+     *
+     * @return list<array{url: string, descriptor: string}>
+     */
+    public static function srcset(string $srcset): array
+    {
+        $candidates = [];
+        $length = strlen($srcset);
+        $at = 0;
+
+        while ($at < $length) {
+            $at += strspn($srcset, " \t\n\r\f,", $at);
+
+            if ($at >= $length) {
+                break;
+            }
+
+            $url = substr($srcset, $at, strcspn($srcset, " \t\n\r\f", $at));
+            $at += strlen($url);
+            $descriptor = '';
+
+            if (str_ends_with($url, ',')) {
+                $url = rtrim($url, ',');
+            } else {
+                $descriptor = substr($srcset, $at, strcspn($srcset, ',', $at));
+                $at += strlen($descriptor);
+            }
+
+            $candidates[] = ['url' => $url, 'descriptor' => trim($descriptor)];
+        }
+
+        return $candidates;
     }
 }

@@ -89,6 +89,8 @@ it('refuses what breaks the rules, every problem at once', function (array $cont
         'en: the plain text holds {{frist_name}}, {{#if x}}, which are not placeholders.',
         'en: the subject holds {{first name}}, which is not a placeholder.',
     ]],
+    'triple braces' => [[validContent(html: '<p>Hi {{{first_name}}}</p>{{footer}}')], ['en: the HTML holds {{{first_name}}}, which is not a placeholder.']],
+    'braces a tool percent-encoded' => [[validContent(html: '<a href="%7B%7Bweb_version_url%7D%7D">View</a>{{footer}}')], ['en: the HTML holds %7B%7Bweb_version_url%7D%7D, a placeholder whose braces a tool percent-encoded; write it as {{web_version_url}}.']],
     'a plain text over 90 KB' => [[validContent(text: str_repeat('x', 91 * 1024).'{{footer}}')], ['en: the plain text is over 90 KB.']],
     'an empty HTML' => [[validContent(html: ' ')], ['en: the HTML is empty.']],
     'text that is not UTF-8' => [[validContent(subject: "Caf\xE9")], ["en: the subject isn't UTF-8 text."]],
@@ -114,6 +116,8 @@ it('reads CSS images only from CSS, decoded', function (): void {
         '<td style="background-image: url(&quot;https://cdn.test/bg.png&quot;)">Run curl(1) on it.</td>',
         '<style>.hero { background: url( \'https://cdn.test/hero.png\' ); }</style>',
         '<svg><rect fill="url(#gradient)"/></svg>',
+        '<style>v\:* { behavior: url(#default#VML); }</style>',
+        '<img src="https://res.cloudinary.test/w_400,h_300/a.jpg" srcset="https://res.cloudinary.test/w_400,h_300/a.jpg 1x,https://res.cloudinary.test/w_800,h_600/a.jpg 2x" alt="">',
         '{{footer}}',
     ]))]))->toBe('')
         ->and(contentProblems([validContent(html: '<style>.hero { background: url(http://cdn.test/hero.png) }</style>{{footer}}')]))
@@ -124,6 +128,7 @@ it('keeps the app\'s default language whatever language a request switches to', 
     app()->setLocale('fa');
 
     expect(contentProblems([validContent()]))->toBe('')
+        ->and(contentProblems([validContent('EN')]))->toBe('')
         ->and(contentProblems([validContent('fa')]))->toContain('There is no en version');
 });
 

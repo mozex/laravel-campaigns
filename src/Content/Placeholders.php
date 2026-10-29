@@ -43,10 +43,10 @@ class Placeholders
         'unsubscribe_url' => 'The page where the recipient unsubscribes from all of this app\'s email, or subscribes again.',
         'preferences_url' => 'The same page as unsubscribe_url.',
         'web_version_url' => 'The email as a web page, for a "view in your browser" link.',
-        'footer' => 'Who the email went to, the unsubscribe and privacy links and the postal address, in the email\'s language.',
+        'footer' => 'Who the email went to, the unsubscribe and privacy links and the postal address, in the email\'s language where the app has the package\'s strings in it, else in the app\'s language.',
         'postal_address' => 'The sender\'s postal address (campaigns.postal_address).',
         'privacy_url' => 'The privacy policy\'s address (campaigns.privacy_url).',
-        'preheader' => 'Where the preheader goes. Without it, the preheader goes in a hidden block right after <body>.',
+        'preheader' => 'Where the preheader goes. Without it, the preheader goes in a hidden block at the start of the body.',
     ];
 
     /**
@@ -77,7 +77,8 @@ class Placeholders
      */
     public static function malformed(string $subject): array
     {
-        preg_match_all('/\{\{[^{}]*\}\}/', $subject, $matches);
+        // Triple braces first: {{{first_name}}} would come out as {Ann}.
+        preg_match_all('/\{\{\{[^{}]*\}\}\}|\{\{[^{}]*\}\}/', $subject, $matches);
 
         return array_values(array_filter(
             $matches[0],

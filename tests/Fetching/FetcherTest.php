@@ -51,6 +51,8 @@ describe('public addresses', function (): void {
         ['ff02::1', false],
         ['64:ff9b::7f00:1', false],
         ['64:ff9b:1::a00:1', false],
+        ['::ffff:0:7f00:1', false],
+        ['fec0::1', false],
         ['not an address', false],
     ]);
 });

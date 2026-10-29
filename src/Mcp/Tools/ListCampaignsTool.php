@@ -56,7 +56,7 @@ class ListCampaignsTool extends CampaignsTool
         $input = $request->validate([
             'statuses' => ['nullable', 'array', 'list'],
             'statuses.*' => ['string', Rule::enum(CampaignStatus::class)],
-            'page' => ['nullable', 'integer', 'min:1'],
+            'page' => static::PAGE_RULES,
         ]);
 
         $page = (int) ($input['page'] ?? 1);

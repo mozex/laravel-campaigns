@@ -18,7 +18,7 @@ Call `get_overview` first. It tells you:
 ## Rules that never change
 
 - Never start, resume or speed up a campaign without the approval of the person you work for, given with the exact number of recipients and the pace. Those calls ask that person themselves in clients that support it; ask anyway.
-- Pausing and cancelling never wait: do either as soon as something looks wrong.
+- Pausing never waits: pause as soon as something looks wrong. Cancel only when the person decides the campaign must not go on: a cancelled campaign can't be resumed.
 - An unsubscribe, a spam report or a hard bounce stops an address. Never try to add such a person back.
 - A refused call says why in its error. Tell the person what it says rather than retrying the same call.
 - Answers never show a person's IP address or browser; they stay on the server.
@@ -51,17 +51,17 @@ Call `get_overview` first. It tells you:
 
 - `create_upload_link` gives a one-time address for one file, its `max_file_size` for that purpose, and the curl command that sends it: `curl --fail-with-body --upload-file '<file>' '<url>'`. A curl older than 7.76 needs `--fail` instead; in Windows PowerShell type `curl.exe`, since a bare `curl` there is another command. The file name may hold no quote.
 - Purposes: `email` (an HTML file or a zip, for `create_template`, `create_campaign` and `add_revision`), `image` (JPEG, PNG, GIF or WebP, for `add_image`) and `contacts` (a CSV).
-- The link takes one file within 15 minutes, and the file then waits a day for the tool that uses it. A refusal before the file is stored (too large, the link expired) leaves the link usable until it expires; once a tool reads the upload it is used up, accepted or refused, so a refused file goes up again through a new link.
+- The link takes one file within 15 minutes, and the file then waits a day for the tool that uses it. A refusal before the file is stored (too large, say) leaves the link usable until it expires; once a tool reads the upload it is used up, accepted or refused, so a refused file goes up again through a new link.
 - `get_template` and `get_campaign` give links, valid 60 minutes, to download an email as `email.zip` (the layout an upload takes) or its default language's `email.html`. They are always downloads, never pages.
 
 ## Writing an email
 
 - An upload is one HTML file, or a zip holding `email.html` (the default language), an optional `email.txt`, `translations/<locale>.html` with an optional `translations/<locale>.txt` for each other language, and an `images/` folder. One folder wrapping everything is stepped into, and `__MACOSX/`, `.DS_Store` and `Thumbs.db` are skipped. A name given twice, or a translation in the default language beside `email.html`, is refused. At most 200 files and 50 MB unpacked, and 1 MB for each HTML or text file.
-- Without a `zip` command: `tar.exe -a -cf email.zip email.html translations images` on Windows, PowerShell's `Compress-Archive`, or Python's `zipfile`.
+- Without a `zip` command: `tar.exe -a -cf email.zip email.html email.txt translations images` on Windows, or `python -m zipfile -c email.zip email.html email.txt translations images`, naming only the files and folders you have. Not Windows PowerShell's `Compress-Archive`: it writes folder paths with backslashes, which the upload refuses.
 - Images referenced by a relative path (`images/hero.png`) join the asset library and their paths become its public addresses, so the working folder previews the same way locally. `add_image` adds one from an image upload, inline as base64 (up to 4 MB), or from an https address; `list_assets` finds them. Every image must be on https, and none is ever deleted, since delivered mail keeps loading them.
 - Each language's subject is the one you pass for its locale, else the HTML's `<title>`. A preheader is only the one you pass. Subjects and preheaders aren't files: `get_template` names them, and an edit passes them again.
 - At most 20 languages. The default language must be there.
-- Placeholders are a fixed set in double braces; `get_overview` lists them with this app's values. Anything else in double braces is refused, since it would reach every inbox as written. A subject or preheader holds only `{{first_name}}`, `{{name}}` and `{{email}}`. `{{first_name|there}}` gives a fallback. `{{footer}}` puts in who the email went to, the unsubscribe and privacy links and the postal address, in the email's language. `{{preheader}}` places the preheader; without it, the preheader goes in a hidden block right after `<body>`. `{{web_version_url}}` is the email as a web page.
+- Placeholders are a fixed set in double braces; `get_overview` lists them with this app's values. Anything else in double braces is refused, since it would reach every inbox as written. A subject or preheader holds only `{{first_name}}`, `{{name}}` and `{{email}}`. `{{first_name|there}}` gives a fallback. `{{footer}}` puts in who the email went to, the unsubscribe and privacy links and the postal address, in the email's language where the app has the package's strings in it, else in the app's language. `{{preheader}}` places the preheader; without it, the preheader goes in a hidden block at the start of the body. `{{web_version_url}}` is the email as a web page.
 - Every email needs an unsubscribe link in its HTML and its text (`{{footer}}`, `{{unsubscribe_url}}` or `{{preferences_url}}`).
 - At most 90 KB of HTML once filled in, since Gmail clips longer emails.
 - A plain text you write travels in the zip; one you leave out is generated from the HTML each time.
@@ -70,6 +70,7 @@ Call `get_overview` first. It tells you:
 ## Templates and revisions
 
 - `list_templates` lists the package's starter templates first, then the app's (archived ones only when asked). A template's key reads, revises and copies it even when archived.
+- The starter template's button has a second link inside an Outlook-only block (`<!--[if mso]>`), which the checks and the UTM tags never see: change both links.
 - `create_template` makes one from an upload, inline content, another template or a starter. `update_template` changes its name, description or default mark.
 - Every upload or edit is a new revision (`add_revision`, for a template or a draft campaign); nothing is overwritten. `list_revisions` and `restore_revision` bring an older one back as a new revision.
 - The edit loop: `get_template` (or `get_campaign`), download the zip or the HTML within the hour, edit it, and send it back to `add_revision` with the subjects and preheaders `get_template` named.
@@ -88,7 +89,7 @@ Call `get_overview` first. It tells you:
 - Its email changes through `add_revision` with `campaign`, while it is a draft. A start freezes it, its links carrying the UTM tags.
 - Its audience: the target `lists` (everyone subscribed on any of them, once each), narrowed by any of a named audience (`list_audiences` shows the app's, with their parameters as a JSON Schema, given as `{"audience": {"name": "...", "parameters": {...}}}`), a saved audience (a named set of filters, `save_audience`), the built-in filters, people by id or address, and app records by dynamic list. Replacing a saved audience changes every campaign that names it and hasn't started.
 - `preview_audience` counts who it reaches: the recipients, who was dropped and why (blocked, opted out, sunset), and the breakdown by list, language, engagement tier and mailbox provider. Opted-out, blocked and sunset people are never mailed, whatever the audience says.
-- `send_test` sends the email to the app's test addresses only (it asks the person first): one per address and language, at most 25 a call, in the default language unless you name others. A draft's test is its current email; a started campaign's is the frozen one it sends. Read whether each went with `get_test_sends`.
+- `send_test` sends the email to the app's test addresses only (it asks the person first): one per address and language, at most 25 a call, in the default language unless you name others. A draft's test is its current email; a started campaign's is the frozen one it sends. Read whether each went with `get_test_sends`. Refused while sending is switched off.
 - `duplicate_campaign` copies a campaign's settings, audience and email into a new draft.
 
 ## Before a start
@@ -98,7 +99,7 @@ Ask the person to approve, and give them:
 - the recipient count from `preview_audience`, and who was dropped and why;
 - the pace: `first_day` (sends on day 1), `daily_growth` (percent more each day), `daily_cap`, `per_minute`, `sending_hours` and `timezone`; left out, each follows the app's config;
 - the checks' results, with anything that failed;
-- the sending domain's standing from `get_overview`: its last 24 hours, its daily cap and what is left, and the provider's last 30 days. Compare the last 24 hours with the limits the stop-loss holds the domain to (`get_campaign_status` shows them as `limits`: by the package's defaults, a pause at 2 spam reports before 2,500 sends and above 0.08% after, and at 10 hard bounces, or 5% of at least 50 sends, before 200): a domain near them pauses a new campaign at its first bounce or spam report, so wait and ask. If you can read the domain's Gmail spam rate (Google Postmaster Tools), it should be under 0.1% and never reach 0.3%;
+- the sending domain's standing from `get_overview`: its last 24 hours, its daily cap and what is left, and the provider's last 30 days. Compare the last 24 hours with the limits the stop-loss holds the domain to: the app's own hard-bounce and spam-report limits, whatever a campaign sets (`get_campaign_status` shows them as `limits` for a campaign without its own `thresholds`: by the package's defaults, a pause at 2 spam reports before 2,500 sends and above 0.08% after, and at 10 hard bounces, or 5% of at least 50 sends, before 200): a domain near them pauses a new campaign at its first bounce or spam report, so wait and ask. If you can read the domain's Gmail spam rate (Google Postmaster Tools), it should be under 0.1% and never reach 0.3%;
 - the test email, as it arrived.
 
 A new or quiet sending domain starts slowly: a small first day that grows each day, so mailbox providers learn it.
@@ -131,7 +132,7 @@ and nothing outside its `sending_hours` in its `timezone`. `get_campaign_status`
   - `suppressed_bounce`, `suppressed_complaint`, `suppressed_unsubscribe`: the provider held the address from before and sent nothing; the first two block it, the last opts the person out.
   - `other`: anything else permanent.
   - `not_accepted`: the send ended unclear and the provider's logs held nothing for it an hour later; it is never resent.
-- A message `unknown` ended unclear and the provider's logs could no longer settle it.
+- A message `unknown` ended unclear. The reconciler looks it up in the provider's logs from 15 minutes on: it becomes sent when they show it went, or `not_accepted` when they hold nothing an hour later. One too old to look up stays `unknown`. None is ever resent.
 - A spam report blocks the address and opts the person out of everything; an unsubscribe opts them out of all the app's marketing.
 
 ## The stop-loss
@@ -155,7 +156,7 @@ If the provider refuses the sending domain itself (a key or domain problem), the
 - `pause_campaign` stops handing out emails at once (with an optional reason); queued emails wait. It never needs approval and works while sending is off.
 - `resume_campaign` carries on where it stopped, after the person's approval. One paused before its scheduled time that is still ahead waits for it again.
 - `slow_down_campaign` takes any change that sends no faster; `speed_up_campaign` takes any change, after the person's approval. Only the values given change.
-- `cancel_campaign` stops a campaign for good (in any status but completed); its unsent emails stay counted, and `duplicate_campaign` makes a new draft.
+- `cancel_campaign` stops a campaign for good (in any status but completed); its unsent emails stay counted, and it can't be resumed. `duplicate_campaign` makes a new draft that targets the same people again, those already reached included: before previewing it, add the filter `{"campaigns": [{"campaign": "<old key>", "outcome": "not_received"}]}` to its audience, keeping the audience's other parts.
 
 ## What runs on its own
 

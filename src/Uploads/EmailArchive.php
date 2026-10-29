@@ -192,6 +192,12 @@ readonly class EmailArchive
             if (strtolower(str_replace('-', '_', $path)) === "translations/{$default}.html") {
                 $problems[] = "{$path} is in ".Locales::default().', the language email.html is in: leave one of them out.';
             }
+
+            // A text file goes with the HTML file of its name; alone, it
+            // would be dropped without a word.
+            if (str_ends_with($path, '.txt') && ! isset($documents[substr($path, 0, -strlen('.txt')).'.html'])) {
+                $problems[] = static::shown($path).' has no HTML file beside it of the same name.';
+            }
         }
 
         if ($problems !== []) {

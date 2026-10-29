@@ -7,6 +7,7 @@ namespace Mozex\Campaigns\Mcp\Tools;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\JsonSchema\Types\Type;
 use Illuminate\Validation\ValidationException;
+use Laravel\Mcp\Request;
 use Laravel\Mcp\Response;
 use Laravel\Mcp\ResponseFactory;
 use Laravel\Mcp\Server\Tool;
@@ -50,6 +51,12 @@ abstract class CampaignsTool extends Tool
      * The longest refusal, which a list of an email's problems stays under.
      */
     public const REFUSAL_LENGTH = 5000;
+
+    /**
+     * A page number's rules: an upper bound, since a huge one overflows the
+     * offset it becomes and fails instead of answering an empty page.
+     */
+    public const PAGE_RULES = ['nullable', 'integer', 'min:1', 'max:100000'];
 
     public const APPROVAL_META = 'anthropic/requiresUserInteraction';
 
@@ -109,6 +116,15 @@ abstract class CampaignsTool extends Tool
     {
         if (! $this->shouldRegister()) {
             return static::refused('This needs '.$this->rights()->value.' rights on the campaigns server.');
+        }
+
+        // Some clients send "" for every optional argument they leave out,
+        // and laravel/mcp reads the raw body, past Laravel's
+        // ConvertEmptyStringsToNull: a blank counts as not given.
+        if (app()->bound('mcp.request')) {
+            /** @var Request $request */
+            $request = app('mcp.request');
+            $request->setArguments(array_map(fn (mixed $value): mixed => $value === '' ? null : $value, $request->all()));
         }
 
         try {

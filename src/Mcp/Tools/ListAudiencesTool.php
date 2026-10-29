@@ -21,6 +21,7 @@ use Mozex\Campaigns\Facades\Campaigns;
 use Mozex\Campaigns\Models\SavedAudience;
 use Mozex\Campaigns\Reports\CampaignSummary;
 use Mozex\Campaigns\Support\ShownText;
+use Throwable;
 
 #[Name('list_audiences')]
 #[Title('List audiences')]
@@ -75,7 +76,7 @@ class ListAudiencesTool extends CampaignsTool
     public function perform(Request $request): ResponseFactory
     {
         $input = $request->validate([
-            'page' => ['nullable', 'integer', 'min:1'],
+            'page' => static::PAGE_RULES,
         ]);
 
         $page = (int) ($input['page'] ?? 1);
@@ -97,12 +98,24 @@ class ListAudiencesTool extends CampaignsTool
                 'updated_at' => $audience->updated_at?->toIso8601String(),
             ]);
 
+        $described = [];
+
+        foreach ($shown as $name => $audience) {
+            // One audience whose description or parameters fail is reported
+            // and left out, as a broken resource is: the rest still answer.
+            try {
+                $described[] = [
+                    'name' => (string) $name,
+                    'description' => (string) ShownText::of($audience->description(), static::DESCRIPTION_LENGTH),
+                    'parameters' => static::parameters($audience),
+                ];
+            } catch (Throwable $exception) {
+                report($exception);
+            }
+        }
+
         return Response::structured([
-            'named' => array_map(fn (Audience $audience, int|string $name): array => [
-                'name' => (string) $name,
-                'description' => (string) ShownText::of($audience->description(), static::DESCRIPTION_LENGTH),
-                'parameters' => static::parameters($audience),
-            ], array_values($shown), array_keys($shown)),
+            'named' => $described,
             'named_total' => count($named),
             'saved' => $saved->values()->all(),
             'page' => $page,

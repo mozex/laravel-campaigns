@@ -79,7 +79,7 @@ class GetCheckResultsTool extends CampaignsTool
             'revision' => static::revisionRules(),
             'check' => ['nullable', 'string', 'in:'.implode(',', PreSendChecks::CHECKS)],
             'locale' => ['nullable', 'string', 'max:35'],
-            'page' => ['nullable', 'integer', 'min:1'],
+            'page' => static::PAGE_RULES,
         ]);
 
         $revision = static::revision(static::owner($input), isset($input['revision']) ? (int) $input['revision'] : null);

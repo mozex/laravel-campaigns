@@ -52,7 +52,7 @@ class ListListsTool extends CampaignsTool
     public function perform(Request $request): ResponseFactory
     {
         $input = $request->validate([
-            'page' => ['nullable', 'integer', 'min:1'],
+            'page' => static::PAGE_RULES,
             'include_archived' => ['nullable', 'boolean'],
         ]);
 

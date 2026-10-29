@@ -21,7 +21,7 @@ use Mozex\Campaigns\Models\Campaign;
 #[Title('Speed a campaign up')]
 #[Description('Changes a campaign\'s pace (before it starts, while scheduled, sending or paused) in any way, faster included, once the person you work for has approved the new pace knowing the sending domain\'s standing (get_overview) and the campaign\'s numbers so far. Only the values given change. Refused while sending is switched off.')]
 #[IsIdempotent]
-#[IsOpenWorld(false)]
+#[IsOpenWorld]
 #[IsDestructive]
 class SpeedUpCampaignTool extends CampaignsTool
 {

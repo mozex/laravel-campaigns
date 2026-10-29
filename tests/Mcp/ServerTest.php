@@ -113,7 +113,7 @@ it('refuses everything to a person with neither ability', function (): void {
     foreach (['initialize', 'tools/list', 'resources/list'] as $method) {
         mcp($method, token: 'person-none')
             ->assertForbidden()
-            ->assertJsonPath('message', 'This account may not use the campaigns server.');
+            ->assertJsonPath('message', 'This account may not use the campaigns server: the app grants it through the campaigns.read or campaigns.full gate ability.');
     }
 
     mcp('tools/call', ['name' => 'get_overview', 'arguments' => (object) []], 'person-none')->assertForbidden();

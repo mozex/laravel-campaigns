@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\Sequence;
+use Illuminate\Support\Facades\Exceptions;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use Mozex\Campaigns\Actions\CreateCampaignAction;
@@ -35,6 +36,17 @@ use Mozex\Campaigns\Reports\CampaignSummary;
 use Mozex\Campaigns\Tests\Fixtures\MembersInCountry;
 use Mozex\Campaigns\Tests\Fixtures\RecentContacts;
 use Mozex\Campaigns\Tests\Fixtures\WordyAudience;
+
+/**
+ * An app's named audience whose description throws.
+ */
+class BrokenAudience extends RecentContacts
+{
+    public function description(): string
+    {
+        throw new RuntimeException('The audience failed.');
+    }
+}
 
 beforeEach(function (): void {
     Storage::fake('local');
@@ -280,11 +292,15 @@ describe('reading campaigns', function (): void {
 describe('audiences', function (): void {
     it('lists the named audiences with their parameters\' schema, and the saved ones a page at a time', function (string $driver): void {
         useDatabase($driver);
-        // A name PHP keeps as an integer key, which must come back as written.
-        config(['campaigns.audiences' => ['in-country' => MembersInCountry::class, 'recent' => RecentContacts::class, '7' => RecentContacts::class]]);
+        // A name PHP keeps as an integer key, which must come back as
+        // written, and one audience that fails, left out and reported.
+        config(['campaigns.audiences' => ['in-country' => MembersInCountry::class, 'recent' => RecentContacts::class, '7' => RecentContacts::class, 'broken' => BrokenAudience::class]]);
         app(SaveAudienceAction::class)->execute('english', 'English readers', ['locales' => ['en']], 'Everyone reading in English');
+        Exceptions::fake();
 
         $listed = structuredContent(agent(Rights::Read)->tool(ListAudiencesTool::class)->assertOk());
+
+        Exceptions::assertReported(fn (RuntimeException $exception): bool => $exception->getMessage() === 'The audience failed.');
 
         expect($listed['named'])->toEqual([
             ['name' => 'in-country', 'description' => 'Members who live in a country.', 'parameters' => [
@@ -301,7 +317,7 @@ describe('audiences', function (): void {
                 'properties' => ['days' => ['type' => 'integer', 'description' => 'How many days back.']],
             ]],
         ])
-            ->and($listed['named_total'])->toBe(3)
+            ->and($listed['named_total'])->toBe(4)
             ->and($listed['saved'][0])->toMatchArray(['key' => 'english', 'name' => 'English readers', 'description' => 'Everyone reading in English', 'filters' => '{"locales":["en"]}'])
             ->and($listed['total'])->toBe(1);
     })->with('databases');

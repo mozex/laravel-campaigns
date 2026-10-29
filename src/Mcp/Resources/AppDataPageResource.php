@@ -31,6 +31,8 @@ class AppDataPageResource extends CampaignsResource implements HasUriTemplate
     {
         $page = $request->get('page');
 
-        return AppDataResource::page((string) $request->get('name'), is_numeric($page) ? max(1, (int) $page) : 1);
+        // Clamped as the tools' page rules hold a page, so a huge one never
+        // overflows the app's paginator.
+        return AppDataResource::page((string) $request->get('name'), is_numeric($page) ? min(100000, max(1, (int) $page)) : 1);
     }
 }

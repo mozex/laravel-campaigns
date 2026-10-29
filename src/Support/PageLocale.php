@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Mozex\Campaigns\Support;
 
+use Mozex\Campaigns\Content\Locales;
+
 /**
  * The language a page or email for a subscriber is shown in, and which way
  * its text runs.
@@ -24,10 +26,15 @@ class PageLocale
     public static function pick(?string ...$locales): string
     {
         foreach ($locales as $locale) {
-            if ($locale !== null
-                && preg_match('/^[A-Za-z]{2,3}([_-][A-Za-z0-9]{2,8})*\z/', $locale) === 1
-                && app('translator')->hasForLocale('campaigns::pages.subscribed.heading', $locale)) {
-                return $locale;
+            if ($locale === null || preg_match('/^[A-Za-z]{2,3}([_-][A-Za-z0-9]{2,8})*\z/', $locale) !== 1) {
+                continue;
+            }
+
+            // pt_BR takes the app's pt strings before the app's own language.
+            foreach (array_unique([$locale, Locales::language($locale)]) as $candidate) {
+                if (app('translator')->hasForLocale('campaigns::pages.subscribed.heading', $candidate)) {
+                    return $candidate;
+                }
             }
         }
 

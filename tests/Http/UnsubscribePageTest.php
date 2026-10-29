@@ -70,6 +70,20 @@ it('opens the page without changing anything, so link scanners can\'t unsubscrib
     }
 })->with(['GET', 'HEAD']);
 
+it('unsubscribes whatever bytes the browser string holds', function (string $driver): void {
+    useDatabase($driver);
+    [$message, $token] = sentMessage();
+
+    // Not UTF-8, with a NUL: MySQL and PostgreSQL refuse both, which would
+    // roll the unsubscribe back.
+    $this->withHeader('User-Agent', "Mozilla\xE9\0".str_repeat('x', 2000))
+        ->post("/campaigns/u/{$token}", ['List-Unsubscribe' => 'One-Click'])
+        ->assertOk();
+
+    expect($message->subscriber?->fresh()?->opted_out_at)->not->toBeNull()
+        ->and(ConsentRecord::query()->sole()->user_agent)->toBe('Mozilla?'.str_repeat('x', 992));
+})->with('databases');
+
 it('unsubscribes on a mail app\'s one-click POST, with CSRF protection on and no session', function (): void {
     // The app's web group (its cookies need a key), its CSRF check (renamed
     // in Laravel 13) checking even in tests.

@@ -49,6 +49,24 @@ class BrokenDirectory implements AgentResource
     }
 }
 
+/**
+ * An app's resource with a description of whatever length a test sets.
+ */
+class WordyDirectory implements AgentResource
+{
+    public static string $description = '';
+
+    public function description(): string
+    {
+        return static::$description;
+    }
+
+    public function read(int $page): Paginator
+    {
+        return new SimplePaginator([], 10, $page);
+    }
+}
+
 beforeEach(function (): void {
     config(['campaigns.resources' => ['members' => MemberDirectory::class, 'oversized' => OversizedDirectory::class]]);
 });
@@ -107,6 +125,12 @@ it('gives the guide and the app\'s resources to a reader, and a resource a page 
 
     agent(Rights::Read)->tool(GetGuideTool::class, ['resource' => 'nope'])->assertHasErrors(['nope']);
     agent(Rights::Read)->tool(GetGuideTool::class, ['resource' => 'members', 'page' => 0])->assertHasErrors(['page']);
+    // A page so large its offset would overflow is refused, not a crash.
+    agent(Rights::Read)->tool(GetGuideTool::class, ['resource' => 'members', 'page' => PHP_INT_MAX])->assertHasErrors(['page']);
+
+    // A client that sends "" for an argument it leaves out gets the guide.
+    expect(structuredContent(agent(Rights::Read)->tool(GetGuideTool::class, ['resource' => '', 'page' => ''])->assertOk())['guide'])
+        ->toBe(GuideResource::text());
 });
 
 it('leaves out and reports a resource whose description fails, the guide still answering', function (): void {
@@ -128,6 +152,27 @@ it('refuses and reports a resource page longer than an answer may be', function 
 
     Exceptions::assertReported(fn (CampaignsException $exception): bool => str_contains($exception->getMessage(), 'over the limit of '.CampaignsTool::RESULT_LIMIT));
 });
+
+it('keeps the guide beside the most resources it names under the answer limit', function (string $costly): void {
+    // Resource names are the app's own config keys, so they stay plain; a
+    // description is the app's text, shown cut, so it is filled with what
+    // costs most as JSON.
+    WordyDirectory::$description = str_repeat($costly, 1000);
+    $resources = [];
+
+    foreach (range(1, GetGuideTool::RESOURCES + 5) as $n) {
+        $resources[str_pad((string) $n, 100, 'r')] = WordyDirectory::class;
+    }
+
+    config(['campaigns.resources' => $resources]);
+
+    $response = agent(Rights::Read)->tool(GetGuideTool::class)->assertOk();
+    $guide = structuredContent($response);
+
+    expect($guide['resources'])->toHaveCount(GetGuideTool::RESOURCES)
+        ->and($guide['resources_total'])->toBe(GetGuideTool::RESOURCES + 5)
+        ->and(mb_strlen((string) json_encode($guide, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)))->toBeLessThan(CampaignsTool::RESULT_LIMIT);
+})->with('costly characters');
 
 it('names in its guidance only tools the server has, and every tool in its guide', function (): void {
     $root = dirname(__DIR__, 2).'/resources/mcp/';

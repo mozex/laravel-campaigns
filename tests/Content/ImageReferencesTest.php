@@ -12,7 +12,7 @@ it('finds relative image paths and swaps them in place, leaving everything else 
         <img src="images/a.png" alt="A">
         <img src='./images/a.png' alt="B" data-src="images/a.png">
         <img src=images/a.png alt=C>
-        <img srcset="images/a.png 1x, https://cdn.example.com/b.png 2x" src="https://cdn.example.com/b.png" alt="D">
+        <img srcset="images/a.png 1x, https://cdn.example.com/w_400,h_300/b.png 2x" src="https://cdn.example.com/b.png" alt="D">
         <table><tr><td background="images/bg.png" style="background-image: url(&quot;images/bg.png&quot;)">x</td></tr></table>
         <img src="#top" alt=""><img src="data:image/gif;base64,R0lGOD" alt=""><img src="//cdn.example.com/c.png" alt="">
         </body></html>
@@ -32,7 +32,7 @@ it('finds relative image paths and swaps them in place, leaving everything else 
             <img src="https://assets.example.com/a.png" alt="A">
             <img src='https://assets.example.com/a.png' alt="B" data-src="images/a.png">
             <img src=https://assets.example.com/a.png alt=C>
-            <img srcset="https://assets.example.com/a.png 1x, https://cdn.example.com/b.png 2x" src="https://cdn.example.com/b.png" alt="D">
+            <img srcset="https://assets.example.com/a.png 1x, https://cdn.example.com/w_400,h_300/b.png 2x" src="https://cdn.example.com/b.png" alt="D">
             <table><tr><td background="https://assets.example.com/bg.png" style="background-image: url(&quot;https://assets.example.com/bg.png&quot;)">x</td></tr></table>
             <img src="#top" alt=""><img src="data:image/gif;base64,R0lGOD" alt=""><img src="//cdn.example.com/c.png" alt="">
             </body></html>

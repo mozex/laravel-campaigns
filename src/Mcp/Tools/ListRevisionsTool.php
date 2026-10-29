@@ -56,7 +56,7 @@ class ListRevisionsTool extends CampaignsTool
     {
         $input = $request->validate([
             ...static::ownerRules(),
-            'page' => ['nullable', 'integer', 'min:1'],
+            'page' => static::PAGE_RULES,
         ]);
 
         $owner = static::owner($input);

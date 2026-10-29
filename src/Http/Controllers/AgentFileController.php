@@ -15,6 +15,7 @@ use Mozex\Campaigns\Models\Revision;
 use Mozex\Campaigns\Models\Upload;
 use Mozex\Campaigns\Uploads\RevisionArchive;
 use Symfony\Component\HttpFoundation\Response;
+use Throwable;
 
 /**
  * The signed links the MCP tools hand an agent (Support\Links): the upload
@@ -45,6 +46,10 @@ class AgentFileController
             );
         } catch (CampaignsException $exception) {
             return static::refused($exception);
+        } catch (Throwable $exception) {
+            // A disk that throws (its 'throw' option on) is this side's
+            // failure, answered here like the rest, never by the app's handler.
+            return static::failed($exception);
         }
 
         return response()->json([
@@ -69,6 +74,8 @@ class AgentFileController
             $bytes = $zip ? RevisionArchive::zip($found) : RevisionArchive::html($found);
         } catch (CampaignsException $exception) {
             return static::refused($exception);
+        } catch (Throwable $exception) {
+            return static::failed($exception);
         }
 
         // Always an attachment, never a page: the HTML is what an agent
@@ -122,5 +129,12 @@ class AgentFileController
         }
 
         return response()->json(['error' => $exception->getMessage()], $status);
+    }
+
+    protected static function failed(Throwable $exception): JsonResponse
+    {
+        report($exception);
+
+        return response()->json(['error' => 'The server failed to handle the file. Try again later.'], 500);
     }
 }

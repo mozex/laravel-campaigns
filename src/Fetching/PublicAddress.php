@@ -21,6 +21,9 @@ class PublicAddress
         'ff00::/8',
         '64:ff9b::/96',
         '64:ff9b:1::/48',
+        // IPv4-translated addresses (SIIT) and the old site-local range.
+        '::ffff:0:0:0/96',
+        'fec0::/10',
     ];
 
     public static function isPublic(string $address): bool

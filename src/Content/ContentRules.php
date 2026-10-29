@@ -73,7 +73,9 @@ class ContentRules
             $prepared[$locale] = $this->prepareOne($content, $problems);
         }
 
-        if ($prepared !== [] && ! isset($prepared[Locales::default()])) {
+        // However a version's locale is written (EN, en-US against en_us),
+        // as every other locale lookup compares them.
+        if ($prepared !== [] && ! in_array(Locales::normalize(Locales::default()), array_map(Locales::normalize(...), array_keys($prepared)), true)) {
             $problems[] = 'There is no '.Locales::default().' version: every email holds the default language, which recipients whose language it lacks get.';
         }
 
@@ -143,6 +145,13 @@ class ContentRules
 
                 static::notPlaceholders($locale, $part, [...$unknown, ...Placeholders::malformed($value)], $problems);
             }
+        }
+
+        // A tool that re-serializes HTML through libxml (a CSS inliner, say)
+        // percent-encodes the braces in href and src, so the placeholder
+        // would go out as a dead link.
+        if (preg_match_all('/%7B%7B\s*([A-Za-z_][A-Za-z0-9_]*)[^<>"\'\s]*?%7D%7D/i', $content->html, $encoded) > 0) {
+            $problems[] = "{$locale}: the HTML holds ".implode(', ', array_unique($encoded[0])).', a placeholder whose braces a tool percent-encoded; write it as {{'.$encoded[1][0].'}}.';
         }
 
         foreach (['HTML' => $content->html, 'plain text' => $text] as $part => $value) {

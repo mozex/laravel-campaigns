@@ -140,7 +140,7 @@
                 <ul class="checks">
                     @foreach ($failed as $check)
                         <li>
-                            <strong>{{ $check['check'] }}</strong>@if ($check['locale'] !== null) ({{ $check['locale'] }})@endif: {{ $check['message'] }}@if ($check['items'] > 0) ({{ __('campaigns::pages.preview.check_items', ['count' => $check['items']]) }})@endif
+                            <strong>{{ $check['check'] }}</strong>@if ($check['locale'] !== null) ({{ $check['locale'] }})@endif: {{ $check['message'] }}@if ($check['items'] > 0) ({{ trans_choice('campaigns::pages.preview.check_items', $check['items']) }})@endif
                         </li>
                     @endforeach
                 </ul>

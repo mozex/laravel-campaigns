@@ -50,7 +50,7 @@ function newsletterZip(): string
             {{footer}}</body></html>
             HTML,
         'email.txt' => "March news\n{{unsubscribe_url}}",
-        'translations/fr.html' => '<html><body><img src="../images/logo big.png" alt="Logo"><td background="images/bg.gif"></td>{{footer}}</body></html>',
+        'translations/fr.html' => '<html><body><img src="../images/Logo Big.png" alt="Logo"><td background="images/bg.gif"></td>{{footer}}</body></html>',
         'images/logo big.png' => testImage('png'),
         'images/bg.gif' => testImage('gif'),
         'images/unused.webp' => testImage('webp'),
@@ -67,8 +67,9 @@ describe('saving an uploaded email', function (): void {
         $saved = app(AddUploadedRevisionAction::class)->execute(
             owner: $template,
             uploadId: $uploadId,
-            subjects: ['fr' => 'Les nouvelles de mars'],
-            preheaders: ['en' => 'What changed in March'],
+            // Written as an agent may write them: they still reach fr and en.
+            subjects: ['FR' => 'Les nouvelles de mars'],
+            preheaders: ['En' => 'What changed in March'],
             note: 'From the zip',
             author: 'laptop',
         );

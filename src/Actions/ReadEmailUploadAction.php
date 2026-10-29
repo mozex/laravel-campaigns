@@ -108,11 +108,14 @@ class ReadEmailUploadAction
         // file each one names.
         $references = [];
 
-        foreach ([...array_keys($subjects), ...array_keys($preheaders)] as $locale) {
-            if (! isset($locales[$locale])) {
-                $problems[] = "A subject or preheader was given for {$locale}, which the upload has no version of.";
-            }
+        $spelled = [];
+
+        foreach (array_keys($locales) as $locale) {
+            $spelled[Locales::normalize($locale)] = $locale;
         }
+
+        $subjects = $this->byArchiveLocale($subjects, $spelled, $problems);
+        $preheaders = $this->byArchiveLocale($preheaders, $spelled, $problems);
 
         foreach ($locales as $locale => $files) {
             $directory = dirname($files['html']) === '.' ? '' : dirname($files['html']);
@@ -206,9 +209,48 @@ class ReadEmailUploadAction
             if (isset($images[$normalized])) {
                 return $normalized;
             }
+
+            // A reference whose case differs still finds its file, as the
+            // author's own preview on Windows or macOS did; the archive
+            // refuses two names that differ only by case, so it is one file.
+            foreach (array_keys($images) as $image) {
+                if (strcasecmp($image, $normalized) === 0) {
+                    return $image;
+                }
+            }
         }
 
         return null;
+    }
+
+    /**
+     * Subjects or preheaders keyed by the archive's own spelling of each
+     * locale, however they were given (EN, pt-br), as every other locale
+     * lookup compares them; one naming a version the upload lacks is a
+     * problem.
+     *
+     * @param  array<string, string>  $given
+     * @param  array<string, string>  $spelled  the archive's locales by their normalized form
+     * @param  list<string>  $problems
+     * @return array<string, string>
+     */
+    protected function byArchiveLocale(array $given, array $spelled, array &$problems): array
+    {
+        $keyed = [];
+
+        foreach ($given as $locale => $value) {
+            $archived = $spelled[Locales::normalize((string) $locale)] ?? null;
+
+            if ($archived === null) {
+                $problems[] = "A subject or preheader was given for {$locale}, which the upload has no version of.";
+
+                continue;
+            }
+
+            $keyed[$archived] = $value;
+        }
+
+        return $keyed;
     }
 
     protected function normalize(string $path): string

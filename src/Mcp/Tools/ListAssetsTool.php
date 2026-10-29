@@ -54,7 +54,7 @@ class ListAssetsTool extends CampaignsTool
     {
         $input = $request->validate([
             'search' => ['nullable', 'string', 'max:2048'],
-            'page' => ['nullable', 'integer', 'min:1'],
+            'page' => static::PAGE_RULES,
         ]);
 
         $page = (int) ($input['page'] ?? 1);

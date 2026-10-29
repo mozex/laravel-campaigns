@@ -44,6 +44,8 @@ describe('upload links', function (): void {
 
         agent($rights, $person)->tool(CreateUploadLinkTool::class, ['purpose' => 'video'])->assertHasErrors();
         agent($rights, $person)->tool(CreateUploadLinkTool::class, ['purpose' => 'email', 'file_name' => "it's.zip"])->assertHasErrors(['file name']);
+        // PowerShell ends a quoted string at a typographic quote as well.
+        agent($rights, $person)->tool(CreateUploadLinkTool::class, ['purpose' => 'email', 'file_name' => "Ann\u{2019}s.zip"])->assertHasErrors(['file name']);
     })->with([
         'a token' => [Rights::Full, false, 'laptop'],
         'a person' => [Rights::Full, true, 'Ann Agent'],

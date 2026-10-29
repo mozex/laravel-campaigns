@@ -87,16 +87,15 @@ class ImageReferences
         $changed = false;
         $candidates = [];
 
-        foreach (array_filter(array_map('trim', explode(',', $srcset)), fn (string $candidate): bool => $candidate !== '') as $candidate) {
-            $parts = preg_split('/\s+/', $candidate, 2) ?: [$candidate];
-            $new = $replace($parts[0]);
+        foreach (Html::srcset($srcset) as ['url' => $url, 'descriptor' => $descriptor]) {
+            $new = $replace($url);
 
             if ($new !== null) {
                 $changed = true;
-                $parts[0] = $new;
+                $url = $new;
             }
 
-            $candidates[] = implode(' ', $parts);
+            $candidates[] = trim("{$url} {$descriptor}");
         }
 
         return $changed ? implode(', ', $candidates) : null;
