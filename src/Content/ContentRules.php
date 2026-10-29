@@ -177,7 +177,11 @@ class ContentRules
             textGenerated: $given === null,
         );
 
-        $size = strlen($this->renderer->render($prepared, Personalization::sample($locale))->html);
+        // Refused before it is rendered, so an upload of up to a megabyte
+        // never costs a render the limit refuses anyway.
+        $size = strlen($content->html) > static::MAX_HTML_BYTES
+            ? strlen($content->html)
+            : strlen($this->renderer->render($prepared, Personalization::sample($locale))->html);
 
         if ($size > static::MAX_HTML_BYTES) {
             $problems[] = "{$locale}: the HTML is ".round($size / 1024).' KB once filled in, over the 90 KB limit (Gmail clips an email past 102 KB, and click tracking lengthens every link).';

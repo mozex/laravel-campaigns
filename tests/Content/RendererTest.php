@@ -121,7 +121,25 @@ describe('the preheader', function (): void {
         'a head\'s tags without a head' => ['<!DOCTYPE html><meta charset="utf-8"><style>td{}</style><table></table>', '<!DOCTYPE html><meta charset="utf-8"><style>td{}</style>', '<table></table>'],
         'an Outlook comment in a head never closed' => ['<html><head><!--[if mso]><xml><o:x/></xml><![endif]--><table></table>', '<html><head><!--[if mso]><xml><o:x/></xml><![endif]-->', '<table></table>'],
         'text first' => ['Hi {{first_name}},<p>Body</p>', '', 'Hi Ann,<p>Body</p>'],
+        'unclosed elements before a closed head' => ['<!DOCTYPE html><html><head><title>Hi<style>p{}</head><table></table>', '<!DOCTYPE html><html><head><title>Hi<style>p{}</head>', '<table></table>'],
+        'a style that closes inside a comment' => ['<html><head><style>p{}<!-- </style> --></head><table></table>', '<html><head><style>p{}<!-- </style> --></head>', '<table></table>'],
     ]);
+
+    it('finds the body with no pattern over the whole email, so unclosed tags never run the scan out', function (): void {
+        // A lazy pattern backtracked across the rest of the email for each
+        // unclosed opener; past PCRE's limit it scanned nothing and the
+        // block went first, before the doctype.
+        $limit = (string) ini_get('pcre.backtrack_limit');
+        ini_set('pcre.backtrack_limit', '1000');
+
+        try {
+            $email = renderEmail(new EmailContent(locale: 'en', subject: 'Hi', html: '<!DOCTYPE html><html><body>'.str_repeat('<style>x', 300).'<p>Body</p></body></html>', preheader: 'Pre'));
+        } finally {
+            ini_set('pcre.backtrack_limit', $limit);
+        }
+
+        expect($email->html)->toStartWith('<!DOCTYPE html><html><body><div style="display: none;');
+    });
 });
 
 describe('the footer', function (): void {

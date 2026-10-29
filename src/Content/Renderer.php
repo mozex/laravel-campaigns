@@ -110,30 +110,123 @@ class Renderer
      */
     protected static function bodyStart(string $html): int
     {
-        $blank = fn (array $match): string => str_repeat(' ', strlen($match[0]));
-        $scanned = (string) preg_replace_callback('/<!--.*?-->/s', $blank, $html);
-        $scanned = (string) preg_replace_callback('/<(title|style|script|noscript|template)\b[^>]*>.*?<\/\1\s*>/is', $blank, $scanned);
+        $scanned = static::blanked($html);
 
-        $after = fn (string $pattern, int $from = 0): ?int => preg_match($pattern, $scanned, $match, PREG_OFFSET_CAPTURE, $from) === 1
-            ? $match[0][1] + strlen($match[0][0])
-            : null;
-
-        $start = $after('/<body\b[^>]*>/i') ?? $after('/<\/head\s*>/i');
+        $start = static::tagEnd($scanned, 'body') ?? static::tagEnd($scanned, '/head');
 
         if ($start !== null) {
             return $start;
         }
 
-        $from = $after('/<head\b[^>]*>/i')
-            ?? $after('/<html\b[^>]*>/i')
-            ?? $after('/^(?:\xEF\xBB\xBF)?\s*<!doctype\b[^>]*>/i')
-            ?? 0;
+        $from = static::tagEnd($scanned, 'head')
+            ?? static::tagEnd($scanned, 'html')
+            ?? (preg_match('/^(?:\xEF\xBB\xBF)?\s*<!doctype\b[^>]*>/i', $scanned, $doctype) === 1 ? strlen($doctype[0]) : 0);
 
         // What a head may hold without starting the body, the elements with
         // text already blanked.
         preg_match('/\G(?:\s+|<(?:meta|link|base)\b[^>]*>)*/i', $scanned, $headStuff, 0, $from);
 
         return $from + strlen($headStuff[0] ?? '');
+    }
+
+    /**
+     * The HTML with its comments and the text of its title, style, script,
+     * noscript and template elements blanked to spaces, its length kept.
+     * Scanned forward with offsets and plain string searches, never one
+     * lazy pattern over the document: a pattern with a backreference
+     * backtracks across the rest of the email for every opener left
+     * unclosed, which takes minutes for an email of unclosed <style> tags or
+     * runs out of PCRE's backtrack limit, leaving nothing blanked. An opener
+     * with no closer after it blanks nothing, as before.
+     */
+    protected static function blanked(string $html): string
+    {
+        $scanned = $html;
+        $offset = 0;
+        $unclosed = [];
+
+        while (preg_match('/<!--|<(title|style|script|noscript|template)\b/i', $scanned, $match, PREG_OFFSET_CAPTURE, $offset) === 1) {
+            $start = $match[0][1];
+            $name = isset($match[1]) ? strtolower($match[1][0]) : '!--';
+            $offset = $start + strlen($match[0][0]);
+
+            // No closer after one opener means none after any later one.
+            if (isset($unclosed[$name])) {
+                continue;
+            }
+
+            $end = $name === '!--' ? static::commentEnd($scanned, $offset) : static::elementEnd($scanned, $name, $offset);
+
+            if ($end === null) {
+                $unclosed[$name] = true;
+
+                continue;
+            }
+
+            $scanned = substr_replace($scanned, str_repeat(' ', $end - $start), $start, $end - $start);
+            $offset = $end;
+        }
+
+        return $scanned;
+    }
+
+    protected static function commentEnd(string $html, int $from): ?int
+    {
+        $end = strpos($html, '-->', $from);
+
+        return $end === false ? null : $end + 3;
+    }
+
+    /**
+     * Where an element's closing tag ends, from inside its opening tag.
+     */
+    protected static function elementEnd(string $html, string $name, int $from): ?int
+    {
+        $open = strpos($html, '>', $from);
+
+        if ($open === false) {
+            return null;
+        }
+
+        for ($at = $open; ($close = stripos($html, '</'.$name, $at)) !== false; $at = $close + 2) {
+            if (preg_match('/\G\s*>/', $html, $match, 0, $close + 2 + strlen($name)) === 1) {
+                return $close + 2 + strlen($name) + strlen($match[0]);
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Where the first <name ...> tag ends, or </name> for a name starting
+     * with a slash, found with plain string searches: a pattern's [^>]*
+     * runs to the end of the email for every opener with no > after it.
+     */
+    protected static function tagEnd(string $html, string $name): ?int
+    {
+        $tag = '<'.$name;
+        $closing = str_starts_with($name, '/');
+
+        for ($at = 0; ($start = stripos($html, $tag, $at)) !== false; $at = $start + 1) {
+            $after = $start + strlen($tag);
+
+            if ($closing) {
+                if (preg_match('/\G\s*>/', $html, $match, 0, $after) === 1) {
+                    return $after + strlen($match[0]);
+                }
+
+                continue;
+            }
+
+            // A word boundary, as <body\b: <body> or <body ...>, never <bodyx>.
+            if (preg_match('/\G\w/', $html, $match, 0, $after) !== 1) {
+                $end = strpos($html, '>', $after);
+
+                return $end === false ? null : $end + 1;
+            }
+        }
+
+        return null;
     }
 
     /**

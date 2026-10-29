@@ -5,6 +5,7 @@ declare(strict_types=1);
 use Mozex\Campaigns\CampaignsException;
 use Mozex\Campaigns\Content\ContentRules;
 use Mozex\Campaigns\Content\EmailContent;
+use Mozex\Campaigns\Content\Renderer;
 use Mozex\Campaigns\Templates\StarterTemplates;
 
 /**
@@ -140,6 +141,13 @@ it('measures the 90 KB limit on the email as a recipient gets it', function (): 
     expect(strlen($html))->toBeLessThan(90 * 1024)
         ->and(contentProblems([validContent(html: $html)]))->toContain('en: the HTML is 9')
         ->and(contentProblems([validContent(html: '<p>'.str_repeat('x', 80 * 1024).'</p>{{footer}}')]))->toBe('');
+});
+
+it('refuses HTML over the limit as written without rendering it', function (): void {
+    $this->mock(Renderer::class)->shouldNotReceive('render');
+
+    expect(contentProblems([validContent(html: '<p>'.str_repeat('x', 1024 * 1024).'</p>{{footer}}', preheader: 'Pre')]))
+        ->toContain('en: the HTML is 1024 KB');
 });
 
 it('lets every starter template through, whatever the default language', function (string $locale): void {
