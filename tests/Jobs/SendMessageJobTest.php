@@ -6,17 +6,21 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
+use Mozex\Campaigns\Actions\ApplyFeedbackAction;
 use Mozex\Campaigns\Actions\PumpCampaignsAction;
 use Mozex\Campaigns\Contracts\CampaignProvider;
 use Mozex\Campaigns\Enums\BlockReason;
 use Mozex\Campaigns\Enums\CampaignStatus;
+use Mozex\Campaigns\Enums\FeedbackType;
 use Mozex\Campaigns\Enums\MessageStatus;
 use Mozex\Campaigns\Enums\SendFailure;
 use Mozex\Campaigns\Enums\SubscriptionStatus;
 use Mozex\Campaigns\Events\CampaignPausedEvent;
+use Mozex\Campaigns\Jobs\ProcessFeedbackJob;
 use Mozex\Campaigns\Jobs\SendMessageJob;
 use Mozex\Campaigns\Models\Campaign;
 use Mozex\Campaigns\Models\CampaignMessage;
+use Mozex\Campaigns\Models\ProviderEvent;
 use Mozex\Campaigns\Models\Subscriber;
 use Mozex\Campaigns\Sending\FakeProvider;
 use Mozex\Campaigns\Sending\OutgoingMessage;
@@ -214,6 +218,40 @@ it('marks a message sent that was taken for unknown while its send went on', fun
     expect(CampaignMessage::query()->sole())
         ->status->toBe(MessageStatus::Sent)
         ->failure_reason->toBeNull();
+});
+
+it('keeps the provider\'s id on a message its events moved on before its send job finished', function (): void {
+    sendingCampaign(1);
+    [$job] = claimedJobs();
+    $provider = new class extends FakeProvider
+    {
+        public ?string $id = null;
+
+        public function send(OutgoingMessage $message): SendReceipt
+        {
+            $receipt = parent::send($message);
+            $this->id = $receipt->providerMessageId;
+
+            // Delivered and applied while the answer was on its way back,
+            // reported by the message's uuid alone.
+            $event = ProviderEvent::factory()->create([
+                'message_id' => CampaignMessage::query()->where('uuid', $message->uuid)->value('id'),
+                'type' => FeedbackType::Delivered,
+            ]);
+            (new ProcessFeedbackJob($event->id))->handle(app(ApplyFeedbackAction::class));
+
+            return $receipt;
+        }
+    };
+    app()->instance(CampaignProvider::class, $provider);
+
+    runJob($job);
+
+    expect(CampaignMessage::query()->sole())
+        ->status->toBe(MessageStatus::Delivered)
+        ->provider_message_id->toBe($provider->id)
+        ->sent_at->not->toBeNull()
+        ->and($provider->id)->not->toBeNull();
 });
 
 it('settles a message whose job died: waiting again before its send, unknown during it', function (): void {

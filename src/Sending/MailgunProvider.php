@@ -15,6 +15,7 @@ use Illuminate\Support\Facades\Mail;
 use LogicException;
 use Mozex\Campaigns\CampaignsException;
 use Mozex\Campaigns\Contracts\CampaignProvider;
+use Mozex\Campaigns\Enums\DeliveryFailure;
 use Mozex\Campaigns\Enums\FeedbackType;
 use Mozex\Campaigns\Enums\SendFailure;
 use Mozex\Campaigns\Mail\CampaignEmail;
@@ -68,6 +69,18 @@ class MailgunProvider implements CampaignProvider
         'unsubscribed' => FeedbackType::Unsubscribed,
         'complained' => FeedbackType::Complained,
     ];
+
+    /**
+     * Mailgun's own failure codes that say nothing about the address: 611,
+     * its internal connection limit reached.
+     */
+    protected const NOT_THE_ADDRESS = [611];
+
+    /**
+     * Mailgun's code for a recipient whose mail servers it couldn't connect
+     * to, which counts as a soft bounce.
+     */
+    protected const UNREACHABLE = 612;
 
     public function send(OutgoingMessage $message): SendReceipt
     {
@@ -326,6 +339,10 @@ class MailgunProvider implements CampaignProvider
         // Without the angle brackets, as the package stores the id it got
         // when Mailgun took the message.
         $messageId = $this->string(trim((string) $this->string(data_get($event, 'message.headers.message-id')), '<>'));
+        $severity = $this->string($event['severity'] ?? null);
+        $reason = $this->string($event['reason'] ?? null);
+        $code = is_numeric($status['code'] ?? null) ? (int) $status['code'] : null;
+        $bounceType = $this->string($status['bounce-type'] ?? null);
 
         return new Feedback(
             providerEventId: $id,
@@ -335,16 +352,17 @@ class MailgunProvider implements CampaignProvider
             messageUuid: $this->string($variables[OutgoingMessage::MESSAGE_KEY] ?? null),
             testSendUuid: $this->string($variables[OutgoingMessage::TEST_KEY] ?? null),
             providerMessageId: $messageId,
-            severity: $this->string($event['severity'] ?? null),
-            reason: $this->string($event['reason'] ?? null),
-            code: is_numeric($status['code'] ?? null) ? (int) $status['code'] : null,
+            severity: $severity,
+            reason: $reason,
+            failure: $type === FeedbackType::Failed ? $this->deliveryFailure($severity, $reason, $code, $bounceType) : null,
+            code: $code,
             bot: $this->string($client['bot'] ?? null),
             url: $this->string($event['url'] ?? null, 4000),
             replayKey: $replayKey,
             payload: array_filter([
                 'delivery-status' => array_filter([
                     'attempt-no' => is_int($status['attempt-no'] ?? null) ? $status['attempt-no'] : null,
-                    'bounce-type' => $this->string($status['bounce-type'] ?? null),
+                    'bounce-type' => $bounceType,
                     'enhanced-code' => $this->string($status['enhanced-code'] ?? null),
                     'message' => is_string($status['message'] ?? null) ? SendFailed::scrub($status['message'], 255) : null,
                 ], fn (mixed $value): bool => $value !== null && $value !== ''),
@@ -361,6 +379,37 @@ class MailgunProvider implements CampaignProvider
                 'is-routed' => is_bool($flags['is-routed'] ?? null) ? $flags['is-routed'] : null,
             ], fn (mixed $value): bool => $value !== null && $value !== []),
         );
+    }
+
+    /**
+     * What a failed event means. Mailgun's suppressions come first: it sent
+     * nothing, since it holds the address on one of its lists. A block of the
+     * sender and code 611 say nothing about the address, still being tried or
+     * not. Anything else that isn't permanent is still being tried (a
+     * temporary failure, and Mailgun's internal codes, whose severity it
+     * doesn't document), so it counts for nothing yet: Mailgun reports a
+     * permanent "old" once it gives up. Of the permanent ones, 612 and a soft
+     * bounce type count one soft bounce, a hard bounce type is a hard bounce,
+     * and only then does the reason decide: "bounce" hard, "old" (given up
+     * after retries) soft. Mailgun suppresses only hard ones, so a bounce
+     * whose type is soft never blocks the address for good.
+     */
+    protected function deliveryFailure(?string $severity, ?string $reason, ?int $code, ?string $bounceType): DeliveryFailure
+    {
+        $permanent = $severity === 'permanent';
+
+        return match (true) {
+            $reason === 'suppress-bounce' => DeliveryFailure::SuppressedBounce,
+            $reason === 'suppress-complaint' => DeliveryFailure::SuppressedComplaint,
+            $reason === 'suppress-unsubscribe' => DeliveryFailure::SuppressedUnsubscribe,
+            $reason === 'espblock', in_array($code, static::NOT_THE_ADDRESS, true) => $permanent ? DeliveryFailure::SenderBlocked : DeliveryFailure::SenderDeferred,
+            ! $permanent => DeliveryFailure::Deferred,
+            $code === static::UNREACHABLE, $bounceType === 'soft' => DeliveryFailure::SoftBounce,
+            $bounceType === 'hard' => DeliveryFailure::HardBounce,
+            $reason === 'bounce' => DeliveryFailure::HardBounce,
+            $reason === 'old' => DeliveryFailure::SoftBounce,
+            default => DeliveryFailure::Other,
+        };
     }
 
     /**

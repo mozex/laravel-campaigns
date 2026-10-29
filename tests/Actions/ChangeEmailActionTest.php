@@ -23,7 +23,8 @@ function changeEmail(Subscriber $subscriber, string $email): Subscriber
 }
 
 it('changes the address in place when nothing has to stay with the old one', function (): void {
-    $subscriber = Subscriber::factory()->create(['email' => 'old@example.com']);
+    // The old address's soft bounces stay with it, as a block would.
+    $subscriber = Subscriber::factory()->create(['email' => 'old@example.com', 'soft_bounces' => 2]);
     Subscription::factory()->for($subscriber)->create();
     $pending = CampaignMessage::factory()->for($subscriber)->create();
     $sent = CampaignMessage::factory()->for($subscriber)->create(['status' => MessageStatus::Sent]);
@@ -31,7 +32,9 @@ it('changes the address in place when nothing has to stay with the old one', fun
     $result = changeEmail($subscriber, ' New@Example.com');
 
     expect($result->is($subscriber))->toBeTrue()
-        ->and(Subscriber::query()->sole()->email)->toBe('new@example.com')
+        ->and(Subscriber::query()->sole())
+        ->email->toBe('new@example.com')
+        ->soft_bounces->toBe(0)
         ->and(Subscription::query()->sole()->subscriber_id)->toBe($subscriber->id)
         ->and($pending->fresh()?->status)->toBe(MessageStatus::Skipped)
         ->and($sent->fresh()?->status)->toBe(MessageStatus::Sent);

@@ -2,11 +2,13 @@
 
 declare(strict_types=1);
 
+use Illuminate\Http\Request;
 use Illuminate\Mail\Events\MessageSending;
 use Illuminate\Mail\Events\MessageSent;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Exceptions;
 use Illuminate\Support\Facades\Mail;
+use Mozex\Campaigns\Enums\DeliveryFailure;
 use Mozex\Campaigns\Enums\SendFailure;
 use Mozex\Campaigns\Sending\MailgunProvider;
 use Mozex\Campaigns\Sending\OutgoingMessage;
@@ -256,3 +258,30 @@ it('reports a send it can\'t confirm as unclear: a listener that stopped it, or 
 
     Exceptions::assertReported(RuntimeException::class);
 });
+
+it('tells what a failure means: still being tried, a hard or soft bounce, a suppression, or nothing against the address', function (array $changes, ?DeliveryFailure $failure): void {
+    config()->set('campaigns.mailgun.webhook_signing_key', 'webhook-signing-key');
+    $request = Request::create('/', 'POST', server: ['CONTENT_TYPE' => 'application/json'], content: (string) json_encode(['event-data' => mailgunEvent('permanent-failure', $changes)]));
+
+    expect(app(MailgunProvider::class)->parseWebhook($request)[0]->failure)->toBe($failure);
+})->with([
+    // The documented sample: a permanent bounce, its type hard.
+    'a hard bounce' => [[], DeliveryFailure::HardBounce],
+    'a bounce with no type' => [['delivery-status' => ['bounce-type' => null]], DeliveryFailure::HardBounce],
+    'a bounce whose type is soft' => [['delivery-status' => ['bounce-type' => 'soft']], DeliveryFailure::SoftBounce],
+    'a bounce type of hard' => [['reason' => 'generic'], DeliveryFailure::HardBounce],
+    'given up on after retries' => [['reason' => 'old', 'delivery-status' => ['bounce-type' => null]], DeliveryFailure::SoftBounce],
+    'a bounce type of soft' => [['reason' => 'generic', 'delivery-status' => ['bounce-type' => 'soft']], DeliveryFailure::SoftBounce],
+    'the servers unreachable, given up on' => [['reason' => 'generic', 'delivery-status' => ['code' => 612, 'bounce-type' => null]], DeliveryFailure::SoftBounce],
+    'the servers unreachable, still being tried' => [['severity' => 'internal', 'delivery-status' => ['code' => 612]], DeliveryFailure::Deferred],
+    'Mailgun\'s own connection limit' => [['reason' => 'generic', 'delivery-status' => ['code' => 611]], DeliveryFailure::SenderBlocked],
+    'Mailgun\'s own connection limit, still being tried' => [['severity' => 'internal', 'delivery-status' => ['code' => 611]], DeliveryFailure::SenderDeferred],
+    'still being tried' => [['severity' => 'temporary'], DeliveryFailure::Deferred],
+    'the sender blocked' => [['reason' => 'espblock'], DeliveryFailure::SenderBlocked],
+    'the sender blocked for now' => [['severity' => 'temporary', 'reason' => 'espblock'], DeliveryFailure::SenderDeferred],
+    'on the bounce list' => [['reason' => 'suppress-bounce'], DeliveryFailure::SuppressedBounce],
+    'on the complaint list' => [['reason' => 'suppress-complaint'], DeliveryFailure::SuppressedComplaint],
+    'on the unsubscribe list' => [['reason' => 'suppress-unsubscribe'], DeliveryFailure::SuppressedUnsubscribe],
+    'any other permanent failure' => [['reason' => 'generic', 'delivery-status' => ['bounce-type' => null]], DeliveryFailure::Other],
+    'no failure at all' => [['event' => 'delivered'], null],
+]);

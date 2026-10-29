@@ -26,6 +26,12 @@ class UnsubscribeAction
      */
     public const PAGE = 'unsubscribe_page';
 
+    /**
+     * The consent record's source for the sending provider's own unsubscribe
+     * link, reported by its webhook.
+     */
+    public const PROVIDER = 'provider_unsubscribe';
+
     public function __construct(protected OptOutAction $optOut) {}
 
     /**

@@ -63,7 +63,7 @@ class RecordFeedbackAction
         });
 
         if ($result instanceof ProviderEvent) {
-            ProcessFeedbackJob::dispatch($result->id);
+            ProcessFeedbackJob::dispatchFor($result);
 
             return FeedbackResult::Stored;
         }
@@ -120,10 +120,10 @@ class RecordFeedbackAction
     {
         $event = ProviderEvent::query()
             ->where('provider_event_id', $feedback->providerEventId)
-            ->first(['id', 'processed_at']);
+            ->first(['id', 'type', 'processed_at']);
 
         if ($event !== null && $event->processed_at === null) {
-            ProcessFeedbackJob::dispatch($event->id);
+            ProcessFeedbackJob::dispatchFor($event);
         }
     }
 
@@ -183,6 +183,7 @@ class RecordFeedbackAction
         return array_filter([
             'severity' => $feedback->severity,
             'reason' => $feedback->reason,
+            'failure' => $feedback->failure?->value,
             'code' => $feedback->code,
             'bot' => $feedback->bot,
             'url' => $feedback->url === null ? null : static::storedUrl($feedback->url),

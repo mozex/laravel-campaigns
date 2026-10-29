@@ -2,6 +2,9 @@
 
 declare(strict_types=1);
 
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Exceptions;
 use Mozex\Campaigns\Actions\BlockAction;
 use Mozex\Campaigns\Actions\ConfirmSubscriptionAction;
 use Mozex\Campaigns\Actions\DeclineAction;
@@ -15,6 +18,8 @@ use Mozex\Campaigns\Enums\BlockReason;
 use Mozex\Campaigns\Enums\ConsentAction;
 use Mozex\Campaigns\Enums\ConsentBasis;
 use Mozex\Campaigns\Enums\SubscriptionStatus;
+use Mozex\Campaigns\Events\SubscriberBlockedEvent;
+use Mozex\Campaigns\Events\SubscriberUnsubscribedEvent;
 use Mozex\Campaigns\Models\CampaignList;
 use Mozex\Campaigns\Models\ConsentRecord;
 use Mozex\Campaigns\Models\Subscriber;
@@ -133,6 +138,75 @@ it('opts out and back in, blocks and unblocks, recording each change once', func
         ->opted_out_at->toBeNull()
         ->and(consentActions($subscriber))->toBe(['opt_out', 'opt_in', 'block', 'unblock'])
         ->and(ConsentRecord::query()->where('action', ConsentAction::Unblock)->sole()->meta)->toBe(['reason' => 'complaint']);
+});
+
+it('tells the app of each opt-out and block once, after the commit, with a subscriber its listeners can read', function (): void {
+    $list = CampaignList::factory()->create();
+    Subscriber::factory()->count(3)->create();
+    // Read among several, each refuses lazy loading under strict models.
+    [$first, $rolledBack, $declined] = Subscriber::query()->orderBy('id')->get()->all();
+    $heard = [];
+
+    Event::listen(SubscriberUnsubscribedEvent::class, function (SubscriberUnsubscribedEvent $event) use (&$heard): void {
+        $heard[] = ['unsubscribed', $event->subscriber->id, $event->context->source, $event->subscriber->subscriptions->count()];
+    });
+    Event::listen(SubscriberBlockedEvent::class, function (SubscriberBlockedEvent $event) use (&$heard): void {
+        $heard[] = ['blocked', $event->subscriber->id, $event->reason, $event->subscriber->subscriptions->count()];
+    });
+
+    $duringTransaction = DB::transaction(function () use ($first, &$heard): array {
+        app(OptOutAction::class)->execute($first, new ConsentContext('agent'));
+        app(OptOutAction::class)->execute($first, new ConsentContext('agent'));
+        app(BlockAction::class)->execute($first, BlockReason::Complaint, new ConsentContext('agent'));
+        app(BlockAction::class)->execute($first, BlockReason::HardBounce, new ConsentContext('agent'));
+
+        return $heard;
+    });
+
+    try {
+        DB::transaction(function () use ($rolledBack): void {
+            app(OptOutAction::class)->execute($rolledBack, new ConsentContext('agent'));
+
+            throw new RuntimeException('Rolled back.');
+        });
+    } catch (RuntimeException) {
+        // Never heard of.
+    }
+
+    app(DeclineAction::class)->execute($declined, $list, new ConsentContext('registration', accepted: false));
+    app(DeclineAction::class)->execute($declined, $list, new ConsentContext('registration', accepted: false));
+
+    expect($duringTransaction)->toBe([])
+        ->and($heard)->toBe([
+            ['unsubscribed', $first->id, 'agent', 0],
+            ['blocked', $first->id, BlockReason::Complaint, 0],
+            ['unsubscribed', $declined->id, 'registration', 1],
+        ]);
+});
+
+it('reports a listener that fails, and never fails the change or the other events for it', function (): void {
+    Exceptions::fake();
+    $list = CampaignList::factory()->create();
+    $subscriber = Subscriber::factory()->create();
+    $heard = [];
+
+    Event::listen(SubscriberBlockedEvent::class, fn () => throw new RuntimeException('A listener of the app failed.'));
+    Event::listen(SubscriberUnsubscribedEvent::class, function (SubscriberUnsubscribedEvent $event) use (&$heard): void {
+        $heard[] = $event->context->source;
+    });
+
+    // As an app's sign-up does: the decline fires at the app's own commit.
+    DB::transaction(function () use ($subscriber, $list): void {
+        app(BlockAction::class)->execute($subscriber, BlockReason::Complaint, new ConsentContext('agent'));
+        app(DeclineAction::class)->execute($subscriber, $list, new ConsentContext('registration', accepted: false));
+    });
+
+    expect($heard)->toBe(['registration'])
+        ->and($subscriber->fresh())
+        ->blocked_at->not->toBeNull()
+        ->opted_out_at->not->toBeNull();
+
+    Exceptions::assertReported(fn (RuntimeException $exception): bool => $exception->getMessage() === 'A listener of the app failed.');
 });
 
 it('takes a subscriber off a list, and adding them again starts afresh', function (): void {

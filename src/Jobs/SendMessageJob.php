@@ -168,14 +168,25 @@ class SendMessageJob implements ShouldQueue
     {
         $now = now();
 
-        $this->ours(MessageStatus::Sending, MessageStatus::Unknown)->update([
+        $providerMessageId = mb_substr($receipt->providerMessageId, 0, 255);
+
+        $moved = $this->ours(MessageStatus::Sending, MessageStatus::Unknown)->update([
             'status' => MessageStatus::Sent,
-            'provider_message_id' => mb_substr($receipt->providerMessageId, 0, 255),
+            'provider_message_id' => $providerMessageId,
             'sent_at' => $now,
             'failure_reason' => null,
             'failure_code' => null,
             'updated_at' => $now,
         ]);
+
+        // The provider's events can land before this does (delivered, or a
+        // bounce, applied while the answer was on its way back): the row has
+        // moved on, and keeps its status, but gains the id the logs are read by.
+        if ($moved === 0) {
+            $this->ours(MessageStatus::Sent, MessageStatus::Delivered, MessageStatus::Failed)
+                ->whereNull('provider_message_id')
+                ->update(['provider_message_id' => $providerMessageId, 'updated_at' => $now]);
+        }
 
         // The address's first campaign email, which the sunset counts from.
         // Skipped once set: on MySQL the update locks the row before its

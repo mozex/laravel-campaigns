@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Exceptions;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Route;
+use Mozex\Campaigns\Actions\ApplyFeedbackAction;
 use Mozex\Campaigns\Actions\RecordFeedbackAction;
 use Mozex\Campaigns\CampaignsException;
 use Mozex\Campaigns\Enums\FeedbackResult;
@@ -177,7 +178,7 @@ describe('storing', function (): void {
 
         Queue::assertPushed(ProcessFeedbackJob::class, 2);
 
-        (new ProcessFeedbackJob(ProviderEvent::query()->sole()->id))->handle();
+        (new ProcessFeedbackJob(ProviderEvent::query()->sole()->id))->handle(app(ApplyFeedbackAction::class));
 
         expect(postWebhook(mailgunWebhook(eventFor($message))))->toBe(200);
 
@@ -282,6 +283,7 @@ describe('what is kept', function (): void {
             ->and($event->payload)->toEqual([
                 'severity' => 'permanent',
                 'reason' => 'bounce',
+                'failure' => 'hard_bounce',
                 'code' => 550,
                 'provider_message_id' => '20260212174255.58bbb7ce85a423e5@mailgun.com',
                 'details' => [
@@ -338,12 +340,12 @@ describe('processing', function (): void {
         useDatabase($driver);
         $event = ProviderEvent::factory()->create();
 
-        (new ProcessFeedbackJob($event->id))->handle();
+        (new ProcessFeedbackJob($event->id))->handle(app(ApplyFeedbackAction::class));
         $processedAt = $event->fresh()?->processed_at;
 
         $this->travel(5)->minutes();
-        (new ProcessFeedbackJob($event->id))->handle();
-        (new ProcessFeedbackJob(0))->handle();
+        (new ProcessFeedbackJob($event->id))->handle(app(ApplyFeedbackAction::class));
+        (new ProcessFeedbackJob(0))->handle(app(ApplyFeedbackAction::class));
 
         expect($processedAt)->not->toBeNull()
             ->and($event->fresh()?->processed_at?->equalTo($processedAt))->toBeTrue();

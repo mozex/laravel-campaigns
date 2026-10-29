@@ -327,7 +327,7 @@ return new class extends Migration
         Schema::create('campaign_provider_events', function (Blueprint $table): void {
             $table->id();
             $table->string('provider_event_id', 255)->unique();
-            $table->foreignId('message_id')->nullable()->index()->constrained('campaign_messages')->nullOnDelete();
+            $table->foreignId('message_id')->nullable()->constrained('campaign_messages')->nullOnDelete();
             $table->foreignId('test_send_id')->nullable()->index()->constrained('campaign_test_sends')->nullOnDelete();
             $table->string('type', 32);
             $table->boolean('is_bot')->default(false);
@@ -335,6 +335,10 @@ return new class extends Migration
             $table->timestamp('occurred_at')->useCurrent()->index();
             $table->timestamp('processed_at')->nullable()->index();
             $table->timestamp('created_at')->nullable();
+
+            // A message's events in time order (an effect reads the failure
+            // reported before another); it also serves the foreign key.
+            $table->index(['message_id', 'occurred_at']);
         });
 
         // Every verified webhook's one-time token, unique, with the event it

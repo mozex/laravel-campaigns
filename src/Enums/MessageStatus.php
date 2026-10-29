@@ -10,6 +10,11 @@ namespace Mozex\Campaigns\Enums;
  * whose job never sent it, and sending, only when the provider answered that
  * it took nothing (not accepted, or the sending domain refused). Nothing else
  * moves back from sending, since the provider may already have the email.
+ *
+ * The provider's events only move a message forward: any event about it
+ * proves the provider took it (a message not yet marked sent becomes sent,
+ * and is never sent again), delivered follows sent, and a final failure
+ * follows sent or delivered (a late bounce). Nothing leaves failed.
  */
 enum MessageStatus: string
 {

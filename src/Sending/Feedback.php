@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Mozex\Campaigns\Sending;
 
 use Carbon\CarbonInterface;
+use Mozex\Campaigns\Enums\DeliveryFailure;
 use Mozex\Campaigns\Enums\FeedbackType;
 
 /**
@@ -15,7 +16,9 @@ use Mozex\Campaigns\Enums\FeedbackType;
  * replayKey is the one-time value a signed webhook carries, recorded with the
  * event's id so a replayed request can't carry another event; events read
  * from the provider's logs have none. payload is the provider's own details worth
- * keeping, never a recipient's address or IP.
+ * keeping, never a recipient's address or IP. failure is what a failed
+ * event means in the package's terms, which the driver works out from its
+ * severity, reason and code.
  */
 readonly class Feedback
 {
@@ -32,6 +35,7 @@ readonly class Feedback
         public ?string $providerMessageId = null,
         public ?string $severity = null,
         public ?string $reason = null,
+        public ?DeliveryFailure $failure = null,
         public ?int $code = null,
         public ?string $bot = null,
         public ?string $url = null,

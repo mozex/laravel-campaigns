@@ -5,10 +5,12 @@ declare(strict_types=1);
 namespace Mozex\Campaigns\Actions;
 
 use Mozex\Campaigns\Enums\ConsentAction;
+use Mozex\Campaigns\Events\SubscriberUnsubscribedEvent;
 use Mozex\Campaigns\Models\CampaignList;
 use Mozex\Campaigns\Models\ConsentRecord;
 use Mozex\Campaigns\Models\Subscriber;
 use Mozex\Campaigns\Models\Subscription;
+use Mozex\Campaigns\Support\AfterCommit;
 use Mozex\Campaigns\Support\ConsentContext;
 
 /**
@@ -40,6 +42,12 @@ class DeclineAction
             }
 
             ConsentRecord::record($subscriber, ConsentAction::Decline, $context, $list, $subscription->basis);
+
+            // An unticked box is an opt-out like any other to the app's
+            // listeners; one already opted out changed nothing.
+            if ($optedOut === 1) {
+                AfterCommit::dispatch($subscriber->getConnection(), new SubscriberUnsubscribedEvent(Subscriber::query()->findOrFail($subscriber->id), $context));
+            }
 
             return $subscription;
         });

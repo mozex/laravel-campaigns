@@ -77,7 +77,9 @@ class ChangeEmailAction
                 ->update(['status' => MessageStatus::Skipped, 'updated_at' => now()]);
 
             if ($existing === null && ! $subscriber->isSuppressed()) {
-                $subscriber->update(['email' => $address]);
+                // Soft bounces are the old address's, like a block: the new
+                // one starts with none.
+                $subscriber->update(['email' => $address, 'soft_bounces' => 0]);
 
                 return $subscriber;
             }

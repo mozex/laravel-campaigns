@@ -6,14 +6,17 @@ namespace Mozex\Campaigns\Actions;
 
 use Mozex\Campaigns\Enums\BlockReason;
 use Mozex\Campaigns\Enums\ConsentAction;
+use Mozex\Campaigns\Events\SubscriberBlockedEvent;
 use Mozex\Campaigns\Models\ConsentRecord;
 use Mozex\Campaigns\Models\Subscriber;
+use Mozex\Campaigns\Support\AfterCommit;
 use Mozex\Campaigns\Support\ConsentContext;
 
 /**
  * Stops all email to an address that can't or mustn't receive it: a hard
  * bounce, a spam report, repeated soft bounces. A block belongs to the
  * address, so it stays with it when the person moves to another one.
+ * SubscriberBlockedEvent fires after the commit, once per block.
  */
 class BlockAction
 {
@@ -39,6 +42,10 @@ class BlockAction
             $subscriber->syncOriginalAttributes(['blocked_at', 'blocked_reason']);
 
             ConsentRecord::record($subscriber, ConsentAction::Block, $context, meta: ['reason' => $reason->value]);
+
+            // Found on its own, so a listener may read its relations under
+            // strict models whatever list the caller's model came from.
+            AfterCommit::dispatch($subscriber->getConnection(), new SubscriberBlockedEvent(Subscriber::query()->findOrFail($subscriber->id), $reason, $context));
 
             return true;
         });
