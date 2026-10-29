@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Mozex\Campaigns;
 
 use Mozex\Campaigns\Contracts\ListSource;
+use Mozex\Campaigns\Enums\UploadPurpose;
 use Mozex\Campaigns\Imports\ImportedContact;
 use RuntimeException;
 
@@ -141,5 +142,80 @@ class CampaignsException extends RuntimeException
     public static function noSendingDomain(): self
     {
         return new self('No sending domain is configured: set campaigns.mail.domain (CAMPAIGNS_DOMAIN), or a sender address in campaigns.mail.from.address or the campaigns mailer.');
+    }
+
+    /**
+     * An address the server won't fetch from (not on the web, or leading
+     * into a private network) or couldn't.
+     */
+    public static function cannotFetch(string $url, string $reason): self
+    {
+        return new self('"'.mb_strimwidth($url, 0, 200, '...')."\" {$reason}.");
+    }
+
+    public static function invalidImage(string $name, string $reason): self
+    {
+        return new self('The image "'.mb_strimwidth($name, 0, 120, '...')."\" {$reason}.");
+    }
+
+    public static function assetDiskNotHttps(string $disk): self
+    {
+        return new self("The asset disk \"{$disk}\" doesn't give https addresses, which emails need: set its url to an https address (campaigns.assets.disk names it).");
+    }
+
+    public static function assetNotStored(string $name): self
+    {
+        return new self('The image "'.mb_strimwidth($name, 0, 120, '...').'" could not be stored on the asset disk.');
+    }
+
+    // An upload refusal's code is the HTTP status the upload endpoint
+    // answers with.
+
+    public static function uploadNotFound(): self
+    {
+        return new self('There is no upload with that id.', 404);
+    }
+
+    public static function uploadExpired(): self
+    {
+        return new self('The upload link has expired. Ask for a new one.', 410);
+    }
+
+    public static function uploadUnavailable(string $reason): self
+    {
+        return new self("The upload can't be used: {$reason}. Ask for a new link.", 409);
+    }
+
+    public static function uploadTooLarge(int $max): self
+    {
+        return new self('The file is over the upload limit of '.round($max / 1024 / 1024, 1).' MB.', 413);
+    }
+
+    public static function uploadEmpty(): self
+    {
+        return new self('The file is empty.', 400);
+    }
+
+    public static function uploadNotStored(): self
+    {
+        return new self('The file could not be stored. Try again.', 500);
+    }
+
+    public static function uploadWrongPurpose(UploadPurpose $expected, UploadPurpose $actual): self
+    {
+        return new self("That upload is for {$actual->label()}, not {$expected->label()}.", 422);
+    }
+
+    /**
+     * @param  list<string>  $problems
+     */
+    public static function invalidUpload(array $problems): self
+    {
+        return new self("The upload can't be used:\n- ".implode("\n- ", $problems), 422);
+    }
+
+    public static function invalidLocale(string $locale): self
+    {
+        return new self('"'.mb_strimwidth($locale, 0, 40, '...').'" is not a locale (en, pt_BR, zh-Hant).');
     }
 }

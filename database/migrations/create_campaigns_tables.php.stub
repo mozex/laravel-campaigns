@@ -158,7 +158,8 @@ return new class extends Migration
         });
 
         // The images every template and campaign shares. Delivered mail keeps
-        // loading them, so they are never deleted.
+        // loading them, so they are never deleted. A file's path is named
+        // after its content, so the same image uploaded again is one asset.
         Schema::create('campaign_assets', function (Blueprint $table): void {
             $table->id();
             $table->uuid('uuid')->unique();
@@ -172,14 +173,18 @@ return new class extends Migration
             $table->unsignedInteger('height')->nullable();
             $table->string('author', 255)->nullable();
             $table->timestamps();
+
+            $table->unique(['disk', 'path']);
         });
 
         // A file an agent sends through a one-time upload link, kept until it
-        // is claimed by the tool that uses it or expires.
+        // is claimed by the tool that uses it or expires. Before the file
+        // arrives, expires_at ends the link; after, it ends the file's stay.
         Schema::create('campaign_uploads', function (Blueprint $table): void {
             $table->id();
             $table->uuid('uuid')->unique();
             $table->string('purpose', 32);
+            $table->string('disk', 64)->nullable();
             $table->string('path', 255)->nullable();
             $table->unsignedBigInteger('size')->nullable();
             $table->string('mime', 127)->nullable();
@@ -187,7 +192,7 @@ return new class extends Migration
             // A default, so a MySQL or MariaDB server without
             // explicit_defaults_for_timestamp doesn't make this first
             // timestamp change itself on every update of the row.
-            $table->timestamp('expires_at')->useCurrent();
+            $table->timestamp('expires_at')->useCurrent()->index();
             $table->timestamp('received_at')->nullable();
             $table->timestamp('claimed_at')->nullable();
             $table->timestamps();

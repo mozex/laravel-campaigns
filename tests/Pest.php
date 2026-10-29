@@ -5,6 +5,8 @@ declare(strict_types=1);
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Mozex\Campaigns\Enums\MessageStatus;
+use Mozex\Campaigns\Fetching\HostResolver;
+use Mozex\Campaigns\Fetching\StaticHostResolver;
 use Mozex\Campaigns\Models\CampaignMessage;
 use Mozex\Campaigns\Models\ConsentRecord;
 use Mozex\Campaigns\Models\Subscriber;
@@ -48,6 +50,68 @@ function sentMessage(array $attributes = []): array
     ]);
 
     return [$message, $token];
+}
+
+/**
+ * A tiny real image of the given type (2 x 1 pixels), embedded so the tests
+ * need no image extension to make one.
+ */
+function testImage(string $type = 'png'): string
+{
+    return base64_decode(match ($type) {
+        'png' => 'iVBORw0KGgoAAAANSUhEUgAAAAIAAAABCAIAAAB7QOjdAAAACXBIWXMAAA7EAAAOxAGVKw4bAAAAD0lEQVQImWNgYGBgYGAAAAAHAAHV3tbYAAAAAElFTkSuQmCC',
+        'gif' => 'R0lGODdhAgABAIAAAAQCBAAAACwAAAAAAgABAAACAgQKADs=',
+        'webp' => 'UklGRiQAAABXRUJQVlA4IBgAAAAwAQCdASoCAAEAAUAmJaQAA3AA/v02aAA=',
+        'jpeg' => '/9j/4AAQSkZJRgABAQEAYABgAAD//gA+Q1JFQVRPUjogZ2QtanBlZyB2MS4wICh1c2luZyBJSkcgSlBFRyB2ODApLCBkZWZhdWx0IHF1YWxpdHkK/9sAQwAIBgYHBgUIBwcHCQkICgwUDQwLCwwZEhMPFB0aHx4dGhwcICQuJyAiLCMcHCg3KSwwMTQ0NB8nOT04MjwuMzQy/9sAQwEJCQkMCwwYDQ0YMiEcITIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIy/8AAEQgAAQACAwEiAAIRAQMRAf/EAB8AAAEFAQEBAQEBAAAAAAAAAAABAgMEBQYHCAkKC//EALUQAAIBAwMCBAMFBQQEAAABfQECAwAEEQUSITFBBhNRYQcicRQygZGhCCNCscEVUtHwJDNicoIJChYXGBkaJSYnKCkqNDU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6g4SFhoeIiYqSk5SVlpeYmZqio6Slpqeoqaqys7S1tre4ubrCw8TFxsfIycrS09TV1tfY2drh4uPk5ebn6Onq8fLz9PX29/j5+v/EAB8BAAMBAQEBAQEBAQEAAAAAAAABAgMEBQYHCAkKC//EALURAAIBAgQEAwQHBQQEAAECdwABAgMRBAUhMQYSQVEHYXETIjKBCBRCkaGxwQkjM1LwFWJy0QoWJDThJfEXGBkaJicoKSo1Njc4OTpDREVGR0hJSlNUVVZXWFlaY2RlZmdoaWpzdHV2d3h5eoKDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uLj5OXm5+jp6vLz9PX29/j5+v/aAAwDAQACEQMRAD8A+f6KKKAP/9k=',
+    });
+}
+
+/**
+ * A zip's bytes, built in a temporary file that is gone before this
+ * returns. $links names entries stored as symbolic links, $encrypted ones
+ * stored encrypted.
+ *
+ * @param  array<string, string>  $files
+ * @param  list<string>  $links
+ * @param  list<string>  $encrypted
+ */
+function zipOf(array $files, array $links = [], array $encrypted = []): string
+{
+    $path = tempnam(sys_get_temp_dir(), 'campaigns-test-zip-');
+    $zip = new ZipArchive;
+
+    try {
+        $zip->open($path, ZipArchive::OVERWRITE);
+
+        foreach ($files as $name => $content) {
+            $zip->addFromString($name, $content);
+
+            if (in_array($name, $links, true)) {
+                $zip->setExternalAttributesName($name, ZipArchive::OPSYS_UNIX, (0120777 << 16));
+            }
+
+            if (in_array($name, $encrypted, true)) {
+                $zip->setEncryptionName($name, ZipArchive::EM_AES_256, 'secret');
+            }
+        }
+
+        $zip->close();
+
+        return (string) file_get_contents($path);
+    } finally {
+        @unlink($path);
+    }
+}
+
+/**
+ * Pins what host names resolve to, so code that fetches through the
+ * package's guard never makes a real DNS lookup.
+ *
+ * @param  array<string, string|list<string>>  $hosts
+ */
+function resolveHosts(array $hosts): void
+{
+    app()->instance(HostResolver::class, new StaticHostResolver($hosts));
 }
 
 /**

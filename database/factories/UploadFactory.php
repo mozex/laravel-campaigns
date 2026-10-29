@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Mozex\Campaigns\Database\Factories;
 
 use Illuminate\Database\Eloquent\Factories\Factory;
+use Mozex\Campaigns\Enums\UploadPurpose;
 use Mozex\Campaigns\Models\Upload;
 
 /**
@@ -20,7 +21,8 @@ class UploadFactory extends Factory
     public function definition(): array
     {
         return [
-            'purpose' => 'email',
+            'purpose' => UploadPurpose::Email,
+            'disk' => null,
             'path' => null,
             'size' => null,
             'mime' => null,

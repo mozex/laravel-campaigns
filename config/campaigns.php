@@ -83,12 +83,27 @@ return [
     'locale' => env('CAMPAIGNS_LOCALE'),
 
     /*
-     * Where uploaded images are stored. Use a public disk whose addresses
-     * never change: delivered mail keeps loading the images from them.
+     * Where the images emails load are stored: a disk whose files anyone can
+     * read and whose url() gives https addresses that never change, since
+     * delivered mail keeps loading them. An image may be at most max_size
+     * bytes (default 5 MB) and is a JPEG, PNG, GIF or WebP file.
      */
     'assets' => [
         'disk' => env('CAMPAIGNS_ASSETS_DISK', 'public'),
         'path' => 'campaigns/assets',
+        'max_size' => 5 * 1024 * 1024,
+    ],
+
+    /*
+     * Where files sent through an upload link wait until a tool uses them:
+     * a private disk, since an upload may hold an unsent email or a list of
+     * contacts. A file may be at most max_size bytes (default 25 MB); keep
+     * it under what your proxy accepts in one request.
+     */
+    'uploads' => [
+        'disk' => env('CAMPAIGNS_UPLOADS_DISK', 'local'),
+        'path' => 'campaigns/uploads',
+        'max_size' => 25 * 1024 * 1024,
     ],
 
     /*
