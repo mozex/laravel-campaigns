@@ -26,6 +26,11 @@ class GuideResource extends CampaignsResource
 
     public function handle(): Response
     {
-        return Response::text((string) file_get_contents(static::PATH));
+        return Response::text(static::text());
+    }
+
+    public static function text(): string
+    {
+        return (string) file_get_contents(static::PATH);
     }
 }

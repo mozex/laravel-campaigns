@@ -532,3 +532,68 @@ describe('reading Mailgun\'s logs and suppressions', function (): void {
         'an answer that isn\'t JSON' => [fn (): PromiseInterface => Http::response('<html>person@example.org</html>'), 'couldn\'t be read'],
     ]);
 });
+
+describe('reading Mailgun\'s metrics', function (): void {
+    beforeEach(function (): void {
+        Http::preventStrayRequests();
+        config()->set('campaigns.mailgun.api_key', 'key-reader');
+        config()->set('campaigns.mail.from', ['address' => 'news@example.com', 'name' => 'Example News']);
+        config()->set('mail.mailers.campaigns', ['transport' => 'mailgun', 'scheme' => 'api', 'secret' => 'key-sending', 'domain' => 'news.example.com', 'endpoint' => 'api.eu.mailgun.net']);
+    });
+
+    it('reads a domain\'s days with explicit times inside the period, keeping only its days', function (): void {
+        $this->travelTo(Carbon::parse('2026-02-03 14:30:00', 'UTC'));
+        $answer = json_decode((string) file_get_contents(__DIR__.'/../Fixtures/Mailgun/metrics.json'), true);
+        $posted = [];
+
+        Http::fake(function (ClientRequest $request) use (&$posted, &$answer): PromiseInterface {
+            $posted[] = $request;
+
+            return Http::response($answer);
+        });
+
+        // Mailgun rounds the start down to its day and answers that day too:
+        // the day before the period is dropped.
+        $metrics = app(MailgunProvider::class)->domainMetrics('example.com', now()->subDay(), now());
+
+        expect($metrics->days)->toBe([
+            '2026-02-02' => ['sent' => 340, 'forwarded' => 0, 'hard_bounces' => 3, 'complaints' => 1, 'unsubscribes' => 2],
+            '2026-02-03' => ['sent' => 75, 'forwarded' => 1, 'hard_bounces' => 0, 'complaints' => 0, 'unsubscribes' => 0],
+        ])
+            ->and($metrics->totals())->toBe(['sent' => 415, 'forwarded' => 1, 'hard_bounces' => 3, 'complaints' => 1, 'unsubscribes' => 2])
+            ->and($posted[0]->url())->toBe('https://api.eu.mailgun.net/v1/analytics/metrics')
+            ->and($posted[0]->header('Authorization'))->toBe(['Basic '.base64_encode('api:key-reader')])
+            // Explicit times, the end now rather than the next day's first
+            // instant, which Mailgun would read as a whole extra day; the
+            // marketing domain asked for by the domain its mailer sends
+            // through.
+            ->and($posted[0]->data())->toBe([
+                'start' => 'Mon, 02 Feb 2026 14:30:00 +0000',
+                'end' => 'Tue, 03 Feb 2026 14:30:00 +0000',
+                'resolution' => 'day',
+                'dimensions' => ['time'],
+                'metrics' => ['accepted_outgoing_count', 'accepted_incoming_count', 'hard_bounces_count', 'complained_count', 'unsubscribed_count'],
+                'filter' => ['AND' => [['attribute' => 'domain', 'comparator' => '=', 'values' => [['label' => 'news.example.com', 'value' => 'news.example.com']]]]],
+                'include_aggregates' => false,
+            ]);
+
+        // A day Mailgun leaves out counts 0; a rate it gives as a string, or
+        // a count it doesn't, is never read as a number of emails.
+        unset($answer['items'][1]);
+        $answer['items'][2]['metrics'] = ['accepted_outgoing_count' => '75', 'hard_bounces_count' => 'n/a', 'delivered_rate' => '0.9070'];
+
+        expect(app(MailgunProvider::class)->domainMetrics('other.example.org', now()->subDays(2), now())->days)->toBe([
+            '2026-02-01' => ['sent' => 120, 'forwarded' => 4, 'hard_bounces' => 2, 'complaints' => 0, 'unsubscribes' => 1],
+            '2026-02-02' => ['sent' => 0, 'forwarded' => 0, 'hard_bounces' => 0, 'complaints' => 0, 'unsubscribes' => 0],
+            '2026-02-03' => ['sent' => 75, 'forwarded' => 0, 'hard_bounces' => 0, 'complaints' => 0, 'unsubscribes' => 0],
+        ])
+            ->and($posted[1]['filter']['AND'][0]['values'][0]['value'])->toBe('other.example.org');
+    });
+
+    it('fails without Mailgun\'s answer when the metrics can\'t be read', function (): void {
+        Http::fake(['*' => Http::response(['message' => 'Invalid private key'], 401)]);
+
+        expect(fn (): mixed => app(MailgunProvider::class)->domainMetrics('example.com', now()->subDay(), now()))
+            ->toThrow(CampaignsException::class, 'Mailgun answered 401 when its logs, suppressions or metrics were read.');
+    });
+});

@@ -16,6 +16,8 @@ use Mozex\Campaigns\Mcp\Tools\CampaignsTool;
 use Mozex\Campaigns\Models\ApiToken;
 use Mozex\Campaigns\Tests\Fixtures\Mcp\FixtureServer;
 use Mozex\Campaigns\Tests\Fixtures\Mcp\FixtureWriteTool;
+use Mozex\Campaigns\Tests\Fixtures\Member;
+use Mozex\Campaigns\Tests\Fixtures\MemberDirectory;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
@@ -135,6 +137,31 @@ it('shows read-only principals only the read tools and refuses the rest', functi
             ->and(mcp('resources/read', ['uri' => 'campaigns://guide'], $token)->assertOk()->json('result.contents.0.text'))
             ->toBe(file_get_contents(dirname(__DIR__, 2).'/resources/mcp/guide.md'));
     }
+});
+
+it('serves the app\'s own resources to readers, their first page and the rest through a template', function (): void {
+    ApiToken::factory()->readOnly()->withToken('read-token')->create();
+    config(['campaigns.resources' => ['members' => MemberDirectory::class]]);
+
+    foreach (range(1, 3) as $n) {
+        Member::query()->create(['email' => "member{$n}@example.org", 'name' => "Member {$n}"]);
+    }
+
+    $resources = collect(mcp('resources/list', token: 'read-token')->assertOk()->json('result.resources'))->keyBy('uri');
+    $templates = mcp('resources/templates/list', token: 'read-token')->assertOk()->json('result.resourceTemplates');
+    $first = json_decode((string) mcp('resources/read', ['uri' => 'campaigns://resources/members'], 'read-token')->assertOk()->json('result.contents.0.text'), true);
+    $second = json_decode((string) mcp('resources/read', ['uri' => 'campaigns://resources/members/pages/2'], 'read-token')->assertOk()->json('result.contents.0.text'), true);
+    $unknown = json_decode((string) mcp('resources/read', ['uri' => 'campaigns://resources/nope/pages/1'], 'read-token')->assertOk()->json('result.contents.0.text'), true);
+
+    expect($resources->keys()->all())->toBe(['campaigns://guide', 'campaigns://resources/members'])
+        ->and($resources['campaigns://resources/members'])->toMatchArray(['name' => 'members', 'mimeType' => 'application/json'])
+        ->and($resources['campaigns://resources/members']['description'])->toStartWith('The members, by name.')
+        ->and(array_column($templates, 'uriTemplate'))->toBe(['campaigns://resources/{name}/pages/{page}'])
+        ->and($first)->toMatchArray(['resource' => 'members', 'page' => 1, 'items' => [['name' => 'Member 1'], ['name' => 'Member 2']], 'next_page' => 2])
+        ->and($second)->toMatchArray(['page' => 2, 'items' => [['name' => 'Member 3']], 'next_page' => null])
+        ->and($unknown['error'])->toContain('nope');
+
+    mcp('resources/list', token: 'person-none')->assertForbidden();
 });
 
 it('lets a full token and a person with full rights call every tool, sending switched off or not', function (): void {

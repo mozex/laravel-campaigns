@@ -92,6 +92,18 @@ class MailgunProvider implements CampaignProvider
     protected const MESSAGE_PAGES = 5;
 
     /**
+     * The Metrics API's counts a domain's day is read from, by the name
+     * DomainMetrics gives each.
+     */
+    protected const METRICS = [
+        'accepted_outgoing_count' => 'sent',
+        'accepted_incoming_count' => 'forwarded',
+        'hard_bounces_count' => 'hard_bounces',
+        'complained_count' => 'complaints',
+        'unsubscribed_count' => 'unsubscribes',
+    ];
+
+    /**
      * Mailgun's suppression lists, by their path.
      */
     protected const SUPPRESSION_LISTS = [
@@ -316,6 +328,55 @@ class MailgunProvider implements CampaignProvider
         return $found;
     }
 
+    /**
+     * Read through the Metrics API a day at a time. Its start and end are
+     * explicit times inside the period, never a duration or the first
+     * instant of the next day: Mailgun rounds both down to their day's start
+     * and answers every day from the first to the last whole, so an end at
+     * midnight would add the next day. The days it answers outside the
+     * period are dropped, and a day it leaves out counts 0. Its delivery and
+     * failure counts include mail the domain's routes forward, so they're
+     * left out; its outgoing count is the domain's own sends.
+     */
+    public function domainMetrics(string $domain, CarbonInterface $from, CarbonInterface $to): DomainMetrics
+    {
+        $domain = $this->mailgunDomain($domain);
+        $first = Carbon::instance($from)->utc()->startOfDay();
+        $last = Carbon::instance($to)->utc()->startOfDay();
+
+        $json = $this->read('POST', $this->apiBase().'/v1/analytics/metrics', [
+            'start' => Carbon::instance($from)->utc()->toRfc2822String(),
+            'end' => Carbon::instance($to)->utc()->toRfc2822String(),
+            'resolution' => 'day',
+            'dimensions' => ['time'],
+            'metrics' => array_keys(static::METRICS),
+            'filter' => ['AND' => [['attribute' => 'domain', 'comparator' => '=', 'values' => [['label' => $domain, 'value' => $domain]]]]],
+            'include_aggregates' => false,
+        ]);
+
+        $days = [];
+
+        for ($day = $first->copy(); $day->lessThanOrEqualTo($last); $day->addDay()) {
+            $days[$day->toDateString()] = array_fill_keys(DomainMetrics::COUNTS, 0);
+        }
+
+        foreach (is_array($json['items'] ?? null) ? $json['items'] : [] as $item) {
+            $date = $this->metricsDay(is_array($item) ? $item : []);
+
+            if ($date === null || ! isset($days[$date])) {
+                continue;
+            }
+
+            foreach (static::METRICS as $metric => $count) {
+                $value = data_get($item, 'metrics.'.$metric);
+                $days[$date][$count] = is_numeric($value) ? max(0, (int) $value) : 0;
+            }
+        }
+
+        /** @var array<string, array{sent: int, forwarded: int, hard_bounces: int, complaints: int, unsubscribes: int}> $days */
+        return new DomainMetrics($days);
+    }
+
     public function tracks(): bool
     {
         return true;
@@ -381,6 +442,27 @@ class MailgunProvider implements CampaignProvider
     }
 
     /**
+     * A metrics item's UTC date, from its time dimension (the day's start as
+     * an RFC 2822 time).
+     *
+     * @param  array<mixed>  $item
+     */
+    protected function metricsDay(array $item): ?string
+    {
+        foreach (is_array($item['dimensions'] ?? null) ? $item['dimensions'] : [] as $dimension) {
+            if (is_array($dimension) && ($dimension['dimension'] ?? null) === 'time' && is_string($dimension['value'] ?? null)) {
+                try {
+                    return Carbon::parse($dimension['value'])->utc()->toDateString();
+                } catch (Throwable) {
+                    return null;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
      * The domain Mailgun knows the marketing domain's mail by: the campaigns
      * mailer's own Mailgun domain when it names one (a From address on
      * example.com can send through mg.example.com), since Mailgun keeps logs
@@ -434,7 +516,7 @@ class MailgunProvider implements CampaignProvider
         }
 
         if (! $response->successful()) {
-            throw CampaignsException::providerUnreadable("Mailgun answered {$response->status()} when its logs or suppressions were read.");
+            throw CampaignsException::providerUnreadable("Mailgun answered {$response->status()} when its logs, suppressions or metrics were read.");
         }
 
         $json = $response->json();

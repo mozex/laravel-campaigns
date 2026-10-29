@@ -20,7 +20,7 @@ use Mozex\Campaigns\Support\Links;
 
 #[Name('create_upload_link')]
 #[Title('Create an upload link')]
-#[Description('A one-time address to send a local file to, for an agent that can run a shell: PUT the file\'s bytes there (the answer has the curl command), then pass the upload_id to the tool that takes it. purpose email: one HTML file, or a zip of email.html, an optional email.txt, translations/<locale>.html and .txt, and an images folder, for create_template or add_revision. image: one JPEG, PNG, GIF or WebP, for add_image. contacts: a CSV, for preview_contacts_import and run_contacts_import. The link takes one file within '.Upload::LINK_MINUTES.' minutes; the file then waits '.Upload::KEEP_HOURS.' hours. A file the server refuses uses the link up: ask for a new one.')]
+#[Description('A one-time address to send a local file to, for an agent that can run a shell: PUT the file\'s bytes there (the answer has the curl command), then pass the upload_id to the tool that takes it. purpose email: one HTML file, or a zip of email.html, an optional email.txt, translations/<locale>.html and .txt, and an images folder, for create_template or add_revision. image: one JPEG, PNG, GIF or WebP, for add_image. contacts: a CSV, for preview_contacts_import and run_contacts_import. The link takes one file within '.Upload::LINK_MINUTES.' minutes; the file then waits '.Upload::KEEP_HOURS.' hours. A file the link refuses before storing it (too large) leaves the link usable until it expires; once a tool has read the file it is used up, accepted or refused, so a refused file goes up again through a new link.')]
 #[IsOpenWorld(false)]
 #[IsDestructive(false)]
 class CreateUploadLinkTool extends CampaignsTool

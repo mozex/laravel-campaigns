@@ -27,11 +27,16 @@ use Mozex\Campaigns\Support\Sender;
  */
 class StartCampaignAction
 {
+    /**
+     * How far in the past a start's time may be and still mean now.
+     */
+    public const PAST_MINUTES = 15;
+
     public function __construct(protected ContentRules $rules) {}
 
     /**
      * @param  int  $expectedRecipients  the recipients the audience preview showed
-     * @param  ?CarbonInterface  $at  when to start; now when null or past
+     * @param  ?CarbonInterface  $at  when to start; now when null or up to PAST_MINUTES past, refused further back
      * @param  ?array<string, mixed>  $pace  pace settings to lay over the campaign's; they are its settings from then on, kept even when the freeze refuses the start
      *
      * @throws CampaignsException|ValidationException
@@ -48,6 +53,13 @@ class StartCampaignAction
 
         if ($at !== null && $at->gt(now()->addYear())) {
             throw CampaignsException::scheduleTooFar();
+        }
+
+        // A time that passed while the start waited for approval starts it
+        // now; one further back is likelier a mistyped date than a wish to
+        // send at once.
+        if ($at !== null && $at->lt(now()->subMinutes(static::PAST_MINUTES))) {
+            throw CampaignsException::scheduleInPast(static::PAST_MINUTES);
         }
 
         $pace = $pace === null ? [] : Pace::validate($pace);

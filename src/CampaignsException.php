@@ -96,7 +96,7 @@ class CampaignsException extends RuntimeException
 
     public static function missingMailgunApiKey(): self
     {
-        return new self('Reading Mailgun\'s logs and suppressions needs an API key that can read them (campaigns.mailgun.api_key, CAMPAIGNS_MAILGUN_API_KEY); the campaigns mailer\'s sending key can only send.');
+        return new self('Reading Mailgun\'s logs, suppressions and metrics needs an API key that can read them (campaigns.mailgun.api_key, CAMPAIGNS_MAILGUN_API_KEY); the campaigns mailer\'s sending key can only send.');
     }
 
     /**
@@ -276,6 +276,16 @@ class CampaignsException extends RuntimeException
     public static function unknownTemplate(string $key): self
     {
         return new self('There is no template with the key "'.mb_strimwidth($key, 0, 130, '...').'".');
+    }
+
+    public static function scheduleInPast(int $minutes): self
+    {
+        return new self("That start time is more than {$minutes} minutes in the past. Leave the time out to start now, or give the time it should start.");
+    }
+
+    public static function resourcePageTooLong(string $key): self
+    {
+        return new self("A page of the {$key} resource is too long to return; the app's resource should give fewer items a page.");
     }
 
     public static function invalidValue(string $field, string $reason): self

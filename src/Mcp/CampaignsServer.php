@@ -10,6 +10,8 @@ use Laravel\Mcp\Server\Resource as McpResource;
 use Laravel\Mcp\Server\Tool;
 use Mozex\Campaigns\Campaigns;
 use Mozex\Campaigns\CampaignsException;
+use Mozex\Campaigns\Mcp\Resources\AppDataPageResource;
+use Mozex\Campaigns\Mcp\Resources\AppDataResource;
 use Mozex\Campaigns\Mcp\Resources\GuideResource;
 use Mozex\Campaigns\Mcp\Tools\AddContactsTool;
 use Mozex\Campaigns\Mcp\Tools\AddImageTool;
@@ -17,13 +19,17 @@ use Mozex\Campaigns\Mcp\Tools\AddRevisionTool;
 use Mozex\Campaigns\Mcp\Tools\ArchiveListTool;
 use Mozex\Campaigns\Mcp\Tools\ArchiveTemplateTool;
 use Mozex\Campaigns\Mcp\Tools\BlockContactTool;
+use Mozex\Campaigns\Mcp\Tools\CancelCampaignTool;
 use Mozex\Campaigns\Mcp\Tools\CreateCampaignTool;
 use Mozex\Campaigns\Mcp\Tools\CreateListTool;
 use Mozex\Campaigns\Mcp\Tools\CreateTemplateTool;
 use Mozex\Campaigns\Mcp\Tools\CreateUploadLinkTool;
 use Mozex\Campaigns\Mcp\Tools\DuplicateCampaignTool;
+use Mozex\Campaigns\Mcp\Tools\GetCampaignReportTool;
+use Mozex\Campaigns\Mcp\Tools\GetCampaignStatusTool;
 use Mozex\Campaigns\Mcp\Tools\GetCampaignTool;
 use Mozex\Campaigns\Mcp\Tools\GetCheckResultsTool;
+use Mozex\Campaigns\Mcp\Tools\GetGuideTool;
 use Mozex\Campaigns\Mcp\Tools\GetPreviewLinkTool;
 use Mozex\Campaigns\Mcp\Tools\GetSubscriberTool;
 use Mozex\Campaigns\Mcp\Tools\GetTemplateTool;
@@ -36,20 +42,26 @@ use Mozex\Campaigns\Mcp\Tools\ListRevisionsTool;
 use Mozex\Campaigns\Mcp\Tools\ListSubscribersTool;
 use Mozex\Campaigns\Mcp\Tools\ListTemplatesTool;
 use Mozex\Campaigns\Mcp\Tools\OverviewTool;
+use Mozex\Campaigns\Mcp\Tools\PauseCampaignTool;
 use Mozex\Campaigns\Mcp\Tools\PreviewAudienceTool;
 use Mozex\Campaigns\Mcp\Tools\PreviewContactsImportTool;
 use Mozex\Campaigns\Mcp\Tools\RemoveContactsTool;
 use Mozex\Campaigns\Mcp\Tools\RestoreRevisionTool;
+use Mozex\Campaigns\Mcp\Tools\ResumeCampaignTool;
 use Mozex\Campaigns\Mcp\Tools\RunChecksTool;
 use Mozex\Campaigns\Mcp\Tools\RunContactsImportTool;
 use Mozex\Campaigns\Mcp\Tools\SaveAudienceTool;
 use Mozex\Campaigns\Mcp\Tools\SendTestTool;
 use Mozex\Campaigns\Mcp\Tools\SetContactFieldsTool;
+use Mozex\Campaigns\Mcp\Tools\SlowDownCampaignTool;
+use Mozex\Campaigns\Mcp\Tools\SpeedUpCampaignTool;
+use Mozex\Campaigns\Mcp\Tools\StartCampaignTool;
 use Mozex\Campaigns\Mcp\Tools\UnblockContactTool;
 use Mozex\Campaigns\Mcp\Tools\UnsubscribeContactTool;
 use Mozex\Campaigns\Mcp\Tools\UpdateCampaignTool;
 use Mozex\Campaigns\Mcp\Tools\UpdateListTool;
 use Mozex\Campaigns\Mcp\Tools\UpdateTemplateTool;
+use Mozex\Campaigns\Reports\ResourcePage;
 
 /**
  * The MCP server agents run the app's campaigns through, at
@@ -111,15 +123,36 @@ class CampaignsServer extends Server
         PreviewAudienceTool::class,
         SendTestTool::class,
         GetTestSendsTool::class,
+        StartCampaignTool::class,
+        PauseCampaignTool::class,
+        ResumeCampaignTool::class,
+        SlowDownCampaignTool::class,
+        SpeedUpCampaignTool::class,
+        CancelCampaignTool::class,
+        GetCampaignStatusTool::class,
+        GetCampaignReportTool::class,
+        GetGuideTool::class,
     ];
 
-    /** @var array<int, class-string<McpResource>> */
+    /** @var array<int, McpResource|class-string<McpResource>> */
     protected array $resources = [
         GuideResource::class,
     ];
 
     protected function boot(): void
     {
+        $resources = ResourcePage::list();
+
+        // The app's own resources: each one's first page, and a template for
+        // the rest.
+        foreach ($resources as $resource) {
+            $this->resources[] = new AppDataResource($resource['name'], (string) $resource['description']);
+        }
+
+        if ($resources !== []) {
+            $this->resources[] = AppDataPageResource::class;
+        }
+
         $this->name = app(Campaigns::class)->name().' campaigns';
         $this->version = InstalledVersions::isInstalled('mozex/laravel-campaigns')
             ? (string) InstalledVersions::getPrettyVersion('mozex/laravel-campaigns')

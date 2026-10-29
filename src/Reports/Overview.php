@@ -17,8 +17,9 @@ use Mozex\Campaigns\Support\TestAddresses;
 
 /**
  * What an agent reads first: how sending is set up and what is switched
- * off, the lists with their counts, the campaigns running or waiting, and
- * the placeholders an email may hold with this app's values.
+ * off, the sending domain's standing (DomainSummary), the lists with their
+ * counts, the campaigns running or waiting, and the placeholders an email
+ * may hold with this app's values.
  */
 class Overview
 {
@@ -48,10 +49,19 @@ class Overview
      */
     public static function build(): array
     {
+        $sending = static::sending();
+        $domain = null;
+
+        if (is_string($sending['domain'])) {
+            ['summary' => $domain, 'notes' => $notes] = DomainSummary::for($sending['domain']);
+            $sending['notes'] = [...$sending['notes'], ...$notes];
+        }
+
         return [
             'app' => app(Campaigns::class)->name(),
             'package_version' => static::version(),
-            'sending' => static::sending(),
+            'sending' => $sending,
+            'domain' => $domain,
             'lists' => static::lists(),
             'lists_total' => CampaignList::query()->active()->count(),
             'campaigns' => static::campaigns(),
@@ -61,7 +71,7 @@ class Overview
     }
 
     /**
-     * @return array<string, mixed>
+     * @return array{enabled: bool, provider: string, mailer: string, from_address: ?string, from_name: ?string, reply_to: ?string, domain: ?string, provider_logs_readable: bool, test_addresses: list<string>, spam_score_check: bool, notes: list<string>}
      */
     protected static function sending(): array
     {

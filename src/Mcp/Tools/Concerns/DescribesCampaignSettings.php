@@ -7,7 +7,6 @@ namespace Mozex\Campaigns\Mcp\Tools\Concerns;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\JsonSchema\Types\Type;
 use Mozex\Campaigns\Mcp\Schemas;
-use Mozex\Campaigns\Sending\Pace;
 use Mozex\Campaigns\Support\CampaignSettings;
 
 /**
@@ -28,7 +27,7 @@ trait DescribesCampaignSettings
             'audience' => $schema->object()->description(Schemas::AUDIENCE),
             'track_opens' => $schema->boolean(),
             'track_clicks' => $schema->boolean(),
-            'pace' => $schema->object()->description('Any of '.implode(', ', Pace::KEYS).': first_day (sends on day 1), daily_growth (each day\'s growth, a percentage from 0 to 1000), daily_cap (most a day; null for none), per_minute, sending_hours (["09:00", "17:00"]; null for any time), timezone (like Europe/Paris). Left out, a value follows the app\'s config.'),
+            'pace' => $schema->object()->description(Schemas::PACE),
             'thresholds' => $schema->object()->description('Its own stop-loss limits, by the keys of the app\'s campaigns.stop_loss config; left out, a limit follows the config.'),
         ])->description('Any of '.implode(', ', CampaignSettings::KEYS).'. utm takes true for the default UTM tags (source and medium from the config, the key as campaign), false for none, or {"source", "medium", "campaign", "content", "term"} to replace them.');
     }

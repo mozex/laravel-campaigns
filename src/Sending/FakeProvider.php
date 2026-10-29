@@ -13,7 +13,8 @@ use Mozex\Campaigns\Contracts\CampaignProvider;
  * A provider that sends nothing, for tests and local runs: it keeps every
  * message it is given and answers with a made-up id, or with the failures it
  * was told to give (failNext()). Its logs and suppression lists hold what it
- * was given (log(), suppress()), and its reads can be made to fail
+ * was given (log(), suppress()), its domain counts what it was told
+ * (count()), and its reads can be made to fail
  * (failReads()). Select it with campaigns.provider "fake"; it is a
  * singleton, so a test reads what was sent from the container. It keeps
  * every message for the life of the process, so it suits tests and short
@@ -36,6 +37,9 @@ class FakeProvider implements CampaignProvider
     protected ?CampaignsException $readFailure = null;
 
     protected int $logDays = 5;
+
+    /** @var array<string, array{sent: int, forwarded: int, hard_bounces: int, complaints: int, unsubscribes: int}> */
+    protected array $metrics = [];
 
     public function send(OutgoingMessage $message): SendReceipt
     {
@@ -105,6 +109,35 @@ class FakeProvider implements CampaignProvider
         $this->logDays = $days;
 
         return $this;
+    }
+
+    /**
+     * What the provider counted on a UTC date (Y-m-d), on every domain; the
+     * counts not given are 0.
+     *
+     * @param  array<string, int>  $counts
+     */
+    public function count(string $date, array $counts): static
+    {
+        $this->metrics[$date] = [...array_fill_keys(DomainMetrics::COUNTS, 0), ...array_intersect_key($counts, array_flip(DomainMetrics::COUNTS))];
+        ksort($this->metrics);
+
+        return $this;
+    }
+
+    public function domainMetrics(string $domain, CarbonInterface $from, CarbonInterface $to): DomainMetrics
+    {
+        $this->throwReadFailure();
+
+        $days = [];
+        $last = $to->copy()->utc()->startOfDay();
+
+        for ($day = $from->copy()->utc()->startOfDay(); $day->lessThanOrEqualTo($last); $day = $day->addDay()) {
+            $days[$day->toDateString()] = $this->metrics[$day->toDateString()] ?? array_fill_keys(DomainMetrics::COUNTS, 0);
+        }
+
+        /** @var array<string, array{sent: int, forwarded: int, hard_bounces: int, complaints: int, unsubscribes: int}> $days */
+        return new DomainMetrics($days);
     }
 
     public function verifyWebhook(Request $request): bool

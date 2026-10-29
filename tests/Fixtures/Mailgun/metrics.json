@@ -1,0 +1,64 @@
+{
+  "start": "Sun, 01 Feb 2026 00:00:00 +0000",
+  "end": "Tue, 03 Feb 2026 00:00:00 +0000",
+  "resolution": "day",
+  "dimensions": [
+    "time"
+  ],
+  "items": [
+    {
+      "metrics": {
+        "accepted_outgoing_count": 120,
+        "accepted_incoming_count": 4,
+        "hard_bounces_count": 2,
+        "complained_count": 0,
+        "unsubscribed_count": 1
+      },
+      "dimensions": [
+        {
+          "dimension": "time",
+          "value": "Sun, 01 Feb 2026 00:00:00 +0000",
+          "display_value": "Sun, 01 Feb 2026 00:00:00 +0000"
+        }
+      ]
+    },
+    {
+      "metrics": {
+        "accepted_outgoing_count": 340,
+        "accepted_incoming_count": 0,
+        "hard_bounces_count": 3,
+        "complained_count": 1,
+        "unsubscribed_count": 2
+      },
+      "dimensions": [
+        {
+          "dimension": "time",
+          "value": "Mon, 02 Feb 2026 00:00:00 +0000",
+          "display_value": "Mon, 02 Feb 2026 00:00:00 +0000"
+        }
+      ]
+    },
+    {
+      "metrics": {
+        "accepted_outgoing_count": 75,
+        "accepted_incoming_count": 1,
+        "hard_bounces_count": 0,
+        "complained_count": 0,
+        "unsubscribed_count": 0
+      },
+      "dimensions": [
+        {
+          "dimension": "time",
+          "value": "Tue, 03 Feb 2026 00:00:00 +0000",
+          "display_value": "Tue, 03 Feb 2026 00:00:00 +0000"
+        }
+      ]
+    }
+  ],
+  "pagination": {
+    "sort": "",
+    "skip": 0,
+    "limit": 1500,
+    "total": 3
+  }
+}

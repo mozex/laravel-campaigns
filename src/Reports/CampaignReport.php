@@ -157,7 +157,7 @@ class CampaignReport
         ksort($byLocale);
         ksort($timeline);
 
-        [$opens, $clicks, $links] = static::events($campaign);
+        [$opens, $clicks, $links, $linksTotal] = static::events($campaign);
 
         return [
             'campaign' => [
@@ -189,6 +189,7 @@ class CampaignReport
                 'click' => static::rate($totals['clicked'], $totals['delivered']),
             ],
             'links' => $links,
+            'links_total' => $linksTotal,
             'by_list' => $byList,
             'by_locale' => $byLocale,
             'by_tier' => $byTier,
@@ -288,9 +289,10 @@ class CampaignReport
 
     /**
      * Every open and click the provider reported about the campaign's
-     * messages, a person's or a machine's, and the clicks per link.
+     * messages, a person's or a machine's, the clicks per link (the most
+     * clicked LINKS), and how many links were clicked in all.
      *
-     * @return array{0: array{human: int, machine: int}, 1: array{human: int, machine: int}, 2: list<array{url: string, human: int, machine: int}>}
+     * @return array{0: array{human: int, machine: int}, 1: array{human: int, machine: int}, 2: list<array{url: string, human: int, machine: int}>, 3: int}
      */
     protected static function events(Campaign $campaign): array
     {
@@ -331,7 +333,7 @@ class CampaignReport
 
         usort($links, fn (array $a, array $b): int => [$b['human'], $b['machine'], $a['url']] <=> [$a['human'], $a['machine'], $b['url']]);
 
-        return [$opens, $clicks, array_slice($links, 0, static::LINKS)];
+        return [$opens, $clicks, array_slice($links, 0, static::LINKS), count($links)];
     }
 
     /**

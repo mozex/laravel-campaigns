@@ -67,7 +67,19 @@ class Allowance
      */
     public static function domainLeft(Campaign $campaign, CarbonInterface $now): ?int
     {
-        $domain = $campaign->sendingDomain();
+        // The pump asks every minute, so a domain with no cap counts nothing.
+        return static::domainUsage($campaign->sendingDomain(), $now, countWithoutCap: false)['left'];
+    }
+
+    /**
+     * A sending domain's daily cap and what its last 24 hours used of it:
+     * the campaigns' claims and the double opt-in emails, and what is left
+     * (null with no cap). Without a cap, the use is counted only when asked.
+     *
+     * @return array{cap: ?int, claimed: int, confirmations: int, left: ?int}
+     */
+    public static function domainUsage(string $domain, CarbonInterface $now, bool $countWithoutCap = true): array
+    {
         $since = $now->copy()->subSeconds(self::DAY);
 
         // Every campaign that may have claimed in the window: one that sent
@@ -85,11 +97,19 @@ class Allowance
             ->filter(fn (Campaign $other): bool => $other->status === CampaignStatus::Sending)
             ->min(fn (Campaign $other): ?int => Pace::resolve($other->pace)['daily_cap']);
 
-        if ($cap === null) {
-            return null;
+        if ($cap === null && ! $countWithoutCap) {
+            return ['cap' => null, 'claimed' => 0, 'confirmations' => 0, 'left' => null];
         }
 
-        return (int) $cap - static::claimed($onDomain->modelKeys(), $since) - static::confirmations($domain, $since);
+        $claimed = static::claimed($onDomain->modelKeys(), $since);
+        $confirmations = static::confirmations($domain, $since);
+
+        return [
+            'cap' => $cap === null ? null : (int) $cap,
+            'claimed' => $claimed,
+            'confirmations' => $confirmations,
+            'left' => $cap === null ? null : (int) $cap - $claimed - $confirmations,
+        ];
     }
 
     /**

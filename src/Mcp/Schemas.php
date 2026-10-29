@@ -12,6 +12,7 @@ use Mozex\Campaigns\Enums\ConsentBasis;
 use Mozex\Campaigns\Enums\EngagementTier;
 use Mozex\Campaigns\Enums\ImportChange;
 use Mozex\Campaigns\Enums\ListKind;
+use Mozex\Campaigns\Enums\MessageStatus;
 use Mozex\Campaigns\Enums\SubscriptionStatus;
 use Mozex\Campaigns\Reports\AssetSummary;
 use Mozex\Campaigns\Reports\CampaignSummary;
@@ -34,6 +35,11 @@ class Schemas
      * preview_audience take it.
      */
     public const AUDIENCE = 'Who it goes to within its lists; every part given narrows (AND), and with none it goes to everyone subscribed on them: audience ({"name": a named audience from list_audiences, "parameters": {...}}), saved_audience (a key), filters (the built-in filters: '.self::FILTERS.'), subscribers (ids) and emails (addresses), one set of people, and records ({"<dynamic list key>": [app record ids]}). Each names at most 10,000. Opted-out, blocked and sunset people are never mailed whatever it says.';
+
+    /**
+     * A campaign's pace settings, as the drafting and pace tools take them.
+     */
+    public const PACE = 'Any of first_day, daily_growth, daily_cap, per_minute, sending_hours, timezone: first_day (sends on day 1), daily_growth (each day\'s growth, a percentage from 0 to 1000), daily_cap (most a day; null for none), per_minute, sending_hours (["09:00", "17:00"]; null for any time), timezone (like Europe/Paris). Left out, a value follows the app\'s config.';
 
     /**
      * A list with its counts and details (ListSummary::rows() with details).
@@ -292,6 +298,59 @@ class Schemas
             'pause_reason' => $schema->string()->nullable()->required(),
             'revisions' => $schema->integer()->required()->description('How many revisions its email has; list_revisions lists them.'),
             'revision' => static::revision($schema)->nullable()->required()->description('Its current email.'),
+        ]);
+    }
+
+    /**
+     * Where a campaign's sending stands (CampaignProgress::of()).
+     */
+    public static function progress(JsonSchema $schema): Type
+    {
+        $statuses = [];
+
+        foreach (MessageStatus::cases() as $status) {
+            $statuses[$status->value] = $schema->integer()->required();
+        }
+
+        return $schema->object([
+            'uuid' => $schema->string()->required(),
+            'key' => $schema->string()->required(),
+            'name' => $schema->string()->required(),
+            'status' => $schema->string()->enum(array_column(CampaignStatus::cases(), 'value'))->required()->description('starting while a start is being frozen: read it again until it is sending, scheduled, or a draft with start_error.'),
+            'recipient_count' => $schema->integer()->nullable()->required()->description('How many it was frozen for.'),
+            'start_error' => $schema->string()->nullable()->required()->description('Why its last start was handed back to a draft.'),
+            'scheduled_at' => $schema->string()->nullable()->required(),
+            'started_at' => $schema->string()->nullable()->required(),
+            'paused_at' => $schema->string()->nullable()->required(),
+            'pause_reason' => $schema->string()->nullable()->required()->description('An automatic pause names the numbers and the limit (its key) that stopped it.'),
+            'completed_at' => $schema->string()->nullable()->required(),
+            'canceled_at' => $schema->string()->nullable()->required(),
+            'messages' => $schema->object($statuses)->required()->description('Its messages by status: pending (not handed out yet), queued (waiting on the queue), sending, sent (the provider took it), delivered, failed, skipped (not mailable by the time its turn came), unknown (a send that ended unclear and the provider\'s logs could no longer settle).'),
+            'sends' => $schema->integer()->required()->description('Emails the provider took.'),
+            'failures' => $schema->object()->required()->description('Failed messages by kind: hard_bounce (blocks the address), soft_bounce (blocks it after 3 in a row), sender_blocked (the receiver refused the sender, nothing against the address), suppressed_bounce, suppressed_complaint and suppressed_unsubscribe (the provider held the address from before and sent nothing), other, and not_accepted (the provider\'s logs held nothing for it an hour after an unclear send; never resent).'),
+            'queue' => $schema->object([
+                'pump_last_run' => $schema->string()->nullable()->required()->description('When the scheduler last ran the pump (every minute).'),
+                'pending' => $schema->integer()->required(),
+                'queued' => $schema->integer()->required(),
+                'stalled' => $schema->integer()->required()->description('Queued for more than five minutes: no worker is taking them, and the campaign hands out nothing more until they go.'),
+                'oldest_queued_at' => $schema->string()->nullable()->required(),
+                'jobs_waiting' => $schema->integer()->nullable()->required()->description('Jobs on the campaigns queue, all campaigns\' and the package\'s other work; null when the queue can\'t say.'),
+            ])->required(),
+            'stalled' => $schema->boolean()->required(),
+            'pace' => $schema->object([
+                'first_day' => $schema->integer()->required(),
+                'daily_growth' => $schema->number()->required()->description('Percent more each day.'),
+                'daily_cap' => $schema->integer()->nullable()->required(),
+                'per_minute' => $schema->integer()->required(),
+                'sending_hours' => $schema->array()->items($schema->string())->nullable()->required()->description('["09:00", "17:00"] in timezone; null sends all day.'),
+                'timezone' => $schema->string()->required(),
+                'rate_halved_until' => $schema->string()->nullable()->required()->description('The per-minute rate is halved until then, after the provider took nothing (a rate limit or an outage).'),
+                'day' => $schema->integer()->nullable()->required()->description('The day of the pace it is on, counted in 24 hours from its start (or from a resume after a pause of more than a day).'),
+                'day_volume' => $schema->integer()->nullable()->required()->description('How many that day may send.'),
+                'in_sending_hours' => $schema->boolean()->required(),
+                'allowance_now' => $schema->integer()->nullable()->required()->description('How many it may hand out this minute, while sending: the least of the per-minute rate, the day\'s volume and the domain\'s daily cap, each less what was used; 0 outside its sending hours, while sending is switched off, or while its queue is stalled.'),
+            ])->required()->description('The pace in effect: its own settings over the app\'s config.'),
+            'limits' => $schema->object()->required()->description('The stop-loss limits in effect: its own thresholds over the app\'s config.'),
         ]);
     }
 

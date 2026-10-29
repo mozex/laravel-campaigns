@@ -7,6 +7,7 @@ namespace Mozex\Campaigns\Contracts;
 use Carbon\CarbonInterface;
 use Illuminate\Http\Request;
 use Mozex\Campaigns\CampaignsException;
+use Mozex\Campaigns\Sending\DomainMetrics;
 use Mozex\Campaigns\Sending\Feedback;
 use Mozex\Campaigns\Sending\OutgoingMessage;
 use Mozex\Campaigns\Sending\SendFailed;
@@ -93,6 +94,16 @@ interface CampaignProvider
      * @throws CampaignsException
      */
     public function suppressionsFor(string $domain, string $email): array;
+
+    /**
+     * What the provider counted for a sending domain each day of a period,
+     * for an agent judging the domain's reputation and quota before a start.
+     * The days are whole UTC days, from the one holding $from to the one
+     * holding $to, and none outside them.
+     *
+     * @throws CampaignsException
+     */
+    public function domainMetrics(string $domain, CarbonInterface $from, CarbonInterface $to): DomainMetrics;
 
     /**
      * Whether the provider tracks opens and clicks itself, so the package
