@@ -7,21 +7,23 @@ namespace Mozex\Campaigns\Actions;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 use Closure;
-use Illuminate\Database\DetectsConcurrencyErrors;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\QueryException;
+use JsonException;
 use Mozex\Campaigns\CampaignsException;
 use Mozex\Campaigns\Enums\ConsentBasis;
 use Mozex\Campaigns\Enums\ImportChange;
 use Mozex\Campaigns\Enums\ListKind;
 use Mozex\Campaigns\Imports\ImportedContact;
 use Mozex\Campaigns\Imports\ImportResult;
+use Mozex\Campaigns\Imports\RolledBackRow;
 use Mozex\Campaigns\Models\CampaignList;
 use Mozex\Campaigns\Models\Subscriber;
 use Mozex\Campaigns\Support\ConsentContext;
 use Mozex\Campaigns\Support\EmailAddress;
+use Mozex\Campaigns\Support\Engagement;
 use Mozex\Campaigns\Support\Rows;
 use Mozex\Campaigns\Support\SubscriberDetails;
-use Throwable;
 
 /**
  * Brings contacts in from another system: onto a static list with their
@@ -34,8 +36,8 @@ use Throwable;
  * through SubscribeAction with no choice of theirs, whatever the context
  * says. It doesn't overwrite what the app knows: a subscriber linked to an
  * app record keeps the details its list source gives it, and any other
- * subscriber gains only the details it lacks; engagement dates only move
- * forward. An address kept only so it is never mailed (a person who left, or
+ * subscriber, when the import has a list, gains only the details it lacks;
+ * engagement dates only move forward. An address kept only so it is never mailed (a person who left, or
  * a block or opt-out brought in with no list) gains nothing but the import's
  * own block or opt-out, so a person who left gets no details back. On a
  * double opt-in list the contacts wait to confirm, and nothing mails them
@@ -46,13 +48,21 @@ use Throwable;
  */
 class ImportContactsAction
 {
-    use DetectsConcurrencyErrors;
-
     /**
      * How far ahead of the server's clock an engagement date may be, for a
      * source whose clock runs a little fast; it is stored as now.
      */
     protected const CLOCK_SKEW_MINUTES = 5;
+
+    /**
+     * What a seen address's first row carried, and whether the address ends
+     * opted out or blocked.
+     */
+    protected const OPTED_OUT = 1;
+
+    protected const BLOCKED = 2;
+
+    protected const SUPPRESSED = 4;
 
     public function __construct(
         protected SubscribeAction $subscribe,
@@ -91,7 +101,10 @@ class ImportContactsAction
         $problems = [];
         $row = $rows = 0;
 
-        /** @var array<string, array{row: int, optOut: bool, block: bool, suppressed: bool}> $seen */
+        // Each address seen, as its first row's number shifted past three
+        // flags: one int instead of an array keeps a long import's memory
+        // small.
+        /** @var array<string, int> $seen */
         $seen = [];
 
         foreach ($contacts as $item) {
@@ -110,16 +123,20 @@ class ImportContactsAction
                 continue;
             }
 
+            $first = $seen[$address] ?? null;
+
             try {
                 $contact = $item instanceof ImportedContact ? $item : ImportedContact::fromArray($item);
-                $dates = $this->engagement($contact);
+                $this->checkStorable($contact);
+
+                // A later row's dates are dropped anyway, so a bad one never
+                // costs it its opt-out or block.
+                $dates = $first === null ? $this->engagement($contact) : array_fill_keys(Engagement::SIGNALS, null);
             } catch (CampaignsException $exception) {
                 $problems[] = "Row {$row}: {$exception->getMessage()}";
 
                 continue;
             }
-
-            $first = $seen[$address] ?? null;
 
             // An address counts once, so a dry run's numbers match the real
             // run's; a later row only adds an opt-out or a block the first
@@ -127,19 +144,16 @@ class ImportContactsAction
             if ($first !== null) {
                 $contact = new ImportedContact(
                     $contact->email,
-                    optOut: $contact->optOut && ! $first['optOut'],
-                    block: $first['block'] ? null : $contact->block,
+                    optOut: $contact->optOut && ($first & static::OPTED_OUT) === 0,
+                    block: ($first & static::BLOCKED) === 0 ? $contact->block : null,
                     meta: $contact->meta,
                 );
 
                 if (! $contact->suppresses()) {
-                    $problems[] = "Row {$row}: the same address as row {$first['row']}, which counts instead.";
+                    $problems[] = 'Row '.$row.': the same address as row '.($first >> 3).', which counts instead.';
 
                     continue;
                 }
-
-                $problems[] = "Row {$row}: the same address as row {$first['row']}, which counts instead; this row's opt-out or block was added to it.";
-                $dates = array_fill_keys(array_keys($dates), null);
             }
 
             try {
@@ -151,29 +165,43 @@ class ImportContactsAction
                 $problems[] = "Row {$row}: {$exception->getMessage()}";
 
                 continue;
+            } catch (QueryException $exception) {
+                // Its message holds the SQL with the row's address, so only
+                // its code is kept; whatever broke would break the next row.
+                $problems[] = "Row {$row}: the database refused it (SQLSTATE {$exception->getCode()}), so the import stopped there.";
+
+                break;
             }
 
             if ($first !== null) {
-                $changes = array_filter($changes, fn (ImportChange $change): bool => in_array($change, [ImportChange::Blocked, ImportChange::OptedOut], true));
+                $changes = array_values(array_filter($changes, fn (ImportChange $change): bool => in_array($change, [ImportChange::Blocked, ImportChange::OptedOut], true)));
+                $problems[] = 'Row '.$row.': the same address as row '.($first >> 3).', which counts instead'
+                    .($changes === [] ? '.' : '; this row\'s opt-out or block was added to it.');
             }
 
             foreach ($changes as $change) {
                 $counts[$change->value]++;
             }
 
-            $seen[$address] = [
-                'row' => $first['row'] ?? $row,
-                'optOut' => ($first['optOut'] ?? false) || $contact->optOut,
-                'block' => ($first['block'] ?? false) || $contact->block !== null,
-                'suppressed' => $suppressed,
-            ];
+            // A row that found no subscriber and made none leaves the address
+            // to the next row that has it.
+            if ($changes === [ImportChange::NotFound]) {
+                continue;
+            }
+
+            $flags = (($first ?? 0) & (static::OPTED_OUT | static::BLOCKED))
+                | ($contact->optOut ? static::OPTED_OUT : 0)
+                | ($contact->block !== null ? static::BLOCKED : 0)
+                | ($suppressed ? static::SUPPRESSED : 0);
+
+            $seen[$address] = (($first === null ? $row : $first >> 3) << 3) | $flags;
         }
 
         if ($onlyAddress !== null && $rows === 0) {
             $problems[] = 'No row has that address.';
         }
 
-        $neverMailed = count(array_filter(array_column($seen, 'suppressed')));
+        $neverMailed = count(array_filter($seen, fn (int $entry): bool => ($entry & static::SUPPRESSED) !== 0));
 
         return new ImportResult($dryRun, $rows, $counts, $neverMailed, $problems);
     }
@@ -186,10 +214,13 @@ class ImportContactsAction
     {
         $context = $context->withMeta($contact->meta);
 
-        // Locked, so a person deleted or moved at this moment is seen as
-        // they are after it, never written to as they were before.
-        $id = Subscriber::query()->where('email', $address)->value('id');
-        $subscriber = $id === null ? null : Subscriber::query()->lockForUpdate()->find($id);
+        // One locking read by address, before any plain one: it waits for a
+        // deletion or an address change in progress and sees the row as it
+        // is after it, so the import never writes to a person who just left
+        // or to whoever took the row's place. On MySQL it also locks the gap
+        // of an address no row holds; a deadlock that causes runs the row
+        // again.
+        $subscriber = Subscriber::query()->where('email', $address)->lockForUpdate()->first();
 
         if ($subscriber === null) {
             if ($list === null && ! $contact->suppresses()) {
@@ -229,38 +260,50 @@ class ImportContactsAction
     }
 
     /**
-     * Runs one row in a transaction of its own, rolled back on a dry run,
-     * and runs it again when the database ended it for a deadlock, which an
-     * import racing the app's own writes can meet. Inside a caller's
-     * transaction a deadlock has already ended that transaction, so it is
-     * rethrown instead.
+     * Runs one row in a transaction of its own, rolled back on a dry run.
+     * Laravel's transaction() runs it again when the database ended it for
+     * a deadlock, which an import racing the app's own writes can meet, and
+     * inside a caller's transaction, which a deadlock has already ended,
+     * hands the deadlock to the caller with the transaction count right.
      *
      * @param  Closure(): array{list<ImportChange>, bool}  $import
      * @return array{list<ImportChange>, bool}
      */
     protected function inTransaction(Closure $import, bool $dryRun): array
     {
-        $connection = (new Subscriber)->getConnection();
-        $retries = $connection->transactionLevel() === 0 ? 2 : 0;
-
-        while (true) {
-            $connection->beginTransaction();
-
-            try {
+        try {
+            return (new Subscriber)->getConnection()->transaction(function () use ($import, $dryRun): array {
                 $result = $import();
-            } catch (Throwable $exception) {
-                $connection->rollBack();
 
-                if ($retries-- > 0 && $this->causedByConcurrencyError($exception)) {
-                    continue;
-                }
+                return $dryRun ? throw new RolledBackRow($result) : $result;
+            }, attempts: 3);
+        } catch (RolledBackRow $rolledBack) {
+            return $rolledBack->result;
+        }
+    }
 
-                throw $exception;
+    /**
+     * A value that isn't UTF-8 (a file in another encoding), holds a NUL
+     * character or can't be written as JSON makes the database, or the
+     * encoding before it, fail with the row's address in the error, so it is
+     * the row's problem instead.
+     *
+     * @throws CampaignsException
+     */
+    protected function checkStorable(ImportedContact $contact): void
+    {
+        $values = [...$this->details($contact), 'custom_fields' => $contact->customFields, 'meta' => $contact->meta];
+
+        foreach ($values as $field => $value) {
+            try {
+                $json = json_encode($value, JSON_THROW_ON_ERROR);
+            } catch (JsonException $exception) {
+                throw CampaignsException::invalidImportValue($field, "it can't be stored ({$exception->getMessage()})");
             }
 
-            $dryRun ? $connection->rollBack() : $connection->commit();
-
-            return $result;
+            if (str_contains($json, '\u0000')) {
+                throw CampaignsException::invalidImportValue($field, 'it holds a NUL character');
+            }
         }
     }
 

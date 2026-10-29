@@ -2,9 +2,13 @@
 
 declare(strict_types=1);
 
+use Illuminate\Database\QueryException;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Queue;
 use Mozex\Campaigns\Actions\ImportContactsAction;
+use Mozex\Campaigns\Actions\OptInAction;
+use Mozex\Campaigns\Actions\SubscribeAction;
 use Mozex\Campaigns\CampaignsException;
 use Mozex\Campaigns\Enums\BlockReason;
 use Mozex\Campaigns\Enums\ConsentAction;
@@ -119,6 +123,103 @@ it('never speaks for the person, so a context that says they asked clears no opt
         ->and($optedOut->fresh()?->opted_out_at)->not->toBeNull()
         ->and(consentActions($optedOut))->toBe(['subscribe'])
         ->and(ConsentRecord::query()->sole()->basis)->toBe(ConsentBasis::Consent);
+});
+
+it('keeps a later row\'s opt-out whatever else it holds, and refuses what the database can\'t store', function (string $driver): void {
+    useDatabase($driver);
+    $list = CampaignList::factory()->create();
+
+    $rows = [
+        ['email' => 'a@example.com'],
+        ['email' => 'A@example.com', 'opted_out' => 'yes', 'last_opened_at' => '0000-00-00 00:00:00'],
+        ['email' => 'latin@example.com', 'custom_fields' => ['city' => "Z\xFCrich"]],
+        ['email' => 'nul@example.com', 'name' => "Nu\0l"],
+        ['email' => "jos\xE9@example.com"],
+        ['email' => 'a@example.com', 'opted_out' => true],
+        ['email' => 'b@example.com', 'blocked' => 'hard_bounce'],
+        ['email' => 'b@example.com', 'blocked' => 'complaint'],
+    ];
+
+    $dryRun = import($rows, $list, dryRun: true);
+    $result = import($rows, $list);
+
+    expect($dryRun->toArray())->toBe([...$result->toArray(), 'dry_run' => true])
+        ->and(importCounts($result))->toBe(['created' => 2, 'joined' => 2, 'blocked' => 1, 'opted_out' => 1])
+        ->and($result->suppressed)->toBe(2)
+        ->and($result->problems)->toBe([
+            'Row 2: the same address as row 1, which counts instead; this row\'s opt-out or block was added to it.',
+            'Row 3: The contact\'s custom_fields can\'t be imported: it can\'t be stored (Malformed UTF-8 characters, possibly incorrectly encoded).',
+            'Row 4: The contact\'s name can\'t be imported: it holds a NUL character.',
+            'Row 5: it has no email address that can be mailed.',
+            'Row 6: the same address as row 1, which counts instead.',
+            'Row 8: the same address as row 7, which counts instead.',
+        ])
+        ->and(Subscriber::findByEmail('a@example.com')?->opted_out_at)->not->toBeNull()
+        ->and(Subscriber::findByEmail('b@example.com')?->blocked_reason)->toBe(BlockReason::HardBounce)
+        ->and(Subscriber::query()->count())->toBe(2);
+})->with('databases');
+
+it('lets a row that found nobody leave the address to the next row that has it', function (): void {
+    $result = import([
+        ['email' => 'stranger@example.com', 'last_opened_at' => now()->subDay()->toIso8601String()],
+        ['email' => 'stranger@example.com', 'blocked' => 'hard_bounce'],
+    ], null);
+
+    expect(importCounts($result))->toBe(['created' => 1, 'blocked' => 1, 'not_found' => 1])
+        ->and($result->problems)->toBe([])
+        ->and(Subscriber::findByEmail('stranger@example.com')?->blocked_reason)->toBe(BlockReason::HardBounce);
+});
+
+it('runs a row again after a deadlock, and leaves a caller\'s transaction as it found it', function (): void {
+    app()->bind(SubscribeAction::class, fn (): SubscribeAction => new class(app(OptInAction::class)) extends SubscribeAction
+    {
+        public static int $calls = 0;
+
+        public function execute(Subscriber $subscriber, CampaignList $list, ConsentContext $context): Subscription
+        {
+            if (self::$calls++ === 0) {
+                throw new class('Deadlock found when trying to get lock') extends PDOException
+                {
+                    protected $code = '40001';
+                };
+            }
+
+            return parent::execute($subscriber, $list, $context);
+        }
+    });
+    $list = CampaignList::factory()->create();
+
+    $retried = import([['email' => 'a@example.com']], $list);
+    $level = DB::transactionLevel();
+
+    DB::beginTransaction();
+    $inside = import([['email' => 'b@example.com']], $list, dryRun: true);
+    $levelInside = DB::transactionLevel();
+    DB::rollBack();
+
+    expect(importCounts($retried))->toBe(['created' => 1, 'joined' => 1])
+        ->and(Subscriber::query()->pluck('email')->all())->toBe(['a@example.com'])
+        ->and([$level, $levelInside])->toBe([0, 1])
+        ->and(importCounts($inside))->toBe(['created' => 1, 'joined' => 1]);
+});
+
+it('stops at a row the database refuses, naming the row and never its address', function (): void {
+    app()->bind(SubscribeAction::class, fn (): SubscribeAction => new class(app(OptInAction::class)) extends SubscribeAction
+    {
+        public function execute(Subscriber $subscriber, CampaignList $list, ConsentContext $context): Subscription
+        {
+            throw new QueryException('testing', 'insert into campaign_list_subscriptions values (?)', [$subscriber->email], new class('Integrity constraint violation') extends PDOException
+            {
+                protected $code = '23000';
+            });
+        }
+    });
+
+    $result = import([['email' => 'secret@example.com'], ['email' => 'next@example.com']], CampaignList::factory()->create());
+
+    expect($result->problems)->toBe(['Row 1: the database refused it (SQLSTATE 23000), so the import stopped there.'])
+        ->and($result->rows)->toBe(1)
+        ->and(Subscriber::query()->count())->toBe(0);
 });
 
 it('turns a contact a generator makes with an impossible date into a problem for its row', function (): void {

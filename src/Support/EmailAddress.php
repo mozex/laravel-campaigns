@@ -23,11 +23,13 @@ class EmailAddress
 
     /**
      * The cleaned address, or null when it can't be mailed: empty, too long
-     * or malformed. Letters outside ASCII are allowed before the @.
+     * or malformed. Letters outside ASCII are allowed before the @, in UTF-8
+     * only: lower-casing text in another encoding turns its letters into
+     * question marks, which would store a different address.
      */
     public static function normalize(?string $address): ?string
     {
-        if ($address === null) {
+        if ($address === null || ! mb_check_encoding($address, 'UTF-8')) {
             return null;
         }
 

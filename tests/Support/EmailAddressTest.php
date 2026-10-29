@@ -19,6 +19,7 @@ it('normalizes an address, or refuses one that cannot be mailed', function (?str
 })->with([
     'spaces and capitals' => ['  Jane.Doe@Example.COM ', 'jane.doe@example.com'],
     'letters outside ASCII' => ['José@example.com', 'josé@example.com'],
+    'not UTF-8 (Latin-1)' => ["jos\xE9@example.com", null],
     'the longest allowed' => [longAddress(61), longAddress(61)],
     'one character too long' => [longAddress(62), null],
     'no @' => ['jane.example.com', null],
