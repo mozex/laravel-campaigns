@@ -13,14 +13,20 @@ use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\RateLimiter;
 use Mozex\Campaigns\Commands\SyncListCommand;
 use Mozex\Campaigns\Models\ApiToken;
+use Mozex\Campaigns\Models\Asset;
 use Mozex\Campaigns\Models\Campaign;
 use Mozex\Campaigns\Models\CampaignList;
 use Mozex\Campaigns\Models\CampaignMessage;
 use Mozex\Campaigns\Models\ConsentRecord;
 use Mozex\Campaigns\Models\ProviderEvent;
+use Mozex\Campaigns\Models\Revision;
+use Mozex\Campaigns\Models\RevisionContent;
+use Mozex\Campaigns\Models\SavedAudience;
 use Mozex\Campaigns\Models\Subscriber;
 use Mozex\Campaigns\Models\Subscription;
+use Mozex\Campaigns\Models\Template;
 use Mozex\Campaigns\Models\TestSend;
+use Mozex\Campaigns\Models\Upload;
 use Mozex\Campaigns\Support\Token;
 use Spatie\LaravelPackageTools\Commands\InstallCommand;
 use Spatie\LaravelPackageTools\Package;
@@ -66,6 +72,12 @@ class CampaignsServiceProvider extends PackageServiceProvider
             'campaigns.test_send' => TestSend::class,
             'campaigns.provider_event' => ProviderEvent::class,
             'campaigns.api_token' => ApiToken::class,
+            'campaigns.template' => Template::class,
+            'campaigns.revision' => Revision::class,
+            'campaigns.revision_content' => RevisionContent::class,
+            'campaigns.asset' => Asset::class,
+            'campaigns.upload' => Upload::class,
+            'campaigns.saved_audience' => SavedAudience::class,
         ]);
 
         // A link's POSTs, counted per link: enough for a person and their
@@ -74,23 +86,35 @@ class CampaignsServiceProvider extends PackageServiceProvider
             ->by('campaigns.links:'.Token::hash((string) $request->route('token'))));
     }
 
-    /**
-     * Laravel merges a published config with a shallow array_merge, so a
-     * published file that predates a key we add to a nested group (pace,
-     * stop_loss) would lose that key. Re-merge after the shallow pass.
-     */
     public function packageRegistered(): void
     {
         // Scoped, so a consent context can never carry over to the next
         // request or queued job in a long-running worker.
         $this->app->scoped(Campaigns::class);
 
+        /** @var Repository $config */
+        $config = $this->app->make('config');
+
+        $this->mergePublishedConfig($config);
+
+        // The language every email holds, read before any middleware runs:
+        // App::setLocale() writes app.locale, so reading it later would give
+        // the current visitor's language instead of the app's.
+        if (! $config->get('campaigns.locale')) {
+            $config->set('campaigns.locale', $config->get('app.locale'));
+        }
+    }
+
+    /**
+     * Laravel merges a published config with a shallow array_merge, so a
+     * published file that predates a key we add to a nested group (pace,
+     * stop_loss) would lose that key. Re-merge after the shallow pass.
+     */
+    protected function mergePublishedConfig(Repository $config): void
+    {
         if ($this->app instanceof CachesConfiguration && $this->app->configurationIsCached()) {
             return;
         }
-
-        /** @var Repository $config */
-        $config = $this->app->make('config');
 
         /** @var array<string, mixed> $defaults */
         $defaults = require __DIR__.'/../config/campaigns.php';

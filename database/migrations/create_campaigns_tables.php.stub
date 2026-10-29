@@ -109,6 +109,100 @@ return new class extends Migration
             $table->index(['subscriber_id', 'occurred_at']);
         });
 
+        Schema::create('campaign_templates', function (Blueprint $table): void {
+            $table->id();
+            $table->uuid('uuid')->unique();
+            $table->string('key', 125)->unique();
+            $table->string('name', 255);
+            $table->text('description')->nullable();
+            $table->boolean('is_default')->default(false);
+            $table->timestamp('archived_at')->nullable();
+            $table->timestamps();
+        });
+
+        // Every edit of a template or a campaign's email adds a revision, and
+        // nothing is overwritten: the highest number is the current one, and
+        // restoring an old revision adds a copy of it. The owner is one of the
+        // package's own models, whose keys are integers whatever key type the
+        // app gives its own morphs, so the morph id is not morphs().
+        Schema::create('campaign_revisions', function (Blueprint $table): void {
+            $table->id();
+            $table->uuid('uuid')->unique();
+            $table->string('revisable_type', 64);
+            $table->unsignedBigInteger('revisable_id');
+            $table->unsignedInteger('number');
+            $table->string('note', 255)->nullable();
+            // Who made it, as the agent's token or the app's user names it.
+            $table->string('author', 255)->nullable();
+            $table->jsonb('check_results')->nullable();
+            $table->timestamp('checked_at')->nullable();
+            $table->timestamps();
+
+            $table->unique(['revisable_type', 'revisable_id', 'number']);
+        });
+
+        // mediumText, since MySQL's text holds 64 KB and an email may hold up
+        // to 90 KB of HTML.
+        Schema::create('campaign_revision_contents', function (Blueprint $table): void {
+            $table->id();
+            $table->foreignId('revision_id')->constrained('campaign_revisions')->cascadeOnDelete();
+            $table->string('locale', 35);
+            $table->string('subject', 255);
+            $table->string('preheader', 255)->nullable();
+            $table->mediumText('html');
+            $table->mediumText('text');
+            $table->boolean('text_generated')->default(false);
+            $table->timestamps();
+
+            $table->unique(['revision_id', 'locale']);
+        });
+
+        // The images every template and campaign shares. Delivered mail keeps
+        // loading them, so they are never deleted.
+        Schema::create('campaign_assets', function (Blueprint $table): void {
+            $table->id();
+            $table->uuid('uuid')->unique();
+            $table->string('disk', 64);
+            $table->string('path', 255);
+            $table->string('url', 2048);
+            $table->string('name', 255);
+            $table->string('mime', 127);
+            $table->unsignedBigInteger('size');
+            $table->unsignedInteger('width')->nullable();
+            $table->unsignedInteger('height')->nullable();
+            $table->string('author', 255)->nullable();
+            $table->timestamps();
+        });
+
+        // A file an agent sends through a one-time upload link, kept until it
+        // is claimed by the tool that uses it or expires.
+        Schema::create('campaign_uploads', function (Blueprint $table): void {
+            $table->id();
+            $table->uuid('uuid')->unique();
+            $table->string('purpose', 32);
+            $table->string('path', 255)->nullable();
+            $table->unsignedBigInteger('size')->nullable();
+            $table->string('mime', 127)->nullable();
+            $table->string('author', 255)->nullable();
+            // A default, so a MySQL or MariaDB server without
+            // explicit_defaults_for_timestamp doesn't make this first
+            // timestamp change itself on every update of the row.
+            $table->timestamp('expires_at')->useCurrent();
+            $table->timestamp('received_at')->nullable();
+            $table->timestamp('claimed_at')->nullable();
+            $table->timestamps();
+        });
+
+        Schema::create('campaign_saved_audiences', function (Blueprint $table): void {
+            $table->id();
+            $table->uuid('uuid')->unique();
+            $table->string('key', 125)->unique();
+            $table->string('name', 255);
+            $table->text('description')->nullable();
+            $table->jsonb('filters');
+            $table->timestamps();
+        });
+
         Schema::create('campaigns', function (Blueprint $table): void {
             $table->id();
             $table->uuid('uuid')->unique();
@@ -129,6 +223,18 @@ return new class extends Migration
             $table->unsignedInteger('recipient_count')->nullable();
             $table->text('pause_reason')->nullable();
             $table->jsonb('report')->nullable();
+            $table->foreignId('template_id')->nullable()->index()->constrained('campaign_templates')->nullOnDelete();
+            // The revision that goes out, fixed when the campaign is started
+            // or scheduled, so a later edit never reaches mail being sent.
+            $table->foreignId('frozen_revision_id')->nullable()->index()->constrained('campaign_revisions')->nullOnDelete();
+            $table->foreignId('duplicated_from_id')->nullable()->index()->constrained('campaigns')->nullOnDelete();
+            $table->timestamp('scheduled_at')->nullable();
+            // The pace's state the ledger can't give: the day its day count
+            // starts from (moved after a pause longer than a day), and when a
+            // rate halved after a refusal ends. Columns, not cache values,
+            // since a release clears the cache.
+            $table->timestamp('pace_started_at')->nullable();
+            $table->timestamp('rate_halved_until')->nullable();
             $table->timestamp('started_at')->nullable();
             $table->timestamp('paused_at')->nullable();
             $table->timestamp('completed_at')->nullable();

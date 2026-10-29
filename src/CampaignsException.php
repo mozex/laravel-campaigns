@@ -94,4 +94,52 @@ class CampaignsException extends RuntimeException
     {
         return new self("The filter \"{$filter}\" can't be used: {$reason}.");
     }
+
+    /**
+     * @param  list<string>  $problems
+     */
+    public static function invalidContent(array $problems): self
+    {
+        return new self("The email can't be saved:\n- ".implode("\n- ", $problems));
+    }
+
+    public static function invalidKey(string $key): self
+    {
+        return new self('"'.mb_strimwidth($key, 0, 40, '...').'" can\'t be a key: use lower-case letters, digits, dots, dashes and underscores, starting with a letter or digit, at most 125 characters.');
+    }
+
+    public static function keyTaken(string $kind, string $key): self
+    {
+        return new self("A {$kind} with the key \"{$key}\" already exists.");
+    }
+
+    public static function reservedKey(string $key): self
+    {
+        return new self("\"{$key}\" is the key of one of the package's starter templates. Choose another.");
+    }
+
+    public static function unknownTemplate(string $key): self
+    {
+        return new self("There is no template with the key \"{$key}\".");
+    }
+
+    public static function invalidValue(string $field, string $reason): self
+    {
+        return new self("The {$field} {$reason}.");
+    }
+
+    public static function campaignNotDraft(string $status): self
+    {
+        return new self("The campaign is {$status}, and only a draft's email can change. Duplicate it to make a new draft.");
+    }
+
+    public static function noRevision(): self
+    {
+        return new self('It has no email yet.');
+    }
+
+    public static function noSendingDomain(): self
+    {
+        return new self('No sending domain is configured: set campaigns.mail.domain (CAMPAIGNS_DOMAIN), or a sender address in campaigns.mail.from.address or the campaigns mailer.');
+    }
 }

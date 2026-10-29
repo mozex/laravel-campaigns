@@ -3,20 +3,30 @@
 declare(strict_types=1);
 
 use Illuminate\Database\Eloquent\Relations\Relation;
+use Illuminate\Database\Schema\Builder;
+use Illuminate\Database\UniqueConstraintViolationException;
+use Illuminate\Support\Str;
 use Mozex\Campaigns\Enums\BlockReason;
+use Mozex\Campaigns\Enums\CampaignStatus;
 use Mozex\Campaigns\Enums\ConsentAction;
 use Mozex\Campaigns\Enums\FeedbackType;
 use Mozex\Campaigns\Enums\MessageStatus;
 use Mozex\Campaigns\Enums\SubscriptionStatus;
 use Mozex\Campaigns\Models\ApiToken;
+use Mozex\Campaigns\Models\Asset;
 use Mozex\Campaigns\Models\Campaign;
 use Mozex\Campaigns\Models\CampaignList;
 use Mozex\Campaigns\Models\CampaignMessage;
 use Mozex\Campaigns\Models\ConsentRecord;
 use Mozex\Campaigns\Models\ProviderEvent;
+use Mozex\Campaigns\Models\Revision;
+use Mozex\Campaigns\Models\RevisionContent;
+use Mozex\Campaigns\Models\SavedAudience;
 use Mozex\Campaigns\Models\Subscriber;
 use Mozex\Campaigns\Models\Subscription;
+use Mozex\Campaigns\Models\Template;
 use Mozex\Campaigns\Models\TestSend;
+use Mozex\Campaigns\Models\Upload;
 
 it('stores the longest address and user agent the columns allow', function (string $driver): void {
     useDatabase($driver);
@@ -71,6 +81,65 @@ it('builds the whole model graph and resolves every relation', function (string 
         ->and($message->campaign->uuid)->toBeString()->toHaveLength(36);
 })->with('databases');
 
+it('stores templates, revisions, the asset library, uploads and saved audiences, and links a campaign to them', function (string $driver): void {
+    useDatabase($driver);
+
+    // A whole email's worth of HTML: MySQL's text column would refuse it.
+    $html = '<p>'.str_repeat('x', 89 * 1024).'</p>';
+
+    $template = Template::factory()->create();
+    $first = Revision::factory()->of($template)->withContent('en', ['html' => $html])->create();
+    $second = Revision::factory()->of($template)->withContent('en')->withContent('fa')->create();
+    $source = Campaign::factory()->create();
+    $campaign = Campaign::factory()->create([
+        'status' => CampaignStatus::Scheduled,
+        'template_id' => $template->id,
+        'frozen_revision_id' => $second->id,
+        'duplicated_from_id' => $source->id,
+        'scheduled_at' => now()->addDay(),
+    ]);
+    Asset::factory()->create(['url' => 'https://cdn.example.com/'.str_repeat('a', 2000)]);
+    Upload::factory()->create();
+    SavedAudience::factory()->create(['filters' => ['tiers' => ['engaged'], 'locales' => ['en']]]);
+
+    $campaign = $campaign->fresh();
+
+    expect($first->contents()->sole()->html)->toBe($html)
+        ->and([$first->number, $second->number])->toBe([1, 2])
+        ->and($template->currentRevision()->sole()->is($second))->toBeTrue()
+        ->and($second->fresh()->revisable->is($template))->toBeTrue()
+        ->and($second->revisable_type)->toBe('campaigns.template')
+        ->and($second->fresh()->locales())->toBe(['en', 'fa'])
+        ->and($campaign->status)->toBe(CampaignStatus::Scheduled)
+        ->and($campaign->template->is($template))->toBeTrue()
+        ->and($campaign->frozenRevision->is($second))->toBeTrue()
+        ->and($campaign->duplicatedFrom->is($source))->toBeTrue()
+        ->and(Asset::query()->sole()->url)->toHaveLength(2024)
+        ->and(Upload::query()->sole()->expires_at)->not->toBeNull()
+        ->and(SavedAudience::query()->sole()->filters)->toEqual(['tiers' => ['engaged'], 'locales' => ['en']])
+        ->and(fn () => Revision::query()->insert([
+            'uuid' => (string) Str::uuid(),
+            'revisable_type' => 'campaigns.template',
+            'revisable_id' => $template->id,
+            'number' => 2,
+        ]))->toThrow(UniqueConstraintViolationException::class);
+})->with('databases');
+
+it('numbers revisions with integers when the app keys its own morphs by UUID', function (): void {
+    Builder::morphUsingUuids();
+
+    try {
+        useDatabase('pgsql');
+    } finally {
+        Builder::defaultMorphKeyType('int');
+    }
+
+    $template = Template::factory()->create();
+    $revision = Revision::factory()->of($template)->withContent()->create();
+
+    expect($revision->fresh()->revisable->is($template))->toBeTrue();
+});
+
 it('keeps the consent records and messages of a deleted subscriber', function (string $driver): void {
     useDatabase($driver);
 
@@ -91,7 +160,8 @@ it('keeps the consent records and messages of a deleted subscriber', function (s
 it('gives every model a prefixed morph alias', function (): void {
     $models = [
         new ApiToken, new Campaign, new CampaignList, new CampaignMessage, new ConsentRecord,
-        new ProviderEvent, new Subscriber, new Subscription, new TestSend,
+        new ProviderEvent, new Subscriber, new Subscription, new TestSend, new Template, new Revision,
+        new RevisionContent, new Asset, new Upload, new SavedAudience,
     ];
 
     Relation::requireMorphMap();

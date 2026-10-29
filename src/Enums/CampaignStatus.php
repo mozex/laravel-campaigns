@@ -8,6 +8,11 @@ enum CampaignStatus: string
 {
     case Draft = 'draft';
 
+    /**
+     * Its audience is frozen and it starts by itself at its scheduled time.
+     */
+    case Scheduled = 'scheduled';
+
     case Sending = 'sending';
 
     case Paused = 'paused';

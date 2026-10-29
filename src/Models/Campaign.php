@@ -8,10 +8,12 @@ use Illuminate\Database\Eloquent\Attributes\UseFactory;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
 use Mozex\Campaigns\Database\Factories\CampaignFactory;
 use Mozex\Campaigns\Enums\CampaignStatus;
+use Mozex\Campaigns\Models\Concerns\HasRevisions;
 
 /**
  * @property int $id
@@ -33,6 +35,12 @@ use Mozex\Campaigns\Enums\CampaignStatus;
  * @property ?int $recipient_count
  * @property ?string $pause_reason
  * @property ?array<string, mixed> $report
+ * @property ?int $template_id
+ * @property ?int $frozen_revision_id
+ * @property ?int $duplicated_from_id
+ * @property ?Carbon $scheduled_at
+ * @property ?Carbon $pace_started_at
+ * @property ?Carbon $rate_halved_until
  * @property ?Carbon $started_at
  * @property ?Carbon $paused_at
  * @property ?Carbon $completed_at
@@ -46,6 +54,7 @@ class Campaign extends Model
     /** @use HasFactory<CampaignFactory> */
     use HasFactory;
 
+    use HasRevisions;
     use HasUuids;
 
     protected $table = 'campaigns';
@@ -68,6 +77,12 @@ class Campaign extends Model
         'recipient_count',
         'pause_reason',
         'report',
+        'template_id',
+        'frozen_revision_id',
+        'duplicated_from_id',
+        'scheduled_at',
+        'pace_started_at',
+        'rate_halved_until',
         'started_at',
         'paused_at',
         'completed_at',
@@ -81,7 +96,7 @@ class Campaign extends Model
     }
 
     /**
-     * @return array{status: class-string<CampaignStatus>, track_opens: 'boolean', track_clicks: 'boolean', utm: 'array', target_lists: 'array', audience: 'array', pace: 'array', thresholds: 'array', recipient_count: 'integer', report: 'array', started_at: 'datetime', paused_at: 'datetime', completed_at: 'datetime', canceled_at: 'datetime'}
+     * @return array{status: class-string<CampaignStatus>, track_opens: 'boolean', track_clicks: 'boolean', utm: 'array', target_lists: 'array', audience: 'array', pace: 'array', thresholds: 'array', recipient_count: 'integer', report: 'array', scheduled_at: 'datetime', pace_started_at: 'datetime', rate_halved_until: 'datetime', started_at: 'datetime', paused_at: 'datetime', completed_at: 'datetime', canceled_at: 'datetime'}
      */
     protected function casts(): array
     {
@@ -96,6 +111,9 @@ class Campaign extends Model
             'thresholds' => 'array',
             'recipient_count' => 'integer',
             'report' => 'array',
+            'scheduled_at' => 'datetime',
+            'pace_started_at' => 'datetime',
+            'rate_halved_until' => 'datetime',
             'started_at' => 'datetime',
             'paused_at' => 'datetime',
             'completed_at' => 'datetime',
@@ -113,5 +131,23 @@ class Campaign extends Model
     public function testSends(): HasMany
     {
         return $this->hasMany(TestSend::class);
+    }
+
+    /** @return BelongsTo<Template, $this> */
+    public function template(): BelongsTo
+    {
+        return $this->belongsTo(Template::class);
+    }
+
+    /** @return BelongsTo<Revision, $this> */
+    public function frozenRevision(): BelongsTo
+    {
+        return $this->belongsTo(Revision::class, 'frozen_revision_id');
+    }
+
+    /** @return BelongsTo<self, $this> */
+    public function duplicatedFrom(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'duplicated_from_id');
     }
 }

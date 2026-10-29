@@ -27,9 +27,12 @@ return [
     'name' => env('CAMPAIGNS_NAME'),
 
     /*
-     * The mailer the package's emails go through, and their sender. Use a
-     * mailer on your marketing domain, so its reputation stays apart from
-     * your account emails. A null address takes the mailer's own sender.
+     * The mailer campaigns and the package's own emails go through, and the
+     * sender campaigns start with. Use a mailer on your marketing domain, so
+     * its reputation stays apart from your account emails. A null address
+     * takes the mailer's own sender. A campaign's From address must be on
+     * the marketing domain: "domain", else the sender's domain. Replies go
+     * to "reply_to", an inbox someone reads (it may be on another domain).
      * Default mailer: "campaigns", which you define in config/mail.php.
      */
     'mail' => [
@@ -38,6 +41,63 @@ return [
             'address' => env('CAMPAIGNS_FROM_ADDRESS'),
             'name' => env('CAMPAIGNS_FROM_NAME'),
         ],
+        'reply_to' => env('CAMPAIGNS_REPLY_TO'),
+        'domain' => env('CAMPAIGNS_DOMAIN'),
+    ],
+
+    /*
+     * Shown by the {{footer}} and {{postal_address}} placeholders. Some laws
+     * (CAN-SPAM in the US among them) require a postal address in every
+     * marketing email. Default: none.
+     */
+    'postal_address' => env('CAMPAIGNS_POSTAL_ADDRESS'),
+
+    /*
+     * Your privacy policy, linked by {{footer}} and {{privacy_url}}. Mailgun's
+     * acceptable use policy asks for a link to it in every email. Default:
+     * none.
+     */
+    'privacy_url' => env('CAMPAIGNS_PRIVACY_URL'),
+
+    /*
+     * Who is told when a campaign pauses itself. Default: nobody.
+     */
+    'alert_address' => env('CAMPAIGNS_ALERT_ADDRESS'),
+
+    /*
+     * The only addresses a test email may go to, comma-separated in the
+     * environment. Default: none, so no test email goes out until you list
+     * one.
+     */
+    'test_addresses' => array_values(array_filter(array_map(
+        'trim',
+        explode(',', (string) env('CAMPAIGNS_TEST_ADDRESSES', '')),
+    ))),
+
+    /*
+     * The language an email's main content is written in. Every revision of
+     * a template or campaign email holds it, and a recipient whose language
+     * a revision lacks gets it. Default: the app's configured locale
+     * (app.locale), read when the app starts, never a visitor's.
+     */
+    'locale' => env('CAMPAIGNS_LOCALE'),
+
+    /*
+     * Where uploaded images are stored. Use a public disk whose addresses
+     * never change: delivered mail keeps loading the images from them.
+     */
+    'assets' => [
+        'disk' => env('CAMPAIGNS_ASSETS_DISK', 'public'),
+        'path' => 'campaigns/assets',
+    ],
+
+    /*
+     * The checks run on an email before it is sent. "spam_score" sends the
+     * rendered email, with a placeholder recipient, to Postmark's free
+     * SpamAssassin checker. Default: off.
+     */
+    'checks' => [
+        'spam_score' => false,
     ],
 
     /*

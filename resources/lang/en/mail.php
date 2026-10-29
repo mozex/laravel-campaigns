@@ -11,4 +11,10 @@ return [
         'link' => "If the button doesn't work, open this link:",
         'ignore' => "Didn't ask for this? Ignore this email and you won't be added.",
     ],
+
+    'footer' => [
+        'sent_to' => ':app sent this email to :email.',
+        'unsubscribe' => 'Unsubscribe or change your email preferences',
+        'privacy' => 'Privacy policy',
+    ],
 ];
