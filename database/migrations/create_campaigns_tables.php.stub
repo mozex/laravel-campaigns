@@ -252,6 +252,13 @@ return new class extends Migration
             // since a release clears the cache.
             $table->timestamp('pace_started_at')->nullable();
             $table->timestamp('rate_halved_until')->nullable();
+            // When the stop-loss last paused it for passing one of its own
+            // limits, and when it last paused its sending domain's campaigns:
+            // what they measure starts again from there, so a campaign
+            // someone resumes isn't paused again at its next bounce for the
+            // numbers that paused it.
+            $table->timestamp('limits_reset_at')->nullable();
+            $table->timestamp('domain_limits_reset_at')->nullable();
             $table->timestamp('started_at')->nullable();
             $table->timestamp('paused_at')->nullable();
             $table->timestamp('completed_at')->nullable();
@@ -298,6 +305,9 @@ return new class extends Migration
             $table->index(['status', 'claim_id']);
             // The pace counts a campaign's claims in a window, by status.
             $table->index(['campaign_id', 'claimed_at', 'status']);
+            // The stop-loss reads a campaign's sends in the order they went
+            // (its last 500), and its domain's last 24 hours.
+            $table->index(['campaign_id', 'sent_at']);
         });
 
         // A test email of a campaign's or a template's revision, apart from

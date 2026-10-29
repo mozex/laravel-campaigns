@@ -8,8 +8,10 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Foundation\Queue\Queueable;
 use Mozex\Campaigns\Actions\ApplyFeedbackAction;
+use Mozex\Campaigns\Actions\EnforceStopLossAction;
 use Mozex\Campaigns\Enums\FeedbackType;
 use Mozex\Campaigns\Models\ProviderEvent;
+use Mozex\Campaigns\Sending\AppliedFeedback;
 
 /**
  * Applies one stored provider event's effects, once: the event's row is
@@ -60,18 +62,30 @@ class ProcessFeedbackJob implements ShouldQueue
         }
     }
 
-    public function handle(ApplyFeedbackAction $apply): void
+    /**
+     * The stop-loss runs after the commit, outside the effects' transaction,
+     * so the pause's event and its listeners never share their commit with
+     * the effects' own events, and a listener's failure can't fail the job
+     * once the event is processed.
+     */
+    public function handle(ApplyFeedbackAction $apply, EnforceStopLossAction $stopLoss): void
     {
-        (new ProviderEvent)->getConnection()->transaction(function () use ($apply): void {
+        $applied = (new ProviderEvent)->getConnection()->transaction(function () use ($apply): ?AppliedFeedback {
             $event = ProviderEvent::query()->lockForUpdate()->find($this->eventId);
 
             if ($event === null || $event->processed_at !== null) {
-                return;
+                return null;
             }
 
-            $apply->execute($event);
+            $applied = $apply->execute($event);
 
             $event->forceFill(['processed_at' => now()])->save();
+
+            return $applied;
         });
+
+        if ($applied !== null) {
+            $stopLoss->execute($applied);
+        }
     }
 }

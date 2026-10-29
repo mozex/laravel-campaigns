@@ -90,7 +90,9 @@ return [
     'privacy_url' => env('CAMPAIGNS_PRIVACY_URL'),
 
     /*
-     * Who is told when a campaign pauses itself. Default: nobody.
+     * Who is told, through the app's default mailer, when a campaign pauses
+     * itself, gets its first spam report, or has emails waiting on a queue
+     * no worker takes (at most once every six hours). Default: nobody.
      */
     'alert_address' => env('CAMPAIGNS_ALERT_ADDRESS'),
 
@@ -210,11 +212,12 @@ return [
     ],
 
     /*
-     * The cache store that holds the scheduled commands' overlap locks (and
-     * the mark that limits a misconfigured webhook's error report to one an
-     * hour). Point it at a store your deploys don't flush, so a release can't
-     * free a lock a running pump still holds. Null uses the app's default
-     * store.
+     * The cache store that holds the scheduled commands' overlap locks, the
+     * one waiting stop-loss check per campaign, when the pump last ran, and
+     * the marks that limit a misconfigured webhook's error report to one an
+     * hour and the stalled-queue alert to one every six. Point it at a store
+     * your deploys don't flush, so a release can't free a lock a running pump
+     * still holds. Null uses the app's default store.
      */
     'cache_store' => env('CAMPAIGNS_CACHE_STORE'),
 
@@ -262,7 +265,10 @@ return [
      * complaint_rate. It also pauses when unsubscribes pass unsubscribe_rate
      * once it has sent unsubscribe_min_sends. The same bounce and complaint
      * measures over a sending domain's last 24 hours pause every campaign on
-     * that domain. A campaign may override any of these.
+     * that domain. A campaign may override any of these for itself; the
+     * domain keeps these. What paused a campaign or a domain counts again
+     * from that pause, so a campaign resumed after a look is not paused again
+     * by the same numbers.
      */
     'stop_loss' => [
         'early_until' => 200,

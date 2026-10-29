@@ -43,6 +43,8 @@ use Mozex\Campaigns\Models\Concerns\HasRevisions;
  * @property ?Carbon $scheduled_at
  * @property ?Carbon $pace_started_at
  * @property ?Carbon $rate_halved_until
+ * @property ?Carbon $limits_reset_at
+ * @property ?Carbon $domain_limits_reset_at
  * @property ?Carbon $started_at
  * @property ?Carbon $paused_at
  * @property ?Carbon $completed_at
@@ -87,6 +89,8 @@ class Campaign extends Model
         'scheduled_at',
         'pace_started_at',
         'rate_halved_until',
+        'limits_reset_at',
+        'domain_limits_reset_at',
         'started_at',
         'paused_at',
         'completed_at',
@@ -100,7 +104,7 @@ class Campaign extends Model
     }
 
     /**
-     * @return array{status: class-string<CampaignStatus>, track_opens: 'boolean', track_clicks: 'boolean', utm: 'array', target_lists: 'array', audience: 'array', pace: 'array', thresholds: 'array', recipient_count: 'integer', report: 'array', scheduled_at: 'datetime', pace_started_at: 'datetime', rate_halved_until: 'datetime', started_at: 'datetime', paused_at: 'datetime', completed_at: 'datetime', canceled_at: 'datetime'}
+     * @return array{status: class-string<CampaignStatus>, track_opens: 'boolean', track_clicks: 'boolean', utm: 'array', target_lists: 'array', audience: 'array', pace: 'array', thresholds: 'array', recipient_count: 'integer', report: 'array', scheduled_at: 'datetime', pace_started_at: 'datetime', rate_halved_until: 'datetime', limits_reset_at: 'datetime', domain_limits_reset_at: 'datetime', started_at: 'datetime', paused_at: 'datetime', completed_at: 'datetime', canceled_at: 'datetime'}
      */
     protected function casts(): array
     {
@@ -118,6 +122,8 @@ class Campaign extends Model
             'scheduled_at' => 'datetime',
             'pace_started_at' => 'datetime',
             'rate_halved_until' => 'datetime',
+            'limits_reset_at' => 'datetime',
+            'domain_limits_reset_at' => 'datetime',
             'started_at' => 'datetime',
             'paused_at' => 'datetime',
             'completed_at' => 'datetime',

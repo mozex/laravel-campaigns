@@ -4,15 +4,20 @@ declare(strict_types=1);
 
 use Carbon\CarbonInterface;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Exceptions;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
 use Mozex\Campaigns\Actions\ApplyFeedbackAction;
 use Mozex\Campaigns\Actions\UnsubscribeAction;
 use Mozex\Campaigns\Enums\BlockReason;
+use Mozex\Campaigns\Enums\CampaignStatus;
 use Mozex\Campaigns\Enums\ConsentAction;
 use Mozex\Campaigns\Enums\DeliveryFailure;
 use Mozex\Campaigns\Enums\MessageStatus;
+use Mozex\Campaigns\Events\CampaignPausedEvent;
 use Mozex\Campaigns\Jobs\ProcessFeedbackJob;
+use Mozex\Campaigns\Models\Campaign;
 use Mozex\Campaigns\Models\CampaignMessage;
 use Mozex\Campaigns\Models\ConsentRecord;
 use Mozex\Campaigns\Models\ProviderEvent;
@@ -62,7 +67,7 @@ function reported(CampaignMessage|TestSend $email, string $fixture, array $chang
  */
 function process(ProviderEvent $event): void
 {
-    (new ProcessFeedbackJob($event->id))->handle(app(ApplyFeedbackAction::class));
+    app()->call([new ProcessFeedbackJob($event->id), 'handle']);
 }
 
 /**
@@ -463,4 +468,27 @@ it('tells what changed for the campaign: a failure now, a first complaint, an un
         ->and($secondComplaint)->toBe($nothing)
         ->and($unsubscribe)->toBe([...$nothing, 'campaignId' => $other->campaign_id, 'unsubscribed' => true])
         ->and($secondUnsubscribe)->toBe([...$nothing, 'campaignId' => $other->campaign_id]);
+});
+
+it('runs the stop-loss once the effects have committed, a pause listener that fails leaving the event processed', function (): void {
+    config()->set('campaigns.enabled', true);
+    Exceptions::fake();
+    Event::listen(CampaignPausedEvent::class, function (): void {
+        throw new RuntimeException('the alert broke');
+    });
+
+    $campaign = Campaign::factory()->sending()->create();
+    sends($campaign, 90);
+    sends($campaign, 9, hardBounce());
+    $message = messageTo(Subscriber::factory()->create(), ['campaign_id' => $campaign->id]);
+
+    $event = mailgunSays($message, 'permanent-failure');
+
+    expect($message->fresh()?->failure_reason)->toBe('hard_bounce')
+        ->and($event->fresh()?->processed_at)->not->toBeNull()
+        ->and($campaign->fresh())
+        ->status->toBe(CampaignStatus::Paused)
+        ->pause_reason->toBe('The stop-loss paused it: 10 of 100 emails bounced hard, reaching the limit of 10 before 200 emails (early_hard_bounces).');
+
+    Exceptions::assertReported(fn (RuntimeException $exception): bool => $exception->getMessage() === 'the alert broke');
 });

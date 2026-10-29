@@ -12,11 +12,16 @@ use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Contracts\Foundation\CachesConfiguration;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\RateLimiter;
 use Mozex\Campaigns\Commands\PumpCommand;
 use Mozex\Campaigns\Commands\SyncListCommand;
 use Mozex\Campaigns\Contracts\CampaignProvider;
+use Mozex\Campaigns\Events\CampaignFirstComplaintEvent;
+use Mozex\Campaigns\Events\CampaignPausedEvent;
+use Mozex\Campaigns\Events\CampaignQueueStalledEvent;
+use Mozex\Campaigns\Listeners\SendCampaignAlert;
 use Mozex\Campaigns\Models\ApiToken;
 use Mozex\Campaigns\Models\Asset;
 use Mozex\Campaigns\Models\Campaign;
@@ -88,6 +93,12 @@ class CampaignsServiceProvider extends PackageServiceProvider
             'campaigns.saved_audience' => SavedAudience::class,
             'campaigns.webhook_token' => WebhookToken::class,
         ]);
+
+        // The package's own alert mail; an app adds its own listeners beside
+        // it, and an empty campaigns.alert_address switches it off.
+        Event::listen(CampaignPausedEvent::class, [SendCampaignAlert::class, 'paused']);
+        Event::listen(CampaignFirstComplaintEvent::class, [SendCampaignAlert::class, 'firstComplaint']);
+        Event::listen(CampaignQueueStalledEvent::class, [SendCampaignAlert::class, 'stalled']);
 
         // A link's POSTs, counted per link: enough for a person and their
         // mail app, too few to hammer one address's consent records.

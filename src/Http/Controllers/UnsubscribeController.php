@@ -9,6 +9,7 @@ use Illuminate\Http\Response;
 use Mozex\Campaigns\Actions\ResubscribeAction;
 use Mozex\Campaigns\Actions\UnsubscribeAction;
 use Mozex\Campaigns\Enums\ConsentBasis;
+use Mozex\Campaigns\Jobs\EnforceStopLossJob;
 use Mozex\Campaigns\Models\CampaignMessage;
 use Mozex\Campaigns\Models\TestSend;
 use Mozex\Campaigns\Support\ConsentContext;
@@ -37,10 +38,18 @@ class UnsubscribeController extends PageController
             return $oneClick ? response('', 404) : $this->invalid();
         }
 
-        $unsubscribe->execute($email, ConsentContext::fromRequest(
+        $unsubscribed = $unsubscribe->execute($email, ConsentContext::fromRequest(
             $request,
             $oneClick ? UnsubscribeAction::ONE_CLICK : UnsubscribeAction::PAGE,
         ));
+
+        // The opt-out stands whatever the queue does: a check that can't be
+        // queued is reported, and the next unsubscribe queues it again.
+        if ($unsubscribed && $email instanceof CampaignMessage) {
+            rescue(function () use ($email): void {
+                EnforceStopLossJob::dispatch($email->campaign_id);
+            });
+        }
 
         // A mail app's one-click gets a plain 200: RFC 8058 allows no
         // redirect, and nobody sees the answer.

@@ -6,6 +6,8 @@ namespace Mozex\Campaigns\Actions;
 
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
 use Mozex\Campaigns\Enums\CampaignStatus;
 use Mozex\Campaigns\Enums\MessageStatus;
@@ -46,8 +48,19 @@ class PumpCampaignsAction
      */
     public const STARTING_GRACE = 600;
 
+    /**
+     * The mark in campaigns.cache_store holding when the pump last ran.
+     */
+    public const LAST_RUN = 'campaigns:pump:last_run';
+
     public function execute(): PumpResult
     {
+        // Before the switch, so a report tells a scheduler that stopped from
+        // sending switched off. A cache value rather than a column, unlike
+        // the pace's state: it only shows, and a release's flush is mended
+        // by the next run, a minute later.
+        rescue(fn (): bool => Cache::store(config('campaigns.cache_store'))->forever(static::LAST_RUN, now()->getTimestamp()));
+
         if (! config('campaigns.enabled')) {
             return new PumpResult(enabled: false);
         }
@@ -85,6 +98,17 @@ class PumpCampaignsAction
         }
 
         return new PumpResult(true, $started, $handedBack, array_filter($claimed), $stalled, $completed);
+    }
+
+    /**
+     * When the pump last ran, as far as campaigns.cache_store remembers.
+     */
+    public static function lastRun(): ?CarbonInterface
+    {
+        $timestamp = rescue(fn (): mixed => Cache::store(config('campaigns.cache_store'))->get(static::LAST_RUN));
+
+        // Redis keeps a number unserialized and gives it back as a string.
+        return is_numeric($timestamp) ? Carbon::createFromTimestamp((int) $timestamp) : null;
     }
 
     /**

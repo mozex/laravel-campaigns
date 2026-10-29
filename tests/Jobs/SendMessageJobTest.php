@@ -6,7 +6,6 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
-use Mozex\Campaigns\Actions\ApplyFeedbackAction;
 use Mozex\Campaigns\Actions\PumpCampaignsAction;
 use Mozex\Campaigns\Contracts\CampaignProvider;
 use Mozex\Campaigns\Enums\BlockReason;
@@ -238,7 +237,7 @@ it('keeps the provider\'s id on a message its events moved on before its send jo
                 'message_id' => CampaignMessage::query()->where('uuid', $message->uuid)->value('id'),
                 'type' => FeedbackType::Delivered,
             ]);
-            (new ProcessFeedbackJob($event->id))->handle(app(ApplyFeedbackAction::class));
+            app()->call([new ProcessFeedbackJob($event->id), 'handle']);
 
             return $receipt;
         }

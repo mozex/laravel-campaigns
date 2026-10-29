@@ -7,11 +7,13 @@ use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
 use Illuminate\Http\Request;
 use Illuminate\Session\Middleware\StartSession;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Route;
 use Mozex\Campaigns\Enums\BlockReason;
 use Mozex\Campaigns\Enums\ConsentAction;
 use Mozex\Campaigns\Enums\ConsentBasis;
 use Mozex\Campaigns\Enums\SubscriptionStatus;
+use Mozex\Campaigns\Jobs\EnforceStopLossJob;
 use Mozex\Campaigns\Models\CampaignList;
 use Mozex\Campaigns\Models\CampaignMessage;
 use Mozex\Campaigns\Models\ConsentRecord;
@@ -205,6 +207,29 @@ it('never lets an old, forgotten or blocked address sign the person back up', fu
         null,
     ],
 ]);
+
+it('queues the stop-loss\'s check after an unsubscribe that counted, one per campaign at a time', function (): void {
+    Queue::fake([EnforceStopLossJob::class]);
+
+    [$first, $firstToken] = sentMessage();
+    [, $secondToken] = sentMessage(['campaign_id' => $first->campaign_id]);
+    [$other, $otherToken] = sentMessage();
+    // Opted out already: the unsubscribe doesn't count.
+    [$uncounted, $uncountedToken] = sentMessage(['subscriber_id' => Subscriber::factory()->optedOut()]);
+    $testToken = Token::generate();
+    TestSend::factory()->create(['token_hash' => Token::hash($testToken)]);
+
+    $this->post("/campaigns/u/{$firstToken}", ['List-Unsubscribe' => 'One-Click'])->assertOk();
+    $this->post("/campaigns/u/{$secondToken}")->assertOk();
+    $this->post("/campaigns/u/{$otherToken}")->assertOk();
+    $this->post("/campaigns/u/{$uncountedToken}", ['List-Unsubscribe' => 'One-Click'])->assertOk();
+    $this->post("/campaigns/u/{$testToken}", ['List-Unsubscribe' => 'One-Click'])->assertOk();
+
+    Queue::assertPushed(EnforceStopLossJob::class, 2);
+    Queue::assertPushed(EnforceStopLossJob::class, fn (EnforceStopLossJob $job): bool => $job->campaignId === $first->campaign_id && $job->queue === 'campaigns');
+    Queue::assertPushed(EnforceStopLossJob::class, fn (EnforceStopLossJob $job): bool => $job->campaignId === $other->campaign_id);
+    Queue::assertNotPushed(EnforceStopLossJob::class, fn (EnforceStopLossJob $job): bool => $job->campaignId === $uncounted->campaign_id);
+});
 
 it('opens a test email\'s link like a real one and changes nothing', function (): void {
     $token = Token::generate();

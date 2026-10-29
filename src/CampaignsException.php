@@ -177,6 +177,11 @@ class CampaignsException extends RuntimeException
         return new self("A {$status} campaign can't be {$action}.");
     }
 
+    public static function reportStillMoving(string $status): self
+    {
+        return new self("A {$status} campaign's report can't be frozen: only a completed or cancelled campaign's numbers settle.");
+    }
+
     public static function noTargetLists(): self
     {
         return new self('The campaign has no target lists: set the lists it goes to first.');

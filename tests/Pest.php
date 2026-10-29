@@ -168,6 +168,49 @@ function sendingCampaign(int|array $recipients, array $pace = [], string $key = 
 }
 
 /**
+ * $count of a campaign's emails the provider took, written in one go (the
+ * stop-loss and the report read thousands): delivered, sent at the given
+ * time (an hour ago), to addresses of no subscriber, with the given columns
+ * replaced (a hard bounce, a spam report, an unsubscribe).
+ *
+ * @param  array<string, mixed>  $columns
+ */
+function sends(Campaign $campaign, int $count, array $columns = [], ?CarbonInterface $at = null): void
+{
+    $at ??= now()->subHour();
+    $rows = [];
+
+    for ($i = 0; $i < $count; $i++) {
+        $rows[] = [
+            'uuid' => (string) Str::uuid(),
+            'campaign_id' => $campaign->id,
+            'email' => 'r'.Str::lower(Str::random(16)).'@example.org',
+            'position' => random_int(0, 1_000_000),
+            'status' => MessageStatus::Delivered->value,
+            'sent_at' => $at,
+            'delivered_at' => $at,
+            'created_at' => now(),
+            'updated_at' => now(),
+            ...$columns,
+        ];
+    }
+
+    foreach (array_chunk($rows, 500) as $chunk) {
+        CampaignMessage::query()->insert($chunk);
+    }
+}
+
+/**
+ * The columns of a hard bounce, for sends().
+ *
+ * @return array<string, mixed>
+ */
+function hardBounce(): array
+{
+    return ['status' => MessageStatus::Failed->value, 'failed_at' => now(), 'failure_reason' => 'hard_bounce'];
+}
+
+/**
  * The provider, once campaigns.provider is "fake".
  */
 function fakeProvider(): FakeProvider
