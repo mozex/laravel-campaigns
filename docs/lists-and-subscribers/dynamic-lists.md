@@ -110,7 +110,7 @@ A ticked box (`accepted: true`) joins them with their consent recorded, their IP
 - **No longer eligible:** off the list, back once eligible again.
 - **Deleted:** the person is forgotten ([Privacy and Security](../reference/privacy-and-security.md#forgetting-someone)). An address that was blocked or opted out keeps its row, stripped to the address, so an import can't bring it back.
 
-The trait hears only Eloquent's model events. A delete that fires none (`User::where(...)->delete()`, a database cascade, a mass prune) leaves the subscriber linked to a record that's gone, still mailable. `campaigns:sync-list` finds those after its walk and forgets them; run it with `--force` after such a delete, or on a schedule.
+The trait hears only Eloquent's model events. A delete that fires none (`User::where(...)->delete()`, a database cascade, a mass prune) leaves the subscriber linked to a record that's gone, still mailable. `campaigns:sync-list` finds those after its walk and forgets them. Forgetting can't be undone, so after such a delete run it without `--force` first and read its "Forgotten" count before running it with `--force`. It forgets nobody while the model's table holds no rows at all, as it would mid-restore.
 
 The sync never breaks your own save. A failure is reported to your error tracker and rolled back to its own savepoint, so a sign-up can't fail because of its marketing list, and `campaigns:sync-list` repairs it later. The one exception is a deadlock or lock timeout inside your transaction: the database has already ended the transaction then, so it's thrown.
 

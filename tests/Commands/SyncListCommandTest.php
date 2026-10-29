@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\DB;
 use Mozex\Campaigns\Actions\OptOutAction;
 use Mozex\Campaigns\Enums\ConsentAction;
 use Mozex\Campaigns\Enums\ConsentBasis;
@@ -112,6 +113,20 @@ it('forgets the people whose record was deleted without a model event, writing n
         ->opted_out_at->not->toBeNull()
         ->and(syncList('--force'))->toMatch('/Forgotten: their record is gone\s*\|\s*0\s/');
 })->with('databases');
+
+it('forgets nobody while the records\' table is empty, which looks like everyone gone', function (): void {
+    $member = Member::query()->create(['email' => 'kept@example.com']);
+    // Emptied the way a truncate or a half-done restore leaves it.
+    DB::table('members')->delete();
+
+    $output = syncList('--force');
+
+    expect($output)
+        ->toContain('The members table holds no records, so no subscriber was forgotten.')
+        ->toMatch('/Forgotten: their record is gone\s*\|\s*0\s/')
+        ->and(Subscriber::findByEmail('kept@example.com')?->subscribable_type)->not->toBeNull()
+        ->and($member->exists)->toBeTrue();
+});
 
 it('refuses a list without a source and a record that does not exist', function (): void {
     $missingList = Artisan::call('campaigns:sync-list', ['list' => 'missing']);

@@ -122,6 +122,14 @@ class SyncListCommand extends Command
             return 0;
         }
 
+        // Forgetting can't be undone: a table with no rows at all (a
+        // truncate, a restore under way) would make everyone look orphaned.
+        if (! $model->newQueryWithoutScopes()->exists()) {
+            $this->warn("The {$model->getTable()} table holds no records, so no subscriber was forgotten.");
+
+            return 0;
+        }
+
         $records = $model->newQueryWithoutScopes()->select($model->getQualifiedKeyName());
 
         // A model using SoftDeletes.
