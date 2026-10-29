@@ -8,6 +8,7 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Foundation\Queue\Queueable;
+use Illuminate\Mail\Mailer;
 use Illuminate\Support\Facades\Mail;
 use Mozex\Campaigns\CampaignsException;
 use Mozex\Campaigns\Enums\SubscriptionStatus;
@@ -18,6 +19,8 @@ use Mozex\Campaigns\Sending\SendFailed;
 use Mozex\Campaigns\Support\Links;
 use Mozex\Campaigns\Support\PageLocale;
 use Mozex\Campaigns\Support\Token;
+use Symfony\Component\Mailer\Bridge\Mailgun\Transport\MailgunApiTransport;
+use Symfony\Component\Mime\Email;
 use Throwable;
 
 /**
@@ -45,11 +48,17 @@ class SendConfirmationJob implements ShouldQueue
 
     public function handle(): void
     {
+        $subscription = Subscription::query()->with(['subscriber', 'list'])->find($this->subscriptionId);
+
+        // Switched off after the action queued it: nothing goes out, so the
+        // address may be asked again today.
         if (! config('campaigns.enabled')) {
+            if ($subscription !== null) {
+                Subscriber::query()->whereKey($subscription->subscriber_id)->update(['confirmation_sent_at' => null, 'updated_at' => now()]);
+            }
+
             return;
         }
-
-        $subscription = Subscription::query()->with(['subscriber', 'list'])->find($this->subscriptionId);
 
         if ($subscription === null || $subscription->status !== SubscriptionStatus::Pending || $subscription->subscriber->blocked_at !== null) {
             return;
@@ -78,9 +87,22 @@ class SendConfirmationJob implements ShouldQueue
                 return;
             }
 
+            $mail = new ConfirmSubscriptionMail($subscription->list->name, Links::confirm($token));
+
+            // Never tracked, whatever the domain's own setting: an open pixel
+            // where the law asks for consent to one, and Mailgun's click
+            // redirect would keep the confirmation token in its logs. Only on
+            // Mailgun's API, where the o: headers are options, not headers.
+            if ($mailer instanceof Mailer && $mailer->getSymfonyTransport() instanceof MailgunApiTransport) {
+                $mail->withSymfonyMessage(function (Email $email): void {
+                    $email->getHeaders()->addTextHeader('o:tracking-opens', 'no');
+                    $email->getHeaders()->addTextHeader('o:tracking-clicks', 'no');
+                });
+            }
+
             $mailer->to($subscription->subscriber->email)
                 ->locale(PageLocale::pick($subscription->subscriber->locale))
-                ->send(new ConfirmSubscriptionMail($subscription->list->name, Links::confirm($token)));
+                ->send($mail);
         } catch (Throwable $exception) {
             // Nothing went out: the earlier email's link works again, and the
             // address may be asked again today.

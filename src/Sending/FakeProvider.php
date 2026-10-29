@@ -94,12 +94,19 @@ class FakeProvider implements CampaignProvider
     }
 
     /**
-     * Every read of the logs or suppression lists throws this until it is
-     * given null.
+     * Every read of the logs, suppression lists or metrics throws this (by
+     * default, the error an unreadable provider gives) until readsWork().
      */
     public function failReads(?CampaignsException $exception = null): static
     {
-        $this->readFailure = $exception;
+        $this->readFailure = $exception ?? CampaignsException::providerUnreadable('Reads are failed by FakeProvider::failReads().');
+
+        return $this;
+    }
+
+    public function readsWork(): static
+    {
+        $this->readFailure = null;
 
         return $this;
     }

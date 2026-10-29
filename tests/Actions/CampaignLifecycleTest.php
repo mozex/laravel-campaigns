@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Exceptions;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -347,6 +348,24 @@ describe('pausing, resuming and cancelling', function (): void {
 
         Event::assertDispatchedTimes(CampaignPausedEvent::class, 1);
         Event::assertDispatched(CampaignPausedEvent::class, fn (CampaignPausedEvent $event): bool => $event->automatic && $event->reason === 'Too many bounces');
+    });
+
+    it('pauses and resumes whatever an app\'s listener on their events throws, and reports it', function (): void {
+        Exceptions::fake();
+        Event::listen(CampaignPausedEvent::class, fn (): never => throw new LogicException('The pause listener broke.'));
+        Event::listen(CampaignStartedEvent::class, fn (): never => throw new LogicException('The start listener broke.'));
+        $campaign = Campaign::factory()->sending()->create(['started_at' => null]);
+
+        // Thrown, the change would stand while the caller heard it failed,
+        // and an agent retrying a resume would be refused.
+        $paused = app(PauseCampaignAction::class)->execute($campaign);
+        $resumed = app(ResumeCampaignAction::class)->execute($campaign->fresh());
+
+        expect($paused->status)->toBe(CampaignStatus::Paused)
+            ->and($resumed->fresh()?->status)->toBe(CampaignStatus::Sending);
+
+        Exceptions::assertReported(fn (LogicException $exception): bool => $exception->getMessage() === 'The pause listener broke.');
+        Exceptions::assertReported(fn (LogicException $exception): bool => $exception->getMessage() === 'The start listener broke.');
     });
 
     it('resumes where it stopped, restarting the pace after more than a day', function (): void {

@@ -230,6 +230,15 @@ it('shows the sending domain\'s standing: its last 24 hours, its daily cap and t
     expect($overview['domain']['provider'])->toBeNull()
         ->and($overview['domain']['last_24_hours']['sends'])->toBe(104)
         ->and(array_slice($overview['sending']['notes'], -1))->toBe(['The provider\'s numbers for news.example.com couldn\'t be read: Mailgun answered 503 when its logs, suppressions or metrics were read.']);
+
+    // With no exception given, as the docs show it, reads fail too, until
+    // they're made to work again.
+    fakeProvider()->failReads();
+    $failing = structuredContent(agent(Rights::Read)->tool(OverviewTool::class)->assertOk());
+    fakeProvider()->readsWork();
+
+    expect($failing['domain']['provider'])->toBeNull()
+        ->and(structuredContent(agent(Rights::Read)->tool(OverviewTool::class)->assertOk())['domain']['provider'])->not->toBeNull();
 })->with('databases');
 
 it('asks Mailgun nothing for the domain\'s numbers without the key that reads them', function (): void {

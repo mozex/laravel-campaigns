@@ -8,6 +8,7 @@ use Mozex\Campaigns\CampaignsException;
 use Mozex\Campaigns\Enums\CampaignStatus;
 use Mozex\Campaigns\Events\CampaignPausedEvent;
 use Mozex\Campaigns\Models\Campaign;
+use Mozex\Campaigns\Support\AfterCommit;
 use Mozex\Campaigns\Support\TextValue;
 
 /**
@@ -42,7 +43,9 @@ class PauseCampaignAction
         $campaign->refresh();
 
         if ($paused) {
-            CampaignPausedEvent::dispatch($campaign, $reason, $automatic);
+            // A listener's failure is reported, never thrown: the pause has
+            // happened, and the caller must hear that it did.
+            AfterCommit::dispatch($campaign->getConnection(), new CampaignPausedEvent($campaign, $reason, $automatic));
         } elseif ($campaign->status !== CampaignStatus::Paused) {
             throw CampaignsException::campaignCannot('paused', $campaign->status->value);
         }

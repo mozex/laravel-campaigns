@@ -8,6 +8,7 @@ use Mozex\Campaigns\CampaignsException;
 use Mozex\Campaigns\Enums\CampaignStatus;
 use Mozex\Campaigns\Events\CampaignStartedEvent;
 use Mozex\Campaigns\Models\Campaign;
+use Mozex\Campaigns\Support\AfterCommit;
 
 /**
  * Resumes a paused campaign where it stopped. One paused before its
@@ -56,7 +57,7 @@ class ResumeCampaignAction
         });
 
         if ($started) {
-            CampaignStartedEvent::dispatch($campaign);
+            AfterCommit::dispatch($campaign->getConnection(), new CampaignStartedEvent($campaign));
         }
 
         return $campaign;

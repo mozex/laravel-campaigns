@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use Illuminate\Mail\Events\MessageSent;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
@@ -14,6 +16,9 @@ use Mozex\Campaigns\Models\CampaignList;
 use Mozex\Campaigns\Models\Subscriber;
 use Mozex\Campaigns\Models\Subscription;
 use Mozex\Campaigns\Support\Token;
+use Symfony\Component\HttpClient\MockHttpClient;
+use Symfony\Component\HttpClient\Response\MockResponse;
+use Symfony\Component\Mailer\Bridge\Mailgun\Transport\MailgunApiTransport;
 use Symfony\Component\Mailer\Envelope;
 use Symfony\Component\Mailer\Exception\TransportException;
 use Symfony\Component\Mailer\SentMessage;
@@ -156,6 +161,44 @@ it('sends nothing while sending is off, to a blocked address, or for a subscript
         ->and(app(SendConfirmationAction::class)->execute($done))->toBeFalse();
 
     Mail::assertNothingSent();
+
+    // Switched off after the action queued it: the day is given back.
+    $queued = pendingOn(Subscriber::factory()->create(['confirmation_sent_at' => now()]));
+    config()->set('campaigns.enabled', false);
+    (new SendConfirmationJob($queued->id))->handle();
+
+    expect($queued->subscriber->fresh()?->confirmation_sent_at)->toBeNull();
+});
+
+it('asks Mailgun to track neither opens nor clicks in a confirmation, and adds nothing on another mailer', function (): void {
+    $posted = [];
+    config()->set('mail.mailers.campaigns', ['transport' => 'mailgun', 'scheme' => 'api', 'secret' => 'key-test', 'domain' => 'news.example.com', 'endpoint' => 'api.eu.mailgun.net']);
+    Mail::mailer('campaigns')->setSymfonyTransport(new MailgunApiTransport('key-test', 'news.example.com', 'eu', new MockHttpClient(function (string $method, string $url, array $options) use (&$posted): MockResponse {
+        $body = $options['body'];
+        $read = '';
+
+        while (! is_string($body) && ($chunk = $body(8192)) !== '') {
+            $read .= $chunk;
+        }
+
+        $posted[] = is_string($body) ? $body : $read;
+
+        return new MockResponse('{"id": "<sent@news.example.com>", "message": "Queued. Thank you."}');
+    })));
+    $sent = [];
+    Event::listen(MessageSent::class, function (MessageSent $event) use (&$sent): void {
+        $sent[] = $event->message;
+    });
+
+    (new SendConfirmationJob(pendingOn(Subscriber::factory()->create())->id))->handle();
+    config()->set('campaigns.mail.mailer', 'array');
+    (new SendConfirmationJob(pendingOn(Subscriber::factory()->create())->id))->handle();
+
+    expect($posted)->toHaveCount(1)
+        ->and($posted[0])->toMatch('/name="o:tracking-opens"\s+no\s/')
+        ->and($posted[0])->toMatch('/name="o:tracking-clicks"\s+no\s/')
+        ->and($sent)->toHaveCount(2)
+        ->and($sent[1]->getHeaders()->has('o:tracking-opens'))->toBeFalse();
 });
 
 it('still asks an opted-out person, since confirming is their way back', function (): void {

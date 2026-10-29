@@ -21,6 +21,7 @@ use Mozex\Campaigns\Models\Campaign;
 use Mozex\Campaigns\Models\CampaignMessage;
 use Mozex\Campaigns\Models\Revision;
 use Mozex\Campaigns\Models\Subscriber;
+use Mozex\Campaigns\Support\AfterCommit;
 use Mozex\Campaigns\Support\DatabaseErrors;
 use Mozex\Campaigns\Support\Engagement;
 use PDOException;
@@ -80,7 +81,7 @@ class FreezeCampaignAction
         }
 
         if ($frozen->status === CampaignStatus::Sending) {
-            CampaignStartedEvent::dispatch($frozen);
+            AfterCommit::dispatch($frozen->getConnection(), new CampaignStartedEvent($frozen));
         }
 
         return $frozen;
