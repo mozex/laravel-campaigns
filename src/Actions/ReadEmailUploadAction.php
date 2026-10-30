@@ -41,7 +41,7 @@ class ReadEmailUploadAction
      * @param  array<string, string>  $subjects  by locale
      * @param  array<string, string>  $preheaders  by locale
      *
-     * @throws CampaignsException listing every problem
+     * @throws CampaignsException listing every problem, or only the HTML too long as written when there is any
      */
     public function execute(string $uploadId, array $subjects = [], array $preheaders = []): EmailUpload
     {
@@ -96,7 +96,7 @@ class ReadEmailUploadAction
      * @param  array<string, string>  $subjects  by locale
      * @param  array<string, string>  $preheaders  by locale
      *
-     * @throws CampaignsException listing every problem
+     * @throws CampaignsException listing every problem, or only the HTML too long as written when there is any
      */
     public function read(string $bytes, array $subjects = [], array $preheaders = []): EmailUpload
     {
@@ -112,6 +112,19 @@ class ReadEmailUploadAction
 
         foreach (array_keys($locales) as $locale) {
             $spelled[Locales::normalize($locale)] = $locale;
+        }
+
+        // HTML the revision rules refuse unrendered is refused before its
+        // images are read and its paths rewritten: twenty such files dense
+        // with image paths took 180 MB, past a 128 MB memory limit.
+        $tooLong = array_values(array_filter(array_map(
+            fn (string $locale, array $files): ?string => $this->rules::tooLongAsWritten($locale, $archive->documents[$files['html']]),
+            array_keys($locales),
+            $locales,
+        )));
+
+        if ($tooLong !== []) {
+            throw CampaignsException::invalidContent($tooLong);
         }
 
         $subjects = $this->byArchiveLocale($subjects, $spelled, $problems);

@@ -49,7 +49,7 @@ The footer is a Blade view you can publish and restyle (`php artisan vendor:publ
 
 ## The rules every revision meets
 
-A revision that breaks any of these is refused, with every problem listed in one error:
+A revision that breaks any of these is refused, with every problem listed in one error. The one exception is an upload whose HTML is over twice the size limit as written: it's refused for that alone, before its images are read.
 
 - at most 20 languages, the default language (`campaigns.locale`) among them, none given twice however written (`EN`, `pt-br`);
 - a subject on one line;

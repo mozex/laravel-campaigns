@@ -30,6 +30,21 @@ class ContentRules
     public function __construct(protected Renderer $renderer) {}
 
     /**
+     * The problem with HTML so long as written that it is refused without
+     * rendering it (twice the limit, which filling in can't bring under),
+     * or null. An upload checks it before reading the images.
+     */
+    public static function tooLongAsWritten(string $locale, string $html): ?string
+    {
+        return strlen($html) > 2 * static::MAX_HTML_BYTES ? static::tooLong($locale, strlen($html), 'as written') : null;
+    }
+
+    protected static function tooLong(string $locale, int $bytes, string $measured): string
+    {
+        return "{$locale}: the HTML is ".round($bytes / 1024)." KB {$measured}, over the 90 KB limit (Gmail clips an email past 102 KB, and click tracking lengthens every link).";
+    }
+
+    /**
      * The contents ready to store, each with its plain text (generated from
      * the HTML when none was given), or every reason they can't be.
      *
@@ -186,11 +201,12 @@ class ContentRules
         // Refused unrendered when it is twice the limit as written, so an
         // upload of up to a megabyte never costs a render; nearer the limit,
         // filling in can shrink it (a fallback longer than a sample name).
-        $unrendered = strlen($content->html) > 2 * static::MAX_HTML_BYTES;
-        $size = $unrendered ? strlen($content->html) : strlen($this->renderer->render($prepared, Personalization::sample($locale))->html);
+        $asWritten = static::tooLongAsWritten($locale, $content->html);
 
-        if ($size > static::MAX_HTML_BYTES) {
-            $problems[] = "{$locale}: the HTML is ".round($size / 1024).' KB '.($unrendered ? 'as written' : 'once filled in').', over the 90 KB limit (Gmail clips an email past 102 KB, and click tracking lengthens every link).';
+        if ($asWritten !== null) {
+            $problems[] = $asWritten;
+        } elseif (($size = strlen($this->renderer->render($prepared, Personalization::sample($locale))->html)) > static::MAX_HTML_BYTES) {
+            $problems[] = static::tooLong($locale, $size, 'once filled in');
         }
 
         return $prepared;

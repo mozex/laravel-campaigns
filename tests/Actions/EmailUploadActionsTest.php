@@ -195,6 +195,16 @@ describe('saving an uploaded email', function (): void {
             [],
             ['the image "logo.png" is not in the upload'],
         ],
+        // Refused before its images are read or its paths rewritten, which
+        // for twenty such files dense with paths took 180 MB.
+        'HTML the rules refuse unrendered' => [
+            zipOf([
+                'email.html' => '<title>Hi</title>'.str_repeat('<img src="images/a.png" alt="">', 7000).'{{footer}}',
+                'images/a.png' => 'not an image',
+            ]),
+            [],
+            ['en: the HTML is 212 KB as written, over the 90 KB limit'],
+        ],
     ]);
 
     it('refuses a campaign past its draft before using up the upload', function (): void {
