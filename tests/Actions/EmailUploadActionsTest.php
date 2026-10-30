@@ -109,6 +109,29 @@ describe('saving an uploaded email', function (): void {
             ->and(collect($again->assets)->pluck('id')->all())->toEqualCanonicalizing(collect($saved->assets)->pluck('id')->all());
     });
 
+    it('points every form of image at the library, Outlook\'s blocks included, leaving none unused', function (): void {
+        $written = <<<'HTML'
+            <html><head><title>Forms</title><style>.s { background-image: image-set("images/set.png" 1x, url(images/set-url.png) 2x); }</style></head>
+            <body><!--[if mso]><v:rect fill="true"><v:fill type="frame" src="images/fill.png" /></v:rect><v:image src="images/vml.png" />
+            <td background="images/td.png"><img src="images/outlook.png" alt=""></td><![endif]-->
+            <picture><source srcset="images/hero@2x.png 2x"><img src="images/hero.png" alt=""></picture>
+            <input type="image" src="images/button.png" alt="Go"><video poster="images/poster.png"></video>
+            <img lowsrc="images/low.png" src="images/hero.png" alt=""><svg><image href="images/svg.png" /><image xlink:href="images/svg-xlink.png" /></svg>
+            <div style="background-image: -webkit-image-set(&quot;images/entity.png&quot; 1x)">x</div>
+            {{footer}}</body></html>
+            HTML;
+        $names = ['set', 'set-url', 'fill', 'vml', 'td', 'outlook', 'hero@2x', 'hero', 'button', 'poster', 'low', 'svg', 'svg-xlink', 'entity'];
+        $paths = array_map(fn (string $name): string => "images/{$name}.png", $names);
+
+        $saved = app(AddUploadedRevisionAction::class)->execute(
+            Template::factory()->create(),
+            uploaded(zipOf(['email.html' => $written, ...array_fill_keys($paths, testImage())])),
+        );
+
+        expect($saved->unusedImages)->toBe([])
+            ->and($saved->revision->contentFor('en')->html)->toBe(str_replace($paths, assetUrl(testImage(), 'png'), $written));
+    });
+
     it('takes one HTML file whose images are already on https', function (): void {
         $campaign = Campaign::factory()->create(['status' => CampaignStatus::Draft]);
 

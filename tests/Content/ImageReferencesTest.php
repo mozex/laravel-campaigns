@@ -36,5 +36,10 @@ it('finds relative image paths and swaps them in place, leaving everything else 
             <table><tr><td background="https://assets.example.com/bg.png" style="background-image: url(&quot;https://assets.example.com/bg.png&quot;)">x</td></tr></table>
             <img src="#top" alt=""><img src="data:image/gif;base64,R0lGOD" alt=""><img src="//cdn.example.com/c.png" alt="">
             </body></html>
-            HTML);
+            HTML)
+        // An img without a src names no address to replace.
+        ->and(ImageReferences::rewrite('<img alt="A">', fn (string $reference): string => 'https://assets.example.com/a.png'))->toBe('<img alt="A">')
+        // The space a bare &quot needs to be read stays.
+        ->and(ImageReferences::rewrite('<td style="background:url(&quot images/a.png &quot)">x</td>', fn (string $reference): ?string => $urls[$reference] ?? null))
+        ->toBe('<td style="background:url(&quot https://assets.example.com/a.png &quot)">x</td>');
 });

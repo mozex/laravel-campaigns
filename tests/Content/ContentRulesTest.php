@@ -5,6 +5,9 @@ declare(strict_types=1);
 use Mozex\Campaigns\CampaignsException;
 use Mozex\Campaigns\Content\ContentRules;
 use Mozex\Campaigns\Content\EmailContent;
+use Mozex\Campaigns\Content\Html;
+use Mozex\Campaigns\Content\Personalization;
+use Mozex\Campaigns\Content\PlainText;
 use Mozex\Campaigns\Content\Renderer;
 use Mozex\Campaigns\Templates\StarterTemplates;
 
@@ -123,6 +126,41 @@ it('reads CSS images only from CSS, decoded', function (): void {
     ]))]))->toBe('')
         ->and(contentProblems([validContent(html: '<style>.hero { background: url(http://cdn.test/hero.png) }</style>{{footer}}')]))
         ->toContain('en: the image "http://cdn.test/hero.png" is not on https.');
+});
+
+it('refuses an image on http in every form it is written', function (): void {
+    $addresses = [
+        'http://cdn.test/vml.png', 'http://cdn.test/fill.png', 'http://cdn.test/td.png', 'http://cdn.test/outlook.png',
+        'http://cdn.test/hero@2x.png', 'http://cdn.test/button.png', 'http://cdn.test/poster.png', 'http://cdn.test/low.png',
+        'http://cdn.test/svg.png', 'http://cdn.test/fonts.css', 'http://cdn.test/set.png', 'http://cdn.test/open.png',
+    ];
+
+    expect(contentProblems([validContent(html: implode('', [
+        '{{footer}}',
+        '<!--[if mso]><v:image src="http://cdn.test/vml.png" /><v:fill src="http://cdn.test/fill.png" /><td background="http://cdn.test/td.png"><img src="http://cdn.test/outlook.png" alt=""><![endif]-->',
+        '<picture><source srcset="http://cdn.test/hero@2x.png 2x"><img src="https://cdn.test/hero.png" alt=""></picture>',
+        '<input type="image" src="http://cdn.test/button.png" alt=""><video poster="http://cdn.test/poster.png"></video>',
+        '<img lowsrc="http://cdn.test/low.png" src="https://cdn.test/a.png" alt=""><svg><image href="http://cdn.test/svg.png" /></svg>',
+        '<style>@import "http://cdn.test/fonts.css"; .s { background: image-set("http://cdn.test/set.png" 1x); } .e { background: url(http://cdn.test/open.png',
+    ]))]))->toContain(...array_map(fn (string $address): string => "en: the image \"{$address}\" is not on https.", $addresses));
+});
+
+it('refuses HTML nested deeper than its rules can read', function (): void {
+    $deep = str_repeat('<div>', 300).'<img src="https://cdn.test/deep.png" alt="">'.str_repeat('</div>', 300).'{{footer}}';
+
+    expect(contentProblems([validContent(html: $deep)]))->toContain('en: the HTML nests elements more than 200 deep');
+});
+
+it('reads an email nested to the limit whole once its footer is filled in', function (): void {
+    // html and body are the first two levels, so the paragraph inside the
+    // innermost div is at the limit.
+    $atLimit = str_repeat('<div>', Html::MAX_DEPTH - 3).'{{footer}}<p>After the footer</p>'.str_repeat('</div>', Html::MAX_DEPTH - 3);
+
+    [$accepted] = app(ContentRules::class)->prepare([validContent(html: $atLimit)]);
+
+    // The footer's own nesting stays inside what libxml reads.
+    expect(PlainText::fromHtml(app(Renderer::class)->render($accepted, Personalization::sample('en'))->html))
+        ->toContain('After the footer', 'Unsubscribe or change your email preferences');
 });
 
 it('keeps the app\'s default language whatever language a request switches to', function (): void {

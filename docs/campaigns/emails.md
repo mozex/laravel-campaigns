@@ -23,7 +23,7 @@ translations/de.txt         optional
 images/hero.png             referenced as images/hero.png
 ```
 
-- Images referenced by a relative path join the asset library on `campaigns.assets.disk`, and their paths become its public https addresses. Every image must end up on https; SVG is refused. Images are named by their content and never deleted, since delivered mail keeps loading them.
+- Images referenced by a relative path join the asset library on `campaigns.assets.disk`, and their paths become its public https addresses, wherever the email loads them: Outlook's conditional comments and VML, `<picture>` sources, CSS `image-set()` and the rest of the forms listed under the rules below. Every image must end up on https; SVG is refused. Images are named by their content and never deleted, since delivered mail keeps loading them.
 - One folder wrapping everything is stepped into, and `__MACOSX/`, `.DS_Store` and `Thumbs.db` are skipped. The zip is read in memory and never unpacked to disk; at most 200 files and 50 MB unpacked, 1 MB per HTML or text file.
 - A language's subject is the one the agent passes for it, else the HTML's `<title>`. Preheaders are only what's passed.
 - A plain text that's left out is generated from the HTML, each time it's needed.
@@ -55,7 +55,8 @@ A revision that breaks any of these is refused, with every problem listed in one
 - a subject on one line;
 - nothing in double braces that isn't a known placeholder (`{{frist_name}}` would reach every inbox as written), no triple braces, and no placeholder whose braces a tool percent-encoded (`%7B%7Bweb_version_url%7D%7D`, which CSS inliners built on libxml write in links);
 - an unsubscribe link in the HTML and the text (`{{unsubscribe_url}}`, `{{preferences_url}}` or `{{footer}}`);
-- every image on https, in `src`, `srcset`, `background` and CSS `url()`;
+- every image on https, inside Outlook's conditional comments (`<!--[if mso]>`) too: `src`, `srcset` and `lowsrc` on `img`, `srcset` on `<picture>`'s `source`, `src` on an image button and on VML (`v:image`, `v:fill`, `v:imagedata`), `poster` on `video`, `href` on SVG's `image`, `background` on any element, and CSS `url()`, `image-set()` and `@import` in style attributes and style elements;
+- elements nested at most 200 deep, since the HTML parser behind these rules stops reading at 256 and would miss the rest;
 - at most 90 KB of HTML once filled with sample values, since Gmail clips at 102 KB and click tracking lengthens links, and at most 90 KB of text.
 
 ## Pre-send checks

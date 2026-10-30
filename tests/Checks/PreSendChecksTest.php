@@ -122,7 +122,7 @@ it('queues the checks and returns at once', function (): void {
 it('checks the links, images, size, unsubscribe and privacy links, languages and spam score', function (): void {
     Http::fake(function (Request $request) {
         return match ($request->url()) {
-            'https://example.com/ok', 'http://example.com/plain', 'https://cdn.example.com/hero.png', 'https://app.example.com/privacy' => Http::response(),
+            'https://example.com/ok', 'http://example.com/plain', 'https://cdn.example.com/hero.png', 'https://cdn.example.com/outlook.png', 'https://app.example.com/privacy' => Http::response(),
             'https://example.com/no-head' => Http::response(status: $request->method() === 'HEAD' ? 405 : 200),
             'https://example.com/missing' => Http::response(status: 404),
             'https://example.com/inside' => Http::response(status: 302, headers: ['Location' => 'https://169.254.169.254/']),
@@ -143,6 +143,7 @@ it('checks the links, images, size, unsubscribe and privacy links, languages and
         <a href="https://example.com/inside">Sneaky</a> <a href="http://example.com/plain">Plain</a>
         <a href="mailto:hi@example.com">Mail</a> <a href="{{web_version_url}}">View</a></p>
         <img src="https://cdn.example.com/hero.png"><img src="https://cdn.example.com/hero.png" alt="">
+        <!--[if mso]><v:image src="https://cdn.example.com/outlook.png" /><![endif]-->
         {{footer}}
         HTML);
 
@@ -164,7 +165,7 @@ it('checks the links, images, size, unsubscribe and privacy links, languages and
         ->items->toBe([['url' => 'https://cdn.example.com/hero.png', 'problem' => 'has no alt text']])
         ->and(check($results, 'links'))
         ->status->toBe('failed')
-        ->checked->toBe(7)
+        ->checked->toBe(8)
         ->and(collect(check($results, 'links')['items'])->mapWithKeys(fn (array $item): array => [$item['url'] => $item['problem']])->all())
         ->toBe([
             'https://example.com/missing' => 'answered 404',

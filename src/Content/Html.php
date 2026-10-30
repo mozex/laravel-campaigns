@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Mozex\Campaigns\Content;
 
 use DOMDocument;
-use DOMElement;
+use DOMXPath;
 
 /**
  * Reads an email's HTML. Only ever for reading: libxml writes `{` and `}` in
@@ -14,6 +14,15 @@ use DOMElement;
  */
 class Html
 {
+    /**
+     * How deep elements may nest, the html element counting as one. libxml
+     * stops reading a document 256 elements deep and drops everything after
+     * that point, so the rules that read the DOM (the plain text, the alt
+     * text and link checks) would be blind to the rest; the margin leaves
+     * room for the footer the renderer puts where {{footer}} is written.
+     */
+    public const MAX_DEPTH = 200;
+
     public static function parse(string $html): DOMDocument
     {
         $document = new DOMDocument;
@@ -26,51 +35,34 @@ class Html
     }
 
     /**
-     * Every image address the email loads: img src and srcset, background
-     * attributes, and CSS url() in style attributes and style elements.
+     * Whether an element sits deeper than MAX_DEPTH.
+     */
+    public static function nestsTooDeep(string $html): bool
+    {
+        // Each step goes one level down, so the path finds something only
+        // that deep, and libxml walks the tree once.
+        $deeper = (new DOMXPath(static::parse($html)))->query(str_repeat('/*', static::MAX_DEPTH + 1));
+
+        return $deeper !== false && $deeper->length > 0;
+    }
+
+    /**
+     * Every image address the email loads, in every form ImageSources
+     * reads, Outlook's conditional comments included.
      *
      * @return list<string>
      */
     public static function imageUrls(string $html): array
     {
-        $document = static::parse($html);
         $urls = [];
 
-        foreach ($document->getElementsByTagName('img') as $image) {
-            $urls[] = $image->getAttribute('src');
-
-            foreach (static::srcset($image->getAttribute('srcset')) as $candidate) {
-                $urls[] = $candidate['url'];
+        foreach (ImageSources::in($html) as $source) {
+            foreach ($source->urls() as $url) {
+                $urls[] = $url;
             }
         }
 
-        // CSS is read where CSS lives, decoded by the DOM: a style attribute
-        // may quote its url() with &quot;, and body text or an SVG's
-        // fill="url(#id)" holds no image.
-        $css = [];
-
-        foreach ($document->getElementsByTagName('*') as $element) {
-            /** @var DOMElement $element */
-            if ($element->hasAttribute('background')) {
-                $urls[] = $element->getAttribute('background');
-            }
-
-            if ($element->hasAttribute('style')) {
-                $css[] = $element->getAttribute('style');
-            }
-        }
-
-        foreach ($document->getElementsByTagName('style') as $style) {
-            $css[] = $style->textContent;
-        }
-
-        preg_match_all('/\burl\(\s*([\'"]?)(.*?)\1\s*\)/i', implode("\n", $css), $matches);
-
-        // A url(#id) points into the document (Outlook's VML behavior, an
-        // SVG filter) and loads nothing.
-        $loaded = array_filter($matches[2], fn (string $url): bool => ! str_starts_with(trim($url), '#'));
-
-        return array_map(fn (string $url): string => trim($url), [...$urls, ...$loaded]);
+        return $urls;
     }
 
     /**

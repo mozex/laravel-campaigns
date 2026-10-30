@@ -8,9 +8,9 @@ use Closure;
 
 /**
  * Finds an email's relative image paths (images/hero.png) and swaps them
- * for public addresses. The references are read through the DOM (Html),
- * which decodes them as a browser would, but the change is made in the
- * source string at the matching offsets, since writing the DOM back out
+ * for public addresses. Both read ImageSources, the list the revision rules
+ * check too, so every path found is a path swapped. The change is made in
+ * the source string at the offsets it gives, since writing a DOM back out
  * would percent-encode the placeholders in every href and src.
  */
 class ImageReferences
@@ -37,9 +37,8 @@ class ImageReferences
 
     /**
      * Replaces each image address for which $replace returns a new one, as
-     * the DOM decodes it (src, every srcset candidate, background, and CSS
-     * url() in style attributes and style elements). Anything $replace
-     * returns null for is left byte for byte.
+     * a mail app decodes it (every srcset candidate on its own). Anything
+     * $replace returns null for is left byte for byte.
      *
      * @param  Closure(string): ?string  $replace
      */
@@ -47,32 +46,18 @@ class ImageReferences
     {
         $changes = [];
 
-        preg_match_all('/(?<![\w-])(src|srcset|background)\s*=\s*("[^"]*"|\'[^\']*\'|[^\s"\'=<>`]+)/i', $html, $attributes, PREG_SET_ORDER | PREG_OFFSET_CAPTURE);
-
-        foreach ($attributes as $match) {
-            [$raw, $offset] = $match[2];
-            $quoted = $raw[0] === '"' || $raw[0] === "'";
-            $value = $quoted ? substr($raw, 1, -1) : $raw;
-            $decoded = static::decode($value);
-
-            $new = strtolower($match[1][0]) === 'srcset'
-                ? static::srcset($decoded, $replace)
-                : $replace(trim($decoded));
-
-            if ($new !== null) {
-                $changes[$offset + ($quoted ? 1 : 0)] = [strlen($value), htmlspecialchars($new, ENT_QUOTES | ENT_HTML5, 'UTF-8', false)];
+        foreach (ImageSources::in($html) as $source) {
+            // An img without a src names no address to replace.
+            if (trim($source->value) === '') {
+                continue;
             }
-        }
 
-        // A url() may be quoted with an entity inside a style attribute.
-        preg_match_all('/\burl\(\s*(&quot;|&#0*34;|&#x0*22;|&apos;|&#0*39;|&#x0*27;|["\']?)(.*?)\1\s*\)/i', $html, $urls, PREG_SET_ORDER | PREG_OFFSET_CAPTURE);
-
-        foreach ($urls as $match) {
-            [$value, $offset] = $match[2];
-            $new = $replace(trim(static::decode($value)));
+            $new = $source->srcset ? static::srcset($source->value, $replace) : $replace(trim($source->value));
 
             if ($new !== null) {
-                $changes[$offset] = [strlen($value), $new];
+                // Inside an attribute, the address is written as attribute
+                // text; a style element's CSS is never decoded.
+                $changes[$source->offset] = [$source->length, $source->inAttribute ? htmlspecialchars($new, ENT_QUOTES | ENT_HTML5, 'UTF-8', false) : $new];
             }
         }
 
@@ -101,31 +86,32 @@ class ImageReferences
         return $changed ? implode(', ', $candidates) : null;
     }
 
-    protected static function decode(string $value): string
-    {
-        return html_entity_decode($value, ENT_QUOTES | ENT_HTML5, 'UTF-8');
-    }
-
     /**
-     * Applies the changes from the end, so earlier offsets stay right; a
-     * change that overlaps one already applied is dropped.
+     * Applies the changes in one pass from the start, the HTML between them
+     * copied once; replacing them one by one copied the whole email for
+     * each, a second per megabyte of thousands of references. A change that
+     * overlaps one already applied is dropped.
      *
      * @param  array<int, array{0: int, 1: string}>  $changes  by offset: the length replaced and the new text
      */
     protected static function apply(string $html, array $changes): string
     {
-        krsort($changes);
-        $limit = PHP_INT_MAX;
+        ksort($changes);
+        $parts = [];
+        $at = 0;
 
         foreach ($changes as $offset => [$length, $new]) {
-            if ($offset + $length > $limit) {
+            if ($offset < $at) {
                 continue;
             }
 
-            $html = substr_replace($html, $new, $offset, $length);
-            $limit = $offset;
+            $parts[] = substr($html, $at, $offset - $at);
+            $parts[] = $new;
+            $at = $offset + $length;
         }
 
-        return $html;
+        $parts[] = substr($html, $at);
+
+        return implode('', $parts);
     }
 }

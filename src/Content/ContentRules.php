@@ -12,10 +12,12 @@ use Mozex\Campaigns\CampaignsException;
  * placeholder the package doesn't know (a typo would reach every inbox as
  * written); an unsubscribe link in the HTML and in the plain text alike
  * ({{unsubscribe_url}}, or {{footer}}, which carries it); every image on
- * https; and at most 90 KB of HTML once filled in for a recipient, since
- * Gmail clips an email past 102 KB and click tracking lengthens every link;
- * and at most MAX_LOCALES languages, so an agent's answer about one email or
- * a page of them stays short. Every problem is reported at once.
+ * https; elements nested at most Html::MAX_DEPTH deep, so every rule reads
+ * the whole email; and at most 90 KB of HTML once filled in for a
+ * recipient, since Gmail clips an email past 102 KB and click tracking
+ * lengthens every link; and at most MAX_LOCALES languages, so an agent's
+ * answer about one email or a page of them stays short. Every problem is
+ * reported at once.
  */
 class ContentRules
 {
@@ -158,6 +160,10 @@ class ContentRules
             if (array_intersect(Placeholders::names($value), Placeholders::UNSUBSCRIBE) === []) {
                 $problems[] = "{$locale}: the {$part} has no unsubscribe link. Add {{unsubscribe_url}}, or {{footer}}, which carries it.";
             }
+        }
+
+        if (Html::nestsTooDeep($content->html)) {
+            $problems[] = "{$locale}: the HTML nests elements more than ".Html::MAX_DEPTH.' deep, past what these rules can read (the parser stops at 256); flatten its nesting.';
         }
 
         foreach (array_unique(Html::imageUrls($content->html)) as $url) {
