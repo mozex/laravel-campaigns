@@ -244,9 +244,9 @@ class CampaignsException extends RuntimeException
      * A database error without the original, whose message holds the SQL
      * with its values (Support\DatabaseErrors).
      */
-    public static function databaseFailed(string $doing, string $sqlState): self
+    public static function databaseFailed(string $doing, string $sqlState): DatabaseFailedException
     {
-        return new self("The database refused {$doing} (SQLSTATE {$sqlState}).");
+        return new DatabaseFailedException("The database refused {$doing} (SQLSTATE {$sqlState}).");
     }
 
     /**

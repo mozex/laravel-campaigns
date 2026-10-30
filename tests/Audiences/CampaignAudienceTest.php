@@ -70,6 +70,16 @@ describe('the audience', function (): void {
             ->status->toBe(MessageStatus::Pending);
     })->with('databases');
 
+    it('counts languages as written, as the report does, whatever the database\'s collation', function (string $driver): void {
+        useDatabase($driver);
+        $list = CampaignList::factory()->create();
+        subscriberOn([$list], ['locale' => 'pt_BR']);
+        subscriberOn([$list], ['locale' => 'pt_br']);
+
+        // MySQL's case-insensitive collation would merge them in a GROUP BY.
+        expect((new CampaignAudience([$list->id], AudienceDefinition::fromStored(null)))->preview()->byLocale)->toBe(['pt_BR' => 1, 'pt_br' => 1]);
+    })->with('databases');
+
     it('narrows the lists by every part of the audience, given together', function (): void {
         config()->set('campaigns.audiences', ['in-country' => MembersInCountry::class]);
         $news = CampaignList::factory()->create();

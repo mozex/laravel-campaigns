@@ -14,6 +14,7 @@ use Mozex\Campaigns\Campaigns;
 use Mozex\Campaigns\CampaignsException;
 use Mozex\Campaigns\Models\Subscriber;
 use Mozex\Campaigns\Support\ConsentContext;
+use Mozex\Campaigns\Support\DatabaseErrors;
 use Throwable;
 
 /**
@@ -94,8 +95,10 @@ class ListSourceObserver
         try {
             $connection->transaction($callback);
         } catch (DeadlockException $exception) {
+            // Passed on without its SQL, which holds the person's address,
+            // still a deadlock the app's transaction retries on.
             if ($insideTransaction) {
-                throw $exception;
+                throw DatabaseErrors::scrub('a record\'s list sync', $exception);
             }
 
             // Laravel gives a deadlock code 0 when the state is a string

@@ -62,7 +62,7 @@ class EnforceStopLossAction
 
     /**
      * Pauses the campaign when it is sending and past one of its limits.
-     * Returns whether they tripped.
+     * Returns whether they tripped and the pause held.
      */
     protected function campaign(Campaign $campaign): bool
     {
@@ -87,8 +87,11 @@ class EnforceStopLossAction
         } catch (CampaignsException) {
             // It completed or was cancelled meanwhile: nothing to pause.
         } catch (Throwable $exception) {
-            // A listener that failed after the commit: it is paused.
+            // The database refused the pause, which rolled back (a listener's
+            // failure is reported by the event's dispatch, never thrown).
             report($exception);
+
+            return false;
         }
 
         return true;
@@ -156,7 +159,7 @@ class EnforceStopLossAction
             } catch (CampaignsException) {
                 // It completed or was cancelled meanwhile.
             } catch (Throwable $exception) {
-                // A listener that failed: the others still pause.
+                // The database refused this one's pause: the others still pause.
                 report($exception);
             }
         }

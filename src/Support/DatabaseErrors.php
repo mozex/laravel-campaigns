@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace Mozex\Campaigns\Support;
 
 use Closure;
+use Illuminate\Database\DeadlockException;
 use Mozex\Campaigns\CampaignsException;
+use Mozex\Campaigns\DatabaseFailedException;
 use PDOException;
 
 /**
@@ -29,7 +31,7 @@ class DatabaseErrors
      * @param  Closure(): TResult  $work
      * @return TResult
      *
-     * @throws CampaignsException when the database refused the work
+     * @throws DatabaseFailedException|DeadlockException when the database refused the work
      */
     public static function scrubbed(string $doing, Closure $work): mixed
     {
@@ -41,10 +43,17 @@ class DatabaseErrors
     }
 
     /**
-     * The error as one that names what was being done and the SQLSTATE.
+     * The error as one that names what was being done and the SQLSTATE. A
+     * deadlock Laravel passes up to an outer transaction stays a
+     * DeadlockException, its own with code 40001 and nothing chained, so the
+     * outer transaction still sees it and retries.
      */
-    public static function scrub(string $doing, PDOException $exception): CampaignsException
+    public static function scrub(string $doing, PDOException $exception): DatabaseFailedException|DeadlockException
     {
+        if ($exception instanceof DeadlockException) {
+            return new DeadlockException(CampaignsException::databaseFailed($doing, '40001')->getMessage(), 40001);
+        }
+
         return CampaignsException::databaseFailed($doing, static::sqlState($exception));
     }
 

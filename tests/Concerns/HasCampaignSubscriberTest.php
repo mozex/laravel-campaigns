@@ -278,8 +278,20 @@ it('passes a deadlock on to the app\'s transaction, and only reports one outside
     config()->set('campaigns.list_sources', ['members' => MemberListThatDeadlocks::class]);
     Exceptions::fake();
 
-    expect(fn (): Member => DB::transaction(fn (): Member => Member::query()->create(['email' => 'jane@example.com'])))
-        ->toThrow(DeadlockException::class)
+    $thrown = null;
+
+    try {
+        DB::transaction(fn (): Member => Member::query()->create(['email' => 'jane@example.com']));
+    } catch (Throwable $exception) {
+        $thrown = $exception;
+    }
+
+    // Without the SQL, whose values hold the address, and nothing chained;
+    // still a deadlock by its code, so the app's transaction retries it.
+    expect($thrown)->toBeInstanceOf(DeadlockException::class)
+        ->and($thrown?->getMessage())->toBe('The database refused a record\'s list sync (SQLSTATE 40001).')
+        ->and($thrown?->getCode())->toBe(40001)
+        ->and($thrown?->getPrevious())->toBeNull()
         ->and(Member::query()->count())->toBe(0);
 
     Exceptions::assertNothingReported();

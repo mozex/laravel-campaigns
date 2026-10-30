@@ -134,22 +134,24 @@ class CampaignAudience
                 ->where('status', SubscriptionStatus::Subscribed))->count();
         }
 
-        $locales = [];
-
-        foreach ($this->recipients()->toBase()->select('locale')->selectRaw('count(*) as total')->groupBy('locale')->get() as $row) {
-            $locale = $row->locale ?? 'none';
-            $locales[$locale] = ($locales[$locale] ?? 0) + (int) $row->total;
-        }
-
+        // One moment for every tier's count, so a person at a cutoff falls in
+        // exactly one of them however long the counts take.
+        $now = now();
         $tiers = [];
 
         foreach (EngagementTier::cases() as $tier) {
-            $tiers[$tier->value] = Engagement::whereTier($this->recipients(), $tier)->count();
+            $tiers[$tier->value] = Engagement::whereTier($this->recipients(), $tier, $now)->count();
         }
 
+        // Languages are counted here rather than grouped in the database,
+        // whose case-insensitive collation on MySQL would merge pt_BR and
+        // pt_br, which the report keeps apart.
+        $locales = [];
         $providers = array_fill_keys(array_column(MailboxProvider::cases(), 'value'), 0);
 
-        foreach ($this->recipients()->toBase()->select(['id', 'email'])->lazyById(static::ADDRESS_CHUNK, 'id') as $row) {
+        foreach ($this->recipients()->toBase()->select(['id', 'email', 'locale'])->lazyById(static::ADDRESS_CHUNK, 'id') as $row) {
+            $locale = $row->locale ?? 'none';
+            $locales[$locale] = ($locales[$locale] ?? 0) + 1;
             $providers[MailboxProvider::fromEmail((string) $row->email)->value]++;
         }
 

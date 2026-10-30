@@ -90,12 +90,12 @@ class Engagement
      * @param  TBuilder  $query
      * @return TBuilder
      */
-    public static function whereTier(Builder $query, EngagementTier $tier): Builder
+    public static function whereTier(Builder $query, EngagementTier $tier, ?CarbonInterface $now = null): Builder
     {
         return match ($tier) {
-            EngagementTier::Engaged => static::whereEngagedSince($query, static::engagedCutoff()),
-            EngagementTier::Active => static::whereSilentSince(static::whereEngagedSince($query, static::activeCutoff()), static::engagedCutoff()),
-            EngagementTier::Silent => static::whereSilentSince($query, static::activeCutoff()),
+            EngagementTier::Engaged => static::whereEngagedSince($query, static::engagedCutoff($now)),
+            EngagementTier::Active => static::whereSilentSince(static::whereEngagedSince($query, static::activeCutoff($now)), static::engagedCutoff($now)),
+            EngagementTier::Silent => static::whereSilentSince($query, static::activeCutoff($now)),
         };
     }
 
@@ -159,14 +159,14 @@ class Engagement
         return $query;
     }
 
-    protected static function engagedCutoff(): CarbonInterface
+    protected static function engagedCutoff(?CarbonInterface $now = null): CarbonInterface
     {
-        return now()->startOfSecond()->subDays((int) config('campaigns.engagement.engaged_days', 90));
+        return ($now?->copy() ?? now())->startOfSecond()->subDays((int) config('campaigns.engagement.engaged_days', 90));
     }
 
-    protected static function activeCutoff(): CarbonInterface
+    protected static function activeCutoff(?CarbonInterface $now = null): CarbonInterface
     {
-        return now()->startOfSecond()->subDays((int) config('campaigns.engagement.active_days', 365));
+        return ($now?->copy() ?? now())->startOfSecond()->subDays((int) config('campaigns.engagement.active_days', 365));
     }
 
     /**

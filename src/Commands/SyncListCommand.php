@@ -8,10 +8,12 @@ use Closure;
 use Illuminate\Console\Command;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Str;
 use Mozex\Campaigns\Actions\ForgetSubscriberAction;
 use Mozex\Campaigns\Actions\SyncRecordAction;
 use Mozex\Campaigns\Campaigns;
 use Mozex\Campaigns\CampaignsException;
+use Mozex\Campaigns\DatabaseFailedException;
 use Mozex\Campaigns\Enums\SyncChange;
 use Mozex\Campaigns\Lists\SyncResult;
 use Mozex\Campaigns\Models\Subscriber;
@@ -47,10 +49,15 @@ class SyncListCommand extends Command
             $query->whereKey($id);
 
             // PostgreSQL refuses a key of the wrong type (abc for an integer
-            // key) with an error, where the others find nothing.
+            // key) or out of its range with an error, where the others find
+            // nothing. Any other error is the database's, and is thrown.
             try {
                 $exists = $query->exists();
-            } catch (PDOException) {
+            } catch (PDOException $exception) {
+                if (! in_array(DatabaseErrors::sqlState($exception), ['22P02', '22003'], true)) {
+                    throw $exception;
+                }
+
                 $exists = false;
             }
 
@@ -69,7 +76,7 @@ class SyncListCommand extends Command
         try {
             $query->chunkById(500, function (Collection $chunk) use ($sync, $key, $dryRun, &$counts, &$records, &$unchanged, &$suppressed, &$problems): void {
                 foreach ($chunk as $record) {
-                    $result = DatabaseErrors::scrubbed('a record\'s sync', fn (): SyncResult => $this->syncRecord($sync, $key, $record, $dryRun));
+                    $result = DatabaseErrors::scrubbed('record '.Str::limit((string) $record->getKey(), 40).'\'s sync', fn (): SyncResult => $this->syncRecord($sync, $key, $record, $dryRun));
                     $records++;
 
                     foreach ($result->changes as $change) {
@@ -86,6 +93,12 @@ class SyncListCommand extends Command
                 }
             });
         } catch (CampaignsException $exception) {
+            // A refusal is the operator's to read; a database error goes to
+            // the error tracker too, since a scheduled run's output is lost.
+            if ($exception instanceof DatabaseFailedException) {
+                report($exception);
+            }
+
             $this->error($exception->getMessage());
 
             return self::FAILURE;

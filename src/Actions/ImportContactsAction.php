@@ -7,6 +7,7 @@ namespace Mozex\Campaigns\Actions;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 use Closure;
+use Illuminate\Database\DeadlockException;
 use Illuminate\Database\Eloquent\Builder;
 use JsonException;
 use Mozex\Campaigns\CampaignsException;
@@ -182,9 +183,14 @@ class ImportContactsAction
 
                 continue;
             } catch (PDOException $exception) {
+                // Inside an app's own transaction, a deadlock is the outer
+                // transaction's to retry, which a row's problem would hide.
+                if ($exception instanceof DeadlockException) {
+                    throw DatabaseErrors::scrub("row {$row}", $exception);
+                }
+
                 // Its message holds the SQL with the row's address, so only
                 // its code is kept; whatever broke would break the next row.
-                // A deadlock is a PDOException but no QueryException.
                 $problems[] = 'Row '.$row.': the database refused it (SQLSTATE '.DatabaseErrors::sqlState($exception).'), so the import stopped there.';
 
                 break;
