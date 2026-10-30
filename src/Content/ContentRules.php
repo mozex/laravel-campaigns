@@ -180,11 +180,11 @@ class ContentRules
         // Refused unrendered when it is twice the limit as written, so an
         // upload of up to a megabyte never costs a render; nearer the limit,
         // filling in can shrink it (a fallback longer than a sample name).
-        $written = strlen($content->html);
-        $size = $written > 2 * static::MAX_HTML_BYTES ? $written : strlen($this->renderer->render($prepared, Personalization::sample($locale))->html);
+        $unrendered = strlen($content->html) > 2 * static::MAX_HTML_BYTES;
+        $size = $unrendered ? strlen($content->html) : strlen($this->renderer->render($prepared, Personalization::sample($locale))->html);
 
         if ($size > static::MAX_HTML_BYTES) {
-            $problems[] = "{$locale}: the HTML is ".round($size / 1024).' KB '.($size === $written ? 'as written' : 'once filled in').', over the 90 KB limit (Gmail clips an email past 102 KB, and click tracking lengthens every link).';
+            $problems[] = "{$locale}: the HTML is ".round($size / 1024).' KB '.($unrendered ? 'as written' : 'once filled in').', over the 90 KB limit (Gmail clips an email past 102 KB, and click tracking lengthens every link).';
         }
 
         return $prepared;

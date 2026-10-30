@@ -76,7 +76,10 @@ class SyncListCommand extends Command
         try {
             $query->chunkById(500, function (Collection $chunk) use ($sync, $key, $dryRun, &$counts, &$records, &$unchanged, &$suppressed, &$problems): void {
                 foreach ($chunk as $record) {
-                    $result = DatabaseErrors::scrubbed('record '.Str::limit((string) $record->getKey(), 40).'\'s sync', fn (): SyncResult => $this->syncRecord($sync, $key, $record, $dryRun));
+                    $result = DatabaseErrors::scrubbed(
+                        'record '.Str::limit((string) $record->getKey(), 40).'\'s sync',
+                        fn (): SyncResult => $this->syncRecord($sync, $key, $record, $dryRun),
+                    );
                     $records++;
 
                     foreach ($result->changes as $change) {

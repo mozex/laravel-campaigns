@@ -184,30 +184,21 @@ class Renderer
     {
         $open = strpos($html, '>', $from);
 
-        if ($open === false) {
-            return null;
-        }
-
-        for ($at = $open; ($close = stripos($html, '</'.$name, $at)) !== false; $at = $close + 2) {
-            if (preg_match('/\G\s*>/', $html, $match, 0, $close + 2 + strlen($name)) === 1) {
-                return $close + 2 + strlen($name) + strlen($match[0]);
-            }
-        }
-
-        return null;
+        return $open === false ? null : static::tagEnd($html, '/'.$name, $open);
     }
 
     /**
-     * Where the first <name ...> tag ends, or </name> for a name starting
-     * with a slash, found with plain string searches: a pattern's [^>]*
-     * runs to the end of the email for every opener with no > after it.
+     * Where the first <name ...> tag from the offset ends, or </name> for a
+     * name starting with a slash, found with plain string searches: a
+     * pattern's [^>]* runs to the end of the email for every opener with no
+     * > after it.
      */
-    protected static function tagEnd(string $html, string $name): ?int
+    protected static function tagEnd(string $html, string $name, int $from = 0): ?int
     {
         $tag = '<'.$name;
         $closing = str_starts_with($name, '/');
 
-        for ($at = 0; ($start = stripos($html, $tag, $at)) !== false; $at = $start + 1) {
+        for ($at = $from; ($start = stripos($html, $tag, $at)) !== false; $at = $start + 1) {
             $after = $start + strlen($tag);
 
             if ($closing) {

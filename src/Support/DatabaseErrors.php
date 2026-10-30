@@ -15,11 +15,11 @@ use PDOException;
  * the SQL with its bindings (an address, a visitor's IP address and
  * browser), and the queue's failed_jobs, the error tracker and a debug page
  * all show it whole. So the entry points that write a person's details (the
- * feedback job, the pages' POSTs, the webhook, the MCP tools, the
- * suppressions import) rethrow one with its SQLSTATE only, unchained, so no
- * handler walks back to the original. PDOException, not QueryException:
- * Laravel's DeadlockException is a PDOException of its own carrying the
- * same message.
+ * feedback job, the pages' POSTs, the webhook, the MCP tools, the sync and
+ * import loops, the freeze, the observer) rethrow one with its SQLSTATE
+ * only, unchained, so no handler walks back to the original. PDOException,
+ * not QueryException: Laravel's DeadlockException is a PDOException of its
+ * own carrying the same message.
  */
 class DatabaseErrors
 {

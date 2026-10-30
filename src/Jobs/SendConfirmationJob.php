@@ -54,7 +54,9 @@ class SendConfirmationJob implements ShouldQueue
         // address may be asked again today.
         if (! config('campaigns.enabled')) {
             if ($subscription !== null) {
-                Subscriber::query()->whereKey($subscription->subscriber_id)->update(['confirmation_sent_at' => null, 'updated_at' => now()]);
+                Subscriber::query()
+                    ->whereKey($subscription->subscriber_id)
+                    ->update(['confirmation_sent_at' => null, 'updated_at' => now()]);
             }
 
             return;

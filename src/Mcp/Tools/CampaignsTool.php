@@ -13,6 +13,7 @@ use Laravel\Mcp\ResponseFactory;
 use Laravel\Mcp\Server\Tool;
 use Laravel\Mcp\Support\ValidationMessages;
 use Mozex\Campaigns\CampaignsException;
+use Mozex\Campaigns\DatabaseFailedException;
 use Mozex\Campaigns\Enums\ConsentBasis;
 use Mozex\Campaigns\Enums\Rights;
 use Mozex\Campaigns\Mcp\Principal;
@@ -136,6 +137,11 @@ abstract class CampaignsTool extends Tool
             /** @var ResponseFactory $response */
             $response = app()->call([$this, 'perform']);
         } catch (CampaignsException $exception) {
+            // A refusal is the agent's to read; a database error the app's too.
+            if ($exception instanceof DatabaseFailedException) {
+                report($exception);
+            }
+
             return static::refused($exception->getMessage());
         } catch (ValidationException $exception) {
             return static::refused(ValidationMessages::from($exception));
