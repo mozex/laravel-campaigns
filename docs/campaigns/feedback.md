@@ -20,7 +20,15 @@ What happens to an email after Mailgun takes it comes back as events: by webhook
 
 Events arrive late and out of order, so every change moves forward only: a delivery never undoes a bounce, and an email already failed stays failed.
 
-Opens and clicks count only a person's. Gmail's image proxy loads images only when someone opens the email, so it counts; Apple's privacy prefetch and link scanners open everything, so they don't. A click within 10 seconds of delivery, or within 3 seconds of a click on another link in the same email, is taken for a scanner. Clicks on the package's own pages (the unsubscribe link) are never engagement.
+Opens and clicks count only a person's. Gmail's image proxy loads images only when someone opens the email, so it counts; Apple's privacy prefetch and link scanners open everything, so they don't. A click within 10 seconds of delivery (of sending, when no delivery was reported), or within 3 seconds of a click on another link in the same email, is taken for a scanner. Clicks on the package's own pages (the unsubscribe link) are never engagement.
+
+## Refused while sending
+
+Some services refuse an email as it's handed over, as an SMTP server does with a 5xx reply to the recipient or to the email (a refused sender pauses the domain's campaigns instead). The email fails and is never sent again. When the refusal names a mailbox that doesn't exist (the enhanced status codes 5.1.1, 5.1.2, 5.1.3 and 5.1.10 of RFC 3463), it fails as `hard_bounce`: it counts as sent and bounced, the address is blocked, and the stop-loss counts it like any bounce. Any other refusal fails as `rejected` and leaves the address alone. When a campaign's last 10 sends were all refused that way, however slow its pace, it pauses: the content or the sender is what's being refused, and every next email would fail the same way.
+
+## Drivers that read nothing back
+
+A driver with neither webhooks nor logs, such as the [SMTP driver](../getting-started/smtp.md), never learns what happens to an email after its service takes it. No delivery, bounce or spam report reaches the package, and neither does an unsubscribe made at the service; the package's own unsubscribe page and the one-click header still work. So its emails end at `sent`, the stop-loss sees only refusals while sending, and the report divides opens and clicks by sent emails. `get_overview` says this, and so do `start_campaign` and `resume_campaign` in their `warning`.
 
 ## The stop-loss
 
@@ -51,10 +59,10 @@ Every 15 minutes, whether or not sending is switched on:
 - Mailgun's logs are replayed per sending domain from half an hour behind (its logs fill in out of order), storing every event no webhook brought except `accepted`, which the others prove;
 - a send that ended unclear is looked up by its id. If the logs show it, it's marked sent; if they hold nothing an hour after it went, it fails as `not_accepted` and is never resent. Past what the logs reach, it stays `unknown`.
 
-It reads the logs through the driver that sent each email, so a switch of drivers keeps settling the old one's. A driver without logs is skipped: its unclear sends stay `unknown`, never resent. Mailgun's driver needs the [reading key](../getting-started/mailgun.md#the-reading-key).
+It reads the logs through the driver that sent each email, so a switch of drivers keeps settling the old one's. A driver without logs is skipped: its unclear sends stay `unknown`, never resent, and an email its job left `sending` (a worker killed mid-send) becomes `unknown` after 15 minutes, so the campaign can complete. Mailgun's driver needs the [reading key](../getting-started/mailgun.md#the-reading-key).
 
 ## Reports
 
-`get_campaign_report` works a campaign's report out when it's read: sends, deliveries, failures by kind, hard bounces, spam reports and unsubscribes (by how they came: a mail app's one-click, the page or Mailgun), opens and clicks by people and by machines, the rates, the most clicked links, the same by list, language, engagement tier and mailbox provider, and a timeline by day. Rates of bounces, spam reports and unsubscribes are per send, as the stop-loss measures them; opens and clicks are per delivered email.
+`get_campaign_report` works a campaign's report out when it's read: sends, deliveries, failures by kind, hard bounces, spam reports and unsubscribes (by how they came: a mail app's one-click, the page or Mailgun), opens and clicks by people and by machines, the rates, the most clicked links, the same by list, language, engagement tier and mailbox provider, and a timeline by day. Rates of bounces, spam reports and unsubscribes are per send, as the stop-loss measures them; opens and clicks are per delivered email, or per sent email when the campaign went through a driver that reads nothing back (`rates.basis` says which).
 
 Pruning deletes events older than `campaigns.event_retention_days` (180). A finished campaign's report is kept on the campaign first, so it survives its events; a campaign still sending or paused keeps its events until it's done.

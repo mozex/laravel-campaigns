@@ -8,9 +8,6 @@ use Carbon\CarbonInterface;
 use Generator;
 use Illuminate\Contracts\Mail\Mailer as MailerContract;
 use Illuminate\Http\Request;
-use Illuminate\Mail\Mailer;
-use Illuminate\Mail\Transport\ArrayTransport;
-use Illuminate\Mail\Transport\LogTransport;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Mail;
@@ -54,6 +51,8 @@ use Throwable;
  */
 class MailgunDriver implements CampaignDriver, ReadsEvents, ReadsMetrics, ReadsSuppressions, ReceivesWebhooks
 {
+    use UsesCampaignsMailer;
+
     /**
      * Mailgun took nothing and may take it later: rate limited, or its
      * servers briefly failing. A 504 isn't here: a gateway that timed out
@@ -642,40 +641,7 @@ class MailgunDriver implements CampaignDriver, ReadsEvents, ReadsMetrics, ReadsS
      */
     protected function mailer(): MailerContract
     {
-        $name = trim(Sender::mailer());
-
-        // A blank name would resolve the app's default mailer, which is
-        // usually the transactional domain's.
-        if ($name === '') {
-            throw new SendFailed(SendFailure::DomainRefused, 'No campaigns mailer is named (campaigns.mail.mailer, CAMPAIGNS_MAILER).');
-        }
-
-        try {
-            $mailer = Mail::mailer($name);
-        } catch (Throwable $exception) {
-            throw new SendFailed(SendFailure::DomainRefused, "The campaigns mailer \"{$name}\" can't be used: ".SendFailed::scrub($exception->getMessage()));
-        }
-
-        // A faked mailer (Mail::fake()) has no transport to check.
-        if (! $mailer instanceof Mailer) {
-            return $mailer;
-        }
-
-        $transport = $mailer->getSymfonyTransport();
-        $delivers = $transport instanceof MailgunApiTransport;
-
-        if (! $delivers && ! $transport instanceof LogTransport && ! $transport instanceof ArrayTransport) {
-            throw new SendFailed(SendFailure::DomainRefused, "The campaigns mailer \"{$name}\" must send through Mailgun's API: give it the mailgun transport with 'scheme' => 'api' (or the log or array mailer locally).");
-        }
-
-        // The log mailer would mark a whole campaign sent with nothing
-        // delivered, and write every message, links' tokens and all, to the
-        // app's log.
-        if (! $delivers && app()->isProduction()) {
-            throw new SendFailed(SendFailure::DomainRefused, "The campaigns mailer \"{$name}\" delivers nothing, which production never sends through: give it the mailgun transport with 'scheme' => 'api'.");
-        }
-
-        return $mailer;
+        return $this->campaignsMailer(MailgunApiTransport::class, 'Mailgun\'s API', "the mailgun transport with 'scheme' => 'api'");
     }
 
     protected function failure(HttpTransportException $exception): SendFailed

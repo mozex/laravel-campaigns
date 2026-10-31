@@ -8,9 +8,14 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Foundation\Queue\Queueable;
+use Illuminate\Support\Str;
+use Mozex\Campaigns\Actions\EnforceStopLossAction;
 use Mozex\Campaigns\Actions\PauseCampaignAction;
+use Mozex\Campaigns\Actions\RecordFeedbackAction;
 use Mozex\Campaigns\CampaignsException;
 use Mozex\Campaigns\Enums\CampaignStatus;
+use Mozex\Campaigns\Enums\DeliveryFailure;
+use Mozex\Campaigns\Enums\FeedbackType;
 use Mozex\Campaigns\Enums\MessageStatus;
 use Mozex\Campaigns\Enums\SendFailure;
 use Mozex\Campaigns\Enums\SubscriptionStatus;
@@ -18,7 +23,9 @@ use Mozex\Campaigns\Models\Campaign;
 use Mozex\Campaigns\Models\CampaignMessage;
 use Mozex\Campaigns\Models\Subscriber;
 use Mozex\Campaigns\Models\Subscription;
+use Mozex\Campaigns\Sending\AppliedFeedback;
 use Mozex\Campaigns\Sending\Drivers\DriverManager;
+use Mozex\Campaigns\Sending\Feedback;
 use Mozex\Campaigns\Sending\MessageComposer;
 use Mozex\Campaigns\Sending\SendFailed;
 use Mozex\Campaigns\Sending\SendReceipt;
@@ -54,6 +61,12 @@ class SendMessageJob implements ShouldQueue
     public const UNCLEAR_MINUTES = 5;
 
     /**
+     * The campaign's last sends that, all refused for good with no bad
+     * mailbox named, pause it (rejected()).
+     */
+    public const REJECTED_LIMIT = 10;
+
+    /**
      * A retry could send the same message twice.
      */
     public int $tries = 1;
@@ -70,7 +83,7 @@ class SendMessageJob implements ShouldQueue
         $this->onQueue(config('campaigns.queue.name'));
     }
 
-    public function handle(DriverManager $drivers, MessageComposer $composer, PauseCampaignAction $pause): void
+    public function handle(DriverManager $drivers, MessageComposer $composer, PauseCampaignAction $pause, RecordFeedbackAction $record, EnforceStopLossAction $stopLoss): void
     {
         $token = Token::generate();
         $name = $drivers->getDefaultDriver();
@@ -107,7 +120,11 @@ class SendMessageJob implements ShouldQueue
         try {
             $receipt = $driver->send($outgoing);
         } catch (SendFailed $failed) {
-            $this->refused($failed, $message, $pause);
+            if ($failed->failure === SendFailure::Rejected) {
+                $this->rejected($failed, $message, $name, $pause, $record, $stopLoss);
+            } else {
+                $this->refused($failed, $message, $pause);
+            }
 
             return;
         } catch (Throwable $exception) {
@@ -218,15 +235,77 @@ class SendMessageJob implements ShouldQueue
      * What the provider's refusal means for the message: taken nothing,
      * back to pending, the campaign's rate halved for ten minutes; the domain
      * refused, back to pending and every campaign on the domain paused;
-     * unclear, unknown until its logs are read.
+     * unclear, unknown until its logs are read. A rejection is rejected()'s.
      */
     protected function refused(SendFailed $failed, CampaignMessage $message, PauseCampaignAction $pause): void
     {
         match ($failed->failure) {
             SendFailure::NotAccepted => $this->notAccepted($message),
             SendFailure::DomainRefused => $this->domainRefused($failed, $message, $pause),
-            SendFailure::Unclear => $this->unclear($message, $pause, $failed->status),
+            SendFailure::Unclear, SendFailure::Rejected => $this->unclear($message, $pause, $failed->status),
         };
+    }
+
+    /**
+     * The service refused this email for good: it fails and is never sent
+     * again. One whose refusal names a bad mailbox fails as that hard
+     * bounce and counts as sent, as a bounce the service reported after
+     * taking it would, since the stop-loss measures bounces among sends; the
+     * bounce is recorded as the driver's own event, whose effects block the
+     * address, and the stop-loss measures the campaign here, since that
+     * event finds its message already failed. Any other refusal (of the
+     * content, of the sender) fails it as rejected and leaves the address
+     * alone; when the campaign's last REJECTED_LIMIT sends were all such
+     * refusals, however slow its pace, the campaign pauses, since the next
+     * email would most likely be refused alike.
+     */
+    protected function rejected(SendFailed $failed, CampaignMessage $message, string $driver, PauseCampaignAction $pause, RecordFeedbackAction $record, EnforceStopLossAction $stopLoss): void
+    {
+        $now = now();
+        // A hard bounce is the one a send can tell; anything else a driver
+        // names (a soft bounce, a deferral) would mean a later retry, which
+        // a refusal for good has none of.
+        $bounce = $failed->deliveryFailure === DeliveryFailure::HardBounce ? DeliveryFailure::HardBounce : null;
+
+        $this->finish(MessageStatus::Failed, [
+            'failed_at' => $now,
+            'failure_reason' => $bounce->value ?? SendFailure::Rejected->value,
+            'failure_code' => static::failureCode($failed->status),
+            ...($bounce === null ? [] : ['sent_at' => $now]),
+        ]);
+
+        if ($bounce !== null) {
+            // Reported, not thrown: the email has failed all the same.
+            rescue(fn () => $record->execute(new Feedback(
+                providerEventId: (string) Str::uuid(),
+                type: FeedbackType::Failed,
+                occurredAt: $now,
+                messageUuid: $message->uuid,
+                severity: 'permanent',
+                failure: $bounce,
+                code: $failed->status,
+            ), $driver));
+
+            $stopLoss->execute(new AppliedFeedback($message->campaign_id, failed: $bounce));
+
+            return;
+        }
+
+        $rejected = CampaignMessage::query()
+            ->where('campaign_id', $message->campaign_id)
+            ->whereNotNull('sending_at')
+            ->orderByDesc('sending_at')
+            ->orderByDesc('id')
+            ->limit(static::REJECTED_LIMIT)
+            ->get(['id', 'status', 'failure_reason'])
+            ->filter(fn (CampaignMessage $sent): bool => $sent->status === MessageStatus::Failed && $sent->failure_reason === SendFailure::Rejected->value)
+            ->count();
+
+        if ($rejected < static::REJECTED_LIMIT) {
+            return;
+        }
+
+        $this->pause($message, $pause, 'The last '.static::REJECTED_LIMIT.' emails were each refused for good by the sending service, none of them for its address (for its content or its sender, say). None is sent again; read why the service refuses them before resuming.');
     }
 
     /**
@@ -240,7 +319,7 @@ class SendMessageJob implements ShouldQueue
     {
         $this->finish(MessageStatus::Unknown, [
             'failure_reason' => SendFailure::Unclear->value,
-            'failure_code' => $status,
+            'failure_code' => static::failureCode($status),
         ]);
 
         $this->halveRate($message);
@@ -256,6 +335,15 @@ class SendMessageJob implements ShouldQueue
             return;
         }
 
+        $this->pause($message, $pause, "{$recent} sends in the last ".static::UNCLEAR_MINUTES.' minutes ended without a clear answer from the provider (a lost connection or a gateway error, say). None of them is sent again; check the provider is reachable before resuming.');
+    }
+
+    /**
+     * Pauses the message's campaign while it is sending, as an automatic
+     * pause with the reason.
+     */
+    protected function pause(CampaignMessage $message, PauseCampaignAction $pause, string $reason): void
+    {
         // Found on its own, so the event's listeners may read its relations.
         $campaign = Campaign::query()->find($message->campaign_id);
 
@@ -264,7 +352,7 @@ class SendMessageJob implements ShouldQueue
         }
 
         try {
-            $pause->execute($campaign, "{$recent} sends in the last ".static::UNCLEAR_MINUTES.' minutes ended without a clear answer from the provider (a lost connection or a gateway error, say). None of them is sent again; check the provider is reachable before resuming.', automatic: true);
+            $pause->execute($campaign, $reason, automatic: true);
         } catch (CampaignsException) {
             // Another job paused it a moment ago.
         } catch (Throwable $exception) {
@@ -364,6 +452,15 @@ class SendMessageJob implements ShouldQueue
             ...$values,
             'updated_at' => now(),
         ]);
+    }
+
+    /**
+     * A driver's status as the column holds it: an app's own driver may
+     * give any number, and one past the column's range would fail the write.
+     */
+    protected static function failureCode(?int $status): ?int
+    {
+        return $status !== null && $status >= 0 && $status <= 65535 ? $status : null;
     }
 
     /**

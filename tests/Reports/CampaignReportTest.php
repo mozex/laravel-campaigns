@@ -18,6 +18,8 @@ use Mozex\Campaigns\Models\CampaignMessage;
 use Mozex\Campaigns\Models\ConsentRecord;
 use Mozex\Campaigns\Models\ProviderEvent;
 use Mozex\Campaigns\Reports\CampaignReport;
+use Mozex\Campaigns\Sending\Drivers\DriverManager;
+use Mozex\Campaigns\Sending\Drivers\FakeSendOnlyDriver;
 
 beforeEach(function (): void {
     $this->travelTo(Carbon::parse('2026-03-03 12:00:00'));
@@ -135,7 +137,7 @@ it('counts a campaign\'s messages and events, every breakdown and day included',
         ->unsubscribes->toBe(['total' => 2, 'one_click' => 1, 'page' => 1, 'provider' => 0, 'other' => 0])
         ->opens->toBe(['people' => 1, 'human' => 2, 'machine' => 2])
         ->clicks->toBe(['people' => 1, 'human' => 1, 'machine' => 2])
-        ->rates->toBe(['delivery' => 60.0, 'hard_bounce' => 20.0, 'complaint' => 20.0, 'unsubscribe' => 40.0, 'open' => 33.333, 'click' => 33.333])
+        ->rates->toBe(['delivery' => 60.0, 'hard_bounce' => 20.0, 'complaint' => 20.0, 'unsubscribe' => 40.0, 'open' => 33.333, 'click' => 33.333, 'basis' => 'delivered'])
         ->links->toBe([
             ['url' => 'https://example.com/sale', 'human' => 1, 'machine' => 1],
             ['url' => 'https://example.com/terms', 'human' => 0, 'machine' => 1],
@@ -256,4 +258,34 @@ it('shows where sending stands now', function (): void {
     cache()->forever(PumpCampaignsAction::LAST_RUN, (string) now()->subMinute()->getTimestamp());
 
     expect(CampaignReport::queue($campaign)['pump_last_run'])->toBe('2026-03-03T12:09:00+00:00');
+});
+
+it('divides opens and clicks by the emails sent through a driver that reads nothing back, and says so', function (): void {
+    $campaign = Campaign::factory()->sending()->create();
+    app(DriverManager::class)->swap('fake', new FakeSendOnlyDriver);
+    reportMessage($campaign, ['status' => MessageStatus::Sent, 'sent_at' => now(), 'opened_at' => now()]);
+    reportMessage($campaign, ['status' => MessageStatus::Sent, 'sent_at' => now()]);
+    reportMessage($campaign, ['status' => MessageStatus::Sent, 'sent_at' => now(), 'opened_at' => now(), 'clicked_at' => now()]);
+    // Refused at send for a mailbox that doesn't exist: sent, never reached.
+    reportMessage($campaign, ['status' => MessageStatus::Failed, 'sent_at' => now(), 'failed_at' => now(), 'failure_reason' => 'hard_bounce']);
+
+    $sendOnly = CampaignReport::build($campaign);
+
+    // After a switch, one delivered through a driver that reads back.
+    reportMessage($campaign, ['status' => MessageStatus::Delivered, 'driver' => 'mailgun', 'sent_at' => now(), 'delivered_at' => now(), 'opened_at' => now()]);
+    config()->set('campaigns.drivers.mailgun.webhook_signing_key', 'webhook-signing-key');
+
+    $mixed = CampaignReport::build($campaign);
+
+    // Its key gone, Mailgun reads nothing back any more, but what it
+    // delivered still counts as delivered.
+    config()->set('campaigns.drivers.mailgun.webhook_signing_key', null);
+
+    $unconfigured = CampaignReport::build($campaign);
+
+    expect($sendOnly['rates'])->toBe(['delivery' => null, 'hard_bounce' => 25.0, 'complaint' => 0.0, 'unsubscribe' => 0.0, 'open' => 66.667, 'click' => 33.333, 'basis' => 'sent'])
+        ->and($sendOnly['statuses']['sent'])->toBe(3)
+        ->and($sendOnly['delivered'])->toBe(0)
+        ->and($mixed['rates'])->toBe(['delivery' => 100.0, 'hard_bounce' => 20.0, 'complaint' => 0.0, 'unsubscribe' => 0.0, 'open' => 75.0, 'click' => 25.0, 'basis' => 'delivered_or_sent'])
+        ->and($unconfigured['rates'])->toBe($mixed['rates']);
 });

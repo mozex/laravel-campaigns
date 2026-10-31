@@ -56,6 +56,29 @@ class Overview
     ];
 
     /**
+     * What a driver that reads nothing back means for a campaign it sends
+     * (it has neither webhooks nor logs), or null for one that does: the
+     * overview, the start and the resume say it.
+     */
+    public static function readsNothingBack(): ?string
+    {
+        $drivers = app(DriverManager::class);
+        $name = $drivers->getDefaultDriver();
+
+        try {
+            $abilities = DriverManager::abilities($drivers->active());
+        } catch (CampaignsException) {
+            return null;
+        }
+
+        if (in_array('webhooks', $abilities, true) || in_array('events', $abilities, true)) {
+            return null;
+        }
+
+        return CampaignsException::driverLacks($name, 'reads nothing back from its service (no webhooks, no logs), so no bounce, spam report or unsubscribe made at the service reaches the package (its own unsubscribe page and one-click still work): the stop-loss sees only what is refused while sending, only a refusal naming a bad mailbox blocks an address, and emails end as sent, never delivered')->getMessage();
+    }
+
+    /**
      * @return array<string, mixed>
      */
     public static function build(): array
@@ -102,10 +125,19 @@ class Overview
 
         try {
             $abilities = DriverManager::abilities($drivers->active());
+            $nothingBack = static::readsNothingBack();
+            $missing = static::MISSING;
 
-            foreach (static::MISSING as $ability => $missing) {
+            // One warning for a driver with neither webhooks nor logs, in
+            // place of the two it would hold.
+            if ($nothingBack !== null) {
+                $notes[] = $nothingBack;
+                unset($missing['webhooks'], $missing['events']);
+            }
+
+            foreach ($missing as $ability => $lack) {
                 if (! in_array($ability, $abilities, true)) {
-                    $notes[] = CampaignsException::driverLacks($name, $missing)->getMessage();
+                    $notes[] = CampaignsException::driverLacks($name, $lack)->getMessage();
                 }
             }
         } catch (CampaignsException $exception) {

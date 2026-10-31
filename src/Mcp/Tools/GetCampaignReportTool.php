@@ -24,7 +24,7 @@ use Mozex\Campaigns\Reports\ReportSummary;
 
 #[Name('get_campaign_report')]
 #[Title('Get a campaign\'s report')]
-#[Description('A campaign\'s numbers, in counts only: its messages by status; its sends (emails the provider took), deliveries, failures by kind, hard bounces, spam reports and unsubscribes (by how they came); the people who opened and clicked, with every open and click by people and by machines (Apple\'s privacy opens and link scanners), and the most clicked links; rates (bounces, spam reports and unsubscribes per send, as the stop-loss measures them; opens and clicks per delivery, machines left out); the same by list, language, engagement tier (as it stood at the start) and mailbox provider; a timeline by day in the app\'s timezone; and the queue now. It is worked out when read, so it keeps moving after the campaign completes (late bounces, opens, the reconciler), and is kept once events are pruned. The '.ReportSummary::LINKS.' most clicked links, the '.ReportSummary::BREAKDOWN.' largest lists and languages and the latest '.ReportSummary::DAYS.' days are shown, each with its total.')]
+#[Description('A campaign\'s numbers, in counts only: its messages by status; its sends (emails the provider took), deliveries, failures by kind, hard bounces, spam reports and unsubscribes (by how they came); the people who opened and clicked, with every open and click by people and by machines (Apple\'s privacy opens and link scanners), and the most clicked links; rates (bounces, spam reports and unsubscribes per send, as the stop-loss measures them; opens and clicks per delivery, machines left out, or per sent email for a driver that reads nothing back, as their basis says); the same by list, language, engagement tier (as it stood at the start) and mailbox provider; a timeline by day in the app\'s timezone; and the queue now. It is worked out when read, so it keeps moving after the campaign completes (late bounces, opens, the reconciler), and is kept once events are pruned. The '.ReportSummary::LINKS.' most clicked links, the '.ReportSummary::BREAKDOWN.' largest lists and languages and the latest '.ReportSummary::DAYS.' days are shown, each with its total.')]
 #[IsReadOnly]
 #[IsIdempotent]
 #[IsOpenWorld(false)]
@@ -108,6 +108,7 @@ class GetCampaignReportTool extends CampaignsTool
                 'unsubscribe' => $schema->number()->nullable()->required(),
                 'open' => $schema->number()->nullable()->required(),
                 'click' => $schema->number()->nullable()->required(),
+                'basis' => $schema->string()->enum(['delivered', 'sent', 'delivered_or_sent'])->required()->description('What opens and clicks divide by: delivered emails; sent ones, when the campaign went through a driver that reads nothing back (no webhooks, no logs), so no delivery is ever known and the delivery rate is null; or both, after a switch between the two kinds mid-campaign.'),
             ])->description('Percent, to three places; null with nothing to divide.'),
             'links' => $schema->array()->items($schema->object([
                 'url' => $schema->string()->required(),

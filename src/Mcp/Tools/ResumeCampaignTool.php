@@ -13,6 +13,7 @@ use Laravel\Mcp\Server\Attributes\Title;
 use Laravel\Mcp\Server\Tools\Annotations\IsDestructive;
 use Laravel\Mcp\Server\Tools\Annotations\IsOpenWorld;
 use Mozex\Campaigns\Actions\ResumeCampaignAction;
+use Mozex\Campaigns\Mcp\Schemas;
 use Mozex\Campaigns\Mcp\Tools\Concerns\SendsCampaigns;
 use Mozex\Campaigns\Models\Campaign;
 
@@ -34,12 +35,20 @@ class ResumeCampaignTool extends CampaignsTool
         ];
     }
 
+    protected function output(JsonSchema $schema): array
+    {
+        return [
+            'campaign' => Schemas::progress($schema),
+            'warning' => static::warningOutput($schema),
+        ];
+    }
+
     public function perform(Request $request, ResumeCampaignAction $resume): ResponseFactory
     {
         $input = $request->validate([
             'key' => ['required', 'string'],
         ]);
 
-        return static::progress($resume->execute(Campaign::forKey($input['key'])));
+        return static::progress($resume->execute(Campaign::forKey($input['key'])), warn: true);
     }
 }

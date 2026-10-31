@@ -35,9 +35,10 @@ return [
      * to "reply_to", an inbox someone reads (it may be on another domain).
      * Default mailer: "campaigns", which you define in config/mail.php with
      * the transport your driver sends through (for Mailgun, the mailgun
-     * transport with 'scheme' => 'api'; the log mailer locally). A driver
-     * gives a mailer with no time limits of its own limits shorter than the
-     * job that sends, so a stuck request ends before the job does.
+     * transport with 'scheme' => 'api'; for SMTP, the smtp transport; the log
+     * mailer locally). A driver gives a mailer with no time limits of its own
+     * limits shorter than the job that sends, so a stuck request ends before
+     * the job does.
      */
     'mail' => [
         'mailer' => env('CAMPAIGNS_MAILER', 'campaigns'),
@@ -51,9 +52,11 @@ return [
 
     /*
      * The driver that sends campaign email, and the package's own emails:
-     * "mailgun", "fake" (keeps what it is given and sends nothing, for tests
-     * and local runs; refused in production), or the name of one you
-     * register with Campaigns::extend() in a service provider. Switching
+     * "mailgun", "smtp" (any SMTP server, a relay or a local mail catcher; it
+     * reads nothing back, so no bounce or spam report reaches the package),
+     * "fake" (keeps what it is given and sends nothing, for tests and local
+     * runs; refused in production), or the name of one you register with
+     * Campaigns::extend() in a service provider. Switching
      * drivers keeps the old one's webhooks answering while its block below
      * still holds their credential, so late events about the mail it sent
      * still land.
@@ -77,6 +80,9 @@ return [
      * api.eu.mailgun.net (default: the campaigns mailer's endpoint, else
      * api.mailgun.net). log_days is how many days back your plan keeps logs
      * (5 on Foundation, 30 on Scale): nothing older is looked for.
+     *
+     * The smtp driver has no settings of its own: the server, its port and
+     * the login are the campaigns mailer's (the smtp transport).
      */
     'drivers' => [
         'mailgun' => [
@@ -85,6 +91,7 @@ return [
             'endpoint' => env('CAMPAIGNS_MAILGUN_ENDPOINT'),
             'log_days' => 5,
         ],
+        'smtp' => [],
         'fake' => [],
     ],
 

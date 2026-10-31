@@ -320,14 +320,16 @@ class ApplyFeedbackAction
      * A click right as the email arrived, or beside a click on another of its
      * links: a scanner checking the email, not a person reading it. Clicks
      * wait a minute before they are applied, so a burst's later clicks are
-     * stored by the time its first is checked.
+     * stored by the time its first is checked. Without a delivery (a driver
+     * that reads nothing back never reports one), the email arrived when it
+     * was sent.
      */
     protected function isScanner(CampaignMessage $message, ProviderEvent $event): bool
     {
         $reportedDeliveredAt = $event->payload['details']['delivered-at'] ?? null;
         $deliveredAt = is_int($reportedDeliveredAt) || is_float($reportedDeliveredAt)
             ? Carbon::createFromTimestampUTC($reportedDeliveredAt)
-            : $message->delivered_at;
+            : $message->delivered_at ?? $message->sent_at;
 
         if ($deliveredAt !== null && abs($event->occurred_at->diffInSeconds($deliveredAt)) <= static::SCANNER_SECONDS) {
             return true;

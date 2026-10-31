@@ -8,6 +8,7 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Laravel\Mcp\Server\Testing\PendingTestResponse;
@@ -36,8 +37,12 @@ use Mozex\Campaigns\Models\Subscription;
 use Mozex\Campaigns\Models\Upload;
 use Mozex\Campaigns\Sending\Drivers\DriverManager;
 use Mozex\Campaigns\Sending\Drivers\FakeDriver;
+use Mozex\Campaigns\Sending\OutgoingMessage;
+use Mozex\Campaigns\Sending\SendFailed;
 use Mozex\Campaigns\Support\Token;
+use Mozex\Campaigns\Tests\Fixtures\Smtp\ScriptedStream;
 use Mozex\Campaigns\Tests\TestCase;
+use Symfony\Component\Mailer\Transport\Smtp\EsmtpTransport;
 
 uses(TestCase::class)->in(__DIR__);
 
@@ -448,4 +453,55 @@ function useDatabase(string $driver): void
 
     Schema::dropAllTables();
     TestCase::runMigrations();
+}
+
+/**
+ * One rendered email, as the drivers' tests send it.
+ */
+function outgoing(bool $isTest = false, bool $trackOpens = true, bool $trackClicks = true, string $to = 'reader@example.org'): OutgoingMessage
+{
+    return new OutgoingMessage(
+        uuid: '0a1b2c3d-0000-4000-8000-000000000001',
+        to: $to,
+        fromEmail: 'news@news.example.com',
+        fromName: 'Example News',
+        replyTo: 'help@example.com',
+        subject: 'Spring sale',
+        html: '<p>Hello</p>',
+        text: 'Hello',
+        unsubscribeUrl: 'https://app.example.com/campaigns/u/abc',
+        tag: 'spring-sale',
+        trackOpens: $trackOpens,
+        trackClicks: $trackClicks,
+        isTest: $isTest,
+    );
+}
+
+/**
+ * The refusal a send throws.
+ */
+function sendFailure(Closure $send): SendFailed
+{
+    try {
+        $send();
+    } catch (SendFailed $failed) {
+        return $failed;
+    }
+
+    throw new RuntimeException('Nothing was refused.');
+}
+
+/**
+ * Makes the campaigns mailer the smtp transport over a scripted server
+ * (tests/Fixtures/Smtp/ScriptedStream), and returns that transport.
+ */
+function scriptedSmtp(ScriptedStream $stream): EsmtpTransport
+{
+    $transport = new EsmtpTransport('relay.example.com', 25, false, null, null, $stream);
+
+    Mail::extend('scripted', fn (): EsmtpTransport => $transport);
+    config()->set('mail.mailers.campaigns', ['transport' => 'scripted']);
+    Mail::purge('campaigns');
+
+    return $transport;
 }

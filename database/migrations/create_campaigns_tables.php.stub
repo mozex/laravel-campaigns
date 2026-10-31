@@ -319,6 +319,9 @@ return new class extends Migration
             // The stop-loss reads a campaign's sends in the order they went
             // (its last 500), and its domain's last 24 hours.
             $table->index(['campaign_id', 'sent_at']);
+            // The send job reads a campaign's last sends when one is refused
+            // for good (SendMessageJob::REJECTED_LIMIT).
+            $table->index(['campaign_id', 'sending_at']);
             // The reconciler asks which drivers a domain's campaigns sent
             // through.
             $table->index(['campaign_id', 'driver']);

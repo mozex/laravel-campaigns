@@ -1,6 +1,6 @@
 ---
 title: Connecting Agents
-weight: 3
+weight: 4
 ---
 
 Agents reach the package through an MCP server it adds to your app, at `/mcp/campaigns` (`CAMPAIGNS_MCP_PATH` moves it; `CAMPAIGNS_MCP_ENABLED=false` switches it off). It answers only to a token the package issued or to a person your app signs in and allows.

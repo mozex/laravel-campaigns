@@ -24,6 +24,7 @@ use Mozex\Campaigns\Reports\Overview;
 use Mozex\Campaigns\Sending\DomainMetrics;
 use Mozex\Campaigns\Sending\Drivers\DriverManager;
 use Mozex\Campaigns\Sending\Drivers\FakeSendOnlyDriver;
+use Mozex\Campaigns\Sending\Drivers\FakeWebhookDriver;
 
 it('reads every list\'s counts, the open campaigns and the placeholders with the app\'s values', function (string $driver): void {
     useDatabase($driver);
@@ -185,13 +186,21 @@ it('says what is switched off or missing, and what a driver without each ability
     expect($sending['enabled'])->toBeFalse()
         ->and($sending['driver'])->toBe(['name' => 'fake', 'abilities' => []])
         ->and($sending['domain'])->toBeNull()
-        ->and($sending['notes'])->toHaveCount(6)
+        ->and($sending['notes'])->toHaveCount(5)
         ->and($sending['notes'][0])->toStartWith('No sending domain is configured')
-        ->and($sending['notes'][1])->toStartWith('The campaigns driver "fake" takes no webhooks')
-        ->and($sending['notes'][2])->toStartWith('The campaigns driver "fake" reads no logs')
-        ->and($sending['notes'][3])->toStartWith('The campaigns driver "fake" reads no suppression lists')
-        ->and($sending['notes'][4])->toStartWith('Sending is switched off')
-        ->and($sending['notes'][5])->toStartWith('No test addresses are set');
+        // One warning for neither webhooks nor logs (decision 53's words).
+        ->and($sending['notes'][1])->toStartWith('The campaigns driver "fake" reads nothing back from its service (no webhooks, no logs)')
+        ->and($sending['notes'][1])->toContain('the stop-loss sees only what is refused while sending, only a refusal naming a bad mailbox blocks an address')
+        ->and($sending['notes'][2])->toStartWith('The campaigns driver "fake" reads no suppression lists')
+        ->and($sending['notes'][3])->toStartWith('Sending is switched off')
+        ->and($sending['notes'][4])->toStartWith('No test addresses are set');
+
+    // Webhooks without logs: each missing ability on its own.
+    app(DriverManager::class)->swap('fake', new FakeWebhookDriver);
+    $webhooksOnly = structuredContent(agent(Rights::Read)->tool(OverviewTool::class)->assertOk())['sending']['notes'];
+
+    expect($webhooksOnly[1])->toStartWith('The campaigns driver "fake" reads no logs')
+        ->and(implode(' ', $webhooksOnly))->not->toContain('reads nothing back');
 
     // A driver with every ability but counts, and one that can't be built.
     sendFromExample();

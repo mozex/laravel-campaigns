@@ -4,13 +4,17 @@ declare(strict_types=1);
 
 namespace Mozex\Campaigns\Sending;
 
+use Mozex\Campaigns\Enums\DeliveryFailure;
 use Mozex\Campaigns\Enums\SendFailure;
 use RuntimeException;
 
 /**
  * A send the provider didn't confirm. Its message never holds a recipient's
  * address and never chains the transport's own exception, whose message
- * quotes the provider's answer: an error tracker sends both.
+ * quotes the provider's answer: an error tracker sends both. A rejected
+ * email may say its refusal named a mailbox that doesn't exist
+ * (deliveryFailure: a hard bounce), which then acts as the service's own
+ * bounce would; no other delivery failure is read here.
  */
 class SendFailed extends RuntimeException
 {
@@ -18,6 +22,7 @@ class SendFailed extends RuntimeException
         public readonly SendFailure $failure,
         string $message,
         public readonly ?int $status = null,
+        public readonly ?DeliveryFailure $deliveryFailure = null,
     ) {
         parent::__construct($message);
     }

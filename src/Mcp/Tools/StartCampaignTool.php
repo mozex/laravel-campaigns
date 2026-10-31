@@ -15,6 +15,7 @@ use Laravel\Mcp\Server\Tools\Annotations\IsDestructive;
 use Laravel\Mcp\Server\Tools\Annotations\IsOpenWorld;
 use Mozex\Campaigns\Actions\StartCampaignAction;
 use Mozex\Campaigns\CampaignsException;
+use Mozex\Campaigns\Mcp\Schemas;
 use Mozex\Campaigns\Mcp\Tools\Concerns\SendsCampaigns;
 use Mozex\Campaigns\Models\Campaign;
 use Throwable;
@@ -40,6 +41,14 @@ class StartCampaignTool extends CampaignsTool
         ];
     }
 
+    protected function output(JsonSchema $schema): array
+    {
+        return [
+            'campaign' => Schemas::progress($schema),
+            'warning' => static::warningOutput($schema),
+        ];
+    }
+
     public function perform(Request $request, StartCampaignAction $start): ResponseFactory
     {
         $input = $request->validate([
@@ -56,7 +65,7 @@ class StartCampaignTool extends CampaignsTool
             isset($input['pace']) ? static::pace($input['pace']) : null,
         );
 
-        return static::progress($campaign);
+        return static::progress($campaign, warn: true);
     }
 
     /**

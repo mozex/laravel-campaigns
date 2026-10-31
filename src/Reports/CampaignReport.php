@@ -21,6 +21,7 @@ use Mozex\Campaigns\Models\CampaignList;
 use Mozex\Campaigns\Models\CampaignMessage;
 use Mozex\Campaigns\Models\ConsentRecord;
 use Mozex\Campaigns\Models\ProviderEvent;
+use Mozex\Campaigns\Sending\Drivers\DriverManager;
 
 /**
  * A campaign's numbers, in counts only (no address ever appears): its
@@ -33,6 +34,14 @@ use Mozex\Campaigns\Models\ProviderEvent;
  * per delivery, machines left out; the same numbers by list, language,
  * engagement tier (as it stood at the start) and mailbox provider; a
  * timeline by day in the app's timezone; and the queue as it stands now.
+ *
+ * An email sent through a driver that reads nothing back (no webhooks, no
+ * logs) never shows as delivered: it ends at sent. Its opens and clicks are
+ * counted per sent email instead, the delivery rate leaves it out (null when
+ * every email went that way), and the rates' basis says which (sent, or
+ * delivered_or_sent after a switch between the two kinds mid-campaign). A
+ * driver no longer configured, or one that can't be built, counts as one
+ * that reads nothing back, since nothing more arrives through it.
  *
  * It is worked out from the messages and the provider's events each time it
  * is read, since a campaign's numbers keep moving after it completes (late
@@ -115,6 +124,12 @@ class CampaignReport
         $lists = CampaignList::query()->pluck('key', 'id');
         $tiers = EngagementTier::cases();
         $days = static::days();
+        $drivers = app(DriverManager::class);
+        $readsBack = [];
+        // Sends through a driver that reads back, and the emails that
+        // reached someone as far as the package can tell: delivered, or sent
+        // through one that doesn't.
+        $confirmable = $unconfirmable = $reached = 0;
 
         // Plain rows, not models: hydrating each message and its dates
         // outlasts a request's time limit once a campaign reaches hundreds
@@ -122,7 +137,7 @@ class CampaignReport
         $messages = CampaignMessage::query()
             ->where('campaign_id', $campaign->id)
             ->toBase()
-            ->select(['id', 'uuid', 'list_ids', 'email', 'locale', 'position', 'status', 'sent_at', 'delivered_at', 'opened_at', 'clicked_at', 'unsubscribed_at', 'complained_at', 'failed_at', 'failure_reason'])
+            ->select(['id', 'uuid', 'list_ids', 'email', 'locale', 'position', 'status', 'driver', 'sent_at', 'delivered_at', 'opened_at', 'clicked_at', 'unsubscribed_at', 'complained_at', 'failed_at', 'failure_reason'])
             ->lazyById(static::CHUNK, 'id');
 
         foreach ($messages as $message) {
@@ -132,6 +147,23 @@ class CampaignReport
 
             static::add($totals, $row);
             $totals['unsent'] += (int) in_array($status, [MessageStatus::Pending->value, MessageStatus::Queued->value], true);
+
+            if ($message->sent_at !== null) {
+                // A delivered email's driver read back, whatever it is now;
+                // the send's claim writes the driver, and an email without one
+                // is read as one whose delivery would be reported.
+                $delivered = $status === MessageStatus::Delivered->value;
+                $driver = $message->driver;
+                $confirmed = $delivered || $driver === null || ($readsBack[$driver] ??= $drivers->readsBack($driver));
+
+                if ($confirmed) {
+                    $confirmable++;
+                    $reached += (int) $delivered;
+                } else {
+                    $unconfirmable++;
+                    $reached += (int) ($status === MessageStatus::Sent->value);
+                }
+            }
 
             if ($status === MessageStatus::Failed->value) {
                 $reason = $message->failure_reason ?? DeliveryFailure::Other->value;
@@ -190,12 +222,17 @@ class CampaignReport
             'opens' => ['people' => $totals['opened'], ...$opens],
             'clicks' => ['people' => $totals['clicked'], ...$clicks],
             'rates' => [
-                'delivery' => static::rate($totals['delivered'], $totals['sends']),
+                'delivery' => static::rate($totals['delivered'], $confirmable),
                 'hard_bounce' => static::rate($totals['hard_bounces'], $totals['sends']),
                 'complaint' => static::rate($totals['complaints'], $totals['sends']),
                 'unsubscribe' => static::rate($totals['unsubscribes'], $totals['sends']),
-                'open' => static::rate($totals['opened'], $totals['delivered']),
-                'click' => static::rate($totals['clicked'], $totals['delivered']),
+                'open' => static::rate($totals['opened'], $reached),
+                'click' => static::rate($totals['clicked'], $reached),
+                'basis' => match (true) {
+                    $unconfirmable === 0 => 'delivered',
+                    $confirmable === 0 => 'sent',
+                    default => 'delivered_or_sent',
+                },
             ],
             'links' => $links,
             'links_total' => $linksTotal,

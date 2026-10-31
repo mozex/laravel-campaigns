@@ -110,6 +110,7 @@ A new or quiet sending domain starts slowly: a small first day that grows each d
 - It answers at once with status `starting` while the audience and email are frozen. Read `get_campaign_status` until it is `sending`, `scheduled`, or a `draft` with `start_error` (the count changed, say: preview again and ask again).
 - A scheduled campaign is frozen when scheduled and starts at its time. People who unsubscribe or are blocked in between are still skipped when their turn comes.
 - Starting is refused while sending is switched off.
+- When the driver reads nothing back from its service (no webhooks, no logs: SMTP, say), `get_overview`'s notes say so, and `start_campaign` and `resume_campaign` answer with the same `warning`: no bounce or spam report reaches the package, so the stop-loss sees only what the service refuses while sending, and every email ends `sent`, never `delivered`. Make sure the person knows before they approve.
 
 ## The pace and the allowance
 
@@ -124,15 +125,16 @@ and nothing outside its `sending_hours` in its `timezone`. `get_campaign_status`
 ## Watching a campaign
 
 - `get_campaign_status`: its status and times, why a start failed or a pause happened, its messages by status, its failures by kind, the queue (with a stall: emails queued for more than five minutes, when no worker takes them and the campaign hands out nothing more until they go), and the pace and limits in effect.
-- `get_campaign_report`: its sends, deliveries, failures, hard bounces, spam reports and unsubscribes (by how they came: a mail app's one-click, the page, the provider), opens and clicks by people and by machines (Apple's privacy opens and link scanners don't count as reading), the rates, the most clicked links, and the same by list, language, engagement tier and mailbox provider, with a timeline by day. It is worked out when read and keeps moving after the campaign completes.
+- `get_campaign_report`: its sends, deliveries, failures, hard bounces, spam reports and unsubscribes (by how they came: a mail app's one-click, the page, the provider), opens and clicks by people and by machines (Apple's privacy opens and link scanners don't count as reading), the rates (opens and clicks per delivered email, or per sent one when the driver reads nothing back, as `rates.basis` says), the most clicked links, and the same by list, language, engagement tier and mailbox provider, with a timeline by day. It is worked out when read and keeps moving after the campaign completes.
 - Failures by kind, and what each did to the address:
-  - `hard_bounce`: the address doesn't exist; it is blocked.
+  - `hard_bounce`: the address doesn't exist (a bounce, or the service refusing the email for a bad mailbox as it was sent); it is blocked.
   - `soft_bounce`: a full mailbox or a server that gave up; three in a row block the address.
   - `sender_blocked`: the receiving server refused the sender (a reputation or policy block), nothing against the address. Many of these mean stop and look at the domain.
   - `suppressed_bounce`, `suppressed_complaint`, `suppressed_unsubscribe`: the provider held the address from before and sent nothing; the first two block it, the last opts the person out.
   - `other`: anything else permanent.
+  - `rejected`: the service refused the email for good as it was sent, not for its address (its content or its sender, say); the address is left alone. When a campaign's last 10 sends were all refused this way, it pauses.
   - `not_accepted`: the send ended unclear and the provider's logs held nothing for it an hour later; it is never resent.
-- A message `unknown` ended unclear. When the driver reads its service's logs, the reconciler looks it up from 15 minutes on: it becomes sent when they show it went, or `not_accepted` when they hold nothing an hour later. One too old to look up, or sent by a driver without logs, stays `unknown`. None is ever resent.
+- A message `unknown` ended unclear. When the driver reads its service's logs, the reconciler looks it up from 15 minutes on: it becomes sent when they show it went, or `not_accepted` when they hold nothing an hour later. One too old to look up, or sent by a driver without logs, stays `unknown`, and one left `sending` by a job that died becomes `unknown` after 15 minutes when no logs can settle it. None is ever resent.
 - A spam report blocks the address and opts the person out of everything; an unsubscribe opts them out of all the app's marketing.
 
 ## The stop-loss

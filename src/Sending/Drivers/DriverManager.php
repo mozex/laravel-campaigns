@@ -14,6 +14,7 @@ use Mozex\Campaigns\Contracts\Drivers\ReadsEvents;
 use Mozex\Campaigns\Contracts\Drivers\ReadsMetrics;
 use Mozex\Campaigns\Contracts\Drivers\ReadsSuppressions;
 use Mozex\Campaigns\Contracts\Drivers\ReceivesWebhooks;
+use Throwable;
 
 /**
  * Builds the drivers by name: the built-in ones, and any an app registers
@@ -50,6 +51,7 @@ class DriverManager extends Manager
      */
     protected const BUILT_IN = [
         'mailgun' => 'webhook_signing_key',
+        'smtp' => null,
         'fake' => null,
     ];
 
@@ -148,6 +150,28 @@ class DriverManager extends Manager
     }
 
     /**
+     * Whether the configured driver by that name reads back what happens to
+     * an email after its service takes it (webhooks or logs): deliveries,
+     * bounces, spam reports. False for one that only sends, one that isn't
+     * configured, and one that can't be built, whose creator's failure is
+     * reported unless it is the package's own refusal.
+     */
+    public function readsBack(string $name): bool
+    {
+        try {
+            $driver = $this->configured($name);
+        } catch (CampaignsException) {
+            return false;
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return false;
+        }
+
+        return $driver instanceof ReceivesWebhooks || $driver instanceof ReadsEvents;
+    }
+
+    /**
      * The abilities a driver has, by name.
      *
      * @return list<string>
@@ -161,14 +185,20 @@ class DriverManager extends Manager
      * Gives the campaigns mailer the time limits of the built-in driver whose
      * transport it uses, when the app set none, so a stuck request ends before
      * the job sending it. Called while the package registers, before any
-     * mailer is built, so none has to be built again.
+     * mailer is built, so none has to be built again. Laravel's own smtp
+     * mailer comes with a null timeout, which counts as none.
      */
     public static function boundMailer(Repository $config): void
     {
         $key = 'mail.mailers.'.$config->get('campaigns.mail.mailer');
+        $transport = $config->get($key.'.transport');
 
-        if ($config->get($key.'.transport') === 'mailgun' && ! $config->has($key.'.client')) {
+        if ($transport === 'mailgun' && ! $config->has($key.'.client')) {
             $config->set($key.'.client', MailgunDriver::CLIENT_LIMITS);
+        }
+
+        if ($transport === 'smtp' && $config->get($key.'.timeout') === null) {
+            $config->set($key.'.timeout', SmtpDriver::TIMEOUT);
         }
     }
 
@@ -224,6 +254,11 @@ class DriverManager extends Manager
     protected function createMailgunDriver(): MailgunDriver
     {
         return new MailgunDriver;
+    }
+
+    protected function createSmtpDriver(): SmtpDriver
+    {
+        return new SmtpDriver;
     }
 
     protected function createFakeDriver(): FakeDriver

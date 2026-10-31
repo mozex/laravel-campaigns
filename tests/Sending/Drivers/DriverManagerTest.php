@@ -5,6 +5,7 @@ declare(strict_types=1);
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Exceptions;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\ServiceProvider;
 use Mozex\Campaigns\Actions\PumpCampaignsAction;
@@ -185,4 +186,18 @@ it('names Mailgun nowhere in the package\'s code outside the drivers', function 
     }
 
     expect($named)->toBe([]);
+});
+
+it('tells whether a driver reads back, reporting a creator that breaks rather than failing its caller', function (): void {
+    Exceptions::fake();
+    Campaigns::extend('broken', fn (): CampaignDriver => throw new RuntimeException('The app\'s creator failed.'));
+    $drivers = app(DriverManager::class);
+
+    expect($drivers->readsBack('fake'))->toBeTrue()
+        ->and($drivers->readsBack('broken'))->toBeFalse()
+        ->and($drivers->readsBack('nobody'))->toBeFalse()
+        // Configured only while active or holding its signing key.
+        ->and($drivers->readsBack('mailgun'))->toBeFalse();
+
+    Exceptions::assertReported(RuntimeException::class);
 });

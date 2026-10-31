@@ -23,6 +23,14 @@ enum SendFailure: string
     case DomainRefused = 'domain_refused';
 
     /**
+     * The service refuses this one email for good (an SMTP server's 5xx to
+     * it, say): it fails and is never sent again. A refusal that names a bad
+     * mailbox carries a hard bounce (SendFailed::$deliveryFailure), which
+     * blocks the address as the service's bounce would.
+     */
+    case Rejected = 'rejected';
+
+    /**
      * Anything else, a timeout or a lost connection among them: the provider
      * may have taken the message, so it is never sent again blindly, only
      * looked up in the provider's logs.

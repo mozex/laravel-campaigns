@@ -18,12 +18,13 @@ class ReconcileCommand extends Command
         $result = $reconcile->execute();
 
         $this->info(sprintf(
-            'Put back %d queued messages whose job was lost, queued %d unprocessed events again, stored %d events from the provider\'s logs, found %d unclear messages there and failed %d it never took.',
+            'Put back %d queued messages whose job was lost, queued %d unprocessed events again, stored %d events from the provider\'s logs, found %d unclear messages there and failed %d it never took, and left %d unknown whose driver reads no logs.',
             $result->released,
             $result->requeued,
             $result->replayed,
             $result->found,
             $result->lost,
+            $result->settled,
         ));
 
         foreach ($result->problems as $problem) {

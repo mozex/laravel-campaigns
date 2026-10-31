@@ -389,6 +389,22 @@ describe('opens and clicks', function (): void {
             ->and(iso($subscriber->fresh()?->last_clicked_at))->toBe(iso(Carbon::createFromTimestampUTC($deliveredAt + 401)));
     })->with('databases');
 
+    it('times a scanner\'s click from the send when no delivery was reported, as a driver that reads nothing back never reports one', function (): void {
+        $message = messageTo(Subscriber::factory()->create(), ['sent_at' => now()->subHour()]);
+        $click = fn (int $after): ProviderEvent => says($message, 'clicked', [
+            'occurredAt' => now()->subHour()->addSeconds($after),
+            'payload' => [],
+            'url' => 'https://example.com/offer',
+        ]);
+
+        $onArrival = $click(4);
+        $person = $click(300);
+
+        expect($onArrival->fresh()?->is_bot)->toBeTrue()
+            ->and($person->fresh()?->is_bot)->toBeFalse()
+            ->and(iso($message->fresh()?->clicked_at))->toBe(iso(now()->subHour()->addSeconds(300)));
+    });
+
     it('applies a click a minute later, so a scanner\'s burst is stored by then, and an open at once', function (): void {
         $message = messageTo(Subscriber::factory()->create());
 

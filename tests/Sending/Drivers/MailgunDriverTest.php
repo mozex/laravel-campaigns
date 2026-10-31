@@ -22,7 +22,6 @@ use Mozex\Campaigns\Enums\SendFailure;
 use Mozex\Campaigns\Enums\SuppressionType;
 use Mozex\Campaigns\Sending\Drivers\MailgunDriver;
 use Mozex\Campaigns\Sending\OutgoingMessage;
-use Mozex\Campaigns\Sending\SendFailed;
 use Mozex\Campaigns\Sending\Suppression;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
@@ -89,36 +88,6 @@ function postedFields(array $options): array
     }
 
     return $fields;
-}
-
-function outgoing(bool $isTest = false, bool $trackOpens = true, bool $trackClicks = true): OutgoingMessage
-{
-    return new OutgoingMessage(
-        uuid: '0a1b2c3d-0000-4000-8000-000000000001',
-        to: 'reader@example.org',
-        fromEmail: 'news@news.example.com',
-        fromName: 'Example News',
-        replyTo: 'help@example.com',
-        subject: 'Spring sale',
-        html: '<p>Hello</p>',
-        text: 'Hello',
-        unsubscribeUrl: 'https://app.example.com/campaigns/u/abc',
-        tag: 'spring-sale',
-        trackOpens: $trackOpens,
-        trackClicks: $trackClicks,
-        isTest: $isTest,
-    );
-}
-
-function sendFailure(Closure $send): SendFailed
-{
-    try {
-        $send();
-    } catch (SendFailed $failed) {
-        return $failed;
-    }
-
-    throw new RuntimeException('Nothing was refused.');
 }
 
 it('posts the message as Mailgun\'s API fields, with every tracking flag set, and keeps the bare id', function (): void {
@@ -260,7 +229,7 @@ it('has its mailer built with time limits, set as the package registers, unless 
     });
     config()->set('mail.mailers.campaigns', ['transport' => 'mailgun', 'scheme' => 'api', 'secret' => 'key-test', 'domain' => 'news.example.com']);
     config()->set('mail.mailers.slow', ['transport' => 'mailgun', 'scheme' => 'api', 'secret' => 'key-test', 'domain' => 'news.example.com', 'client' => ['timeout' => 90]]);
-    config()->set('mail.mailers.smtp', ['transport' => 'smtp']);
+    config()->set('mail.mailers.other', ['transport' => 'log']);
     $provider = new CampaignsServiceProvider(app());
 
     $provider->packageRegistered();
@@ -270,12 +239,12 @@ it('has its mailer built with time limits, set as the package registers, unless 
     $provider->packageRegistered();
     app(MailgunDriver::class)->send(outgoing());
 
-    config()->set('campaigns.mail.mailer', 'smtp');
+    config()->set('campaigns.mail.mailer', 'other');
     $provider->packageRegistered();
 
     expect($seen)->toBe([MailgunDriver::CLIENT_LIMITS, ['timeout' => 90]])
         ->and(MailgunDriver::CLIENT_LIMITS)->toBe(['timeout' => 10, 'max_duration' => 30])
-        ->and(config('mail.mailers.smtp'))->toBe(['transport' => 'smtp']);
+        ->and(config('mail.mailers.other'))->toBe(['transport' => 'log']);
 });
 
 it('reports a send it can\'t confirm as unclear: a listener that stopped it, or one that failed after it', function (): void {

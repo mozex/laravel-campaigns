@@ -16,6 +16,7 @@ readonly class ReconcileResult
      * @param  int  $found  Unclear messages whose events the provider's logs held.
      * @param  int  $lost  Unclear messages the provider's logs hold nothing for an hour on, failed as never taken.
      * @param  list<string>  $problems  What couldn't be done, such as the provider's logs being unreadable.
+     * @param  int  $settled  Messages left sending through a driver whose logs aren't read, made unknown.
      */
     public function __construct(
         public int $released = 0,
@@ -24,5 +25,6 @@ readonly class ReconcileResult
         public int $found = 0,
         public int $lost = 0,
         public array $problems = [],
+        public int $settled = 0,
     ) {}
 }

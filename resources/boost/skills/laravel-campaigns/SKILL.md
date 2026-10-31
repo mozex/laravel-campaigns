@@ -105,7 +105,7 @@ An import never clears an opt-out or block, never changes an existing subscripti
 
 ## Setup checklist
 
-- A `campaigns` mailer in `config/mail.php`: `'transport' => 'mailgun', 'scheme' => 'api'` with the marketing domain's `domain`, `secret` and `endpoint`, for the default `mailgun` driver. Locally, `CAMPAIGNS_DRIVER=fake`.
+- A `campaigns` mailer in `config/mail.php`: `'transport' => 'mailgun', 'scheme' => 'api'` with the marketing domain's `domain`, `secret` and `endpoint`, for the default `mailgun` driver. For `CAMPAIGNS_DRIVER=smtp`, the mailer is Laravel's `smtp` transport (a relay, or a mail catcher such as Mailpit locally); that driver reads back only what the server refuses on the spot, so no bounce, spam report or service unsubscribe reaches the package and `get_overview` warns about it. Locally, `CAMPAIGNS_DRIVER=fake`, or `smtp` into a mail catcher.
 - `CAMPAIGNS_FROM_ADDRESS` on the marketing domain, `CAMPAIGNS_POSTAL_ADDRESS`, `CAMPAIGNS_PRIVACY_URL`, `CAMPAIGNS_ALERT_ADDRESS`, `CAMPAIGNS_TEST_ADDRESSES`.
 - Mailgun webhooks to `/campaigns/webhooks/mailgun` with `MAILGUN_WEBHOOK_SIGNING_KEY` (keep it set for a few days after switching drivers, so late events land); an account key in `CAMPAIGNS_MAILGUN_API_KEY` for logs, metrics and suppressions; `php artisan campaigns:import-provider-suppressions <domain>` before the first campaign.
 - A worker for the `campaigns` queue with `--timeout` above 300 seconds and the connection's `retry_after` above that; the scheduler running; `CAMPAIGNS_CACHE_STORE` on a store deploys don't flush.
@@ -115,7 +115,7 @@ An import never clears an opt-out or block, never changes an existing subscripti
 
 ## Another sending service
 
-A driver implements `Mozex\Campaigns\Contracts\CampaignDriver` (`send(OutgoingMessage): SendReceipt`, throwing `SendFailed` with `NotAccepted`, `DomainRefused` or `Unclear`, decided by status and error code, never the service's words, and no address in the message) plus the abilities its service has in `Contracts\Drivers`: `ReceivesWebhooks`, `ReadsEvents`, `ReadsSuppressions`, `ReadsMetrics`. Register it in a service provider's `boot()` with `Campaigns::extend('name', fn (array $config, Application $app) => new NameDriver($config))`; it gets `campaigns.drivers.name` and answers webhooks at `/campaigns/webhooks/name`. Names are lower-case, at most 50 characters; `campaigns` is reserved. `get_overview` says what a missing ability costs.
+A driver implements `Mozex\Campaigns\Contracts\CampaignDriver` (`send(OutgoingMessage): SendReceipt`, throwing `SendFailed` with `NotAccepted`, `DomainRefused`, `Rejected` (this email refused for good; a `DeliveryFailure::HardBounce` as its fourth argument for a mailbox that doesn't exist) or `Unclear`, decided by status and error code, never the service's words, and no address in the message) plus the abilities its service has in `Contracts\Drivers`: `ReceivesWebhooks`, `ReadsEvents`, `ReadsSuppressions`, `ReadsMetrics`. Register it in a service provider's `boot()` with `Campaigns::extend('name', fn (array $config, Application $app) => new NameDriver($config))`; it gets `campaigns.drivers.name` and answers webhooks at `/campaigns/webhooks/name`. Names are lower-case, at most 50 characters; `campaigns` is reserved. `get_overview` says what a missing ability costs.
 
 ## Error trackers
 

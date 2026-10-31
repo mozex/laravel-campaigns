@@ -56,3 +56,5 @@ Each email is one job on the `campaigns` queue. The job takes its email only if 
 If the campaign's queued emails wait more than five minutes, the queue has stalled (no worker is taking them): the campaign hands out nothing more until they go, `CampaignQueueStalledEvent` fires each minute, and the alert address hears about it.
 
 If Mailgun refuses the domain itself (a revoked key, a disabled domain), the email goes back to waiting and every campaign on the domain pauses until someone resumes it.
+
+A service can also refuse one email for good as it's sent, as an SMTP server does with a 5xx reply. That email fails and is never sent again: as a hard bounce that blocks the address when the refusal names a mailbox that doesn't exist, else as `rejected`, and 10 `rejected` sends in a row pause the campaign ([Feedback](./feedback.md#refused-while-sending)).

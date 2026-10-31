@@ -30,6 +30,8 @@ use Mozex\Campaigns\Models\CampaignMessage;
 use Mozex\Campaigns\Models\ProviderEvent;
 use Mozex\Campaigns\Reports\CampaignReport;
 use Mozex\Campaigns\Reports\ReportSummary;
+use Mozex\Campaigns\Sending\Drivers\DriverManager;
+use Mozex\Campaigns\Sending\Drivers\FakeSendOnlyDriver;
 use Mozex\Campaigns\Sending\Pace;
 
 beforeEach(function (): void {
@@ -270,3 +272,23 @@ it('shows a report\'s largest parts with their totals, under the answer limit', 
         ->and($answer['days_total'])->toBe(400)
         ->and(Campaign::forKey('march')->report['links'])->toHaveCount(CampaignReport::LINKS);
 })->with('costly characters');
+
+it('warns on starting and resuming through a driver that reads nothing back, and only then', function (): void {
+    sendingCampaign(1, key: 'april', list: 'april-readers');
+    agent()->tool(PauseCampaignTool::class, ['key' => 'april'])->assertOk();
+    Queue::fake([FreezeCampaignJob::class, SendMessageJob::class]);
+    draftFor(1);
+    draftFor(1, 'may');
+
+    $quiet = structuredContent(agent()->tool(StartCampaignTool::class, ['key' => 'march', 'recipients' => 1, 'at' => now()->addDay()->toIso8601String()])->assertOk());
+    app(DriverManager::class)->swap('fake', new FakeSendOnlyDriver);
+    $started = structuredContent(agent()->tool(StartCampaignTool::class, ['key' => 'may', 'recipients' => 1])->assertOk());
+    $resumed = structuredContent(agent()->tool(ResumeCampaignTool::class, ['key' => 'april'])->assertOk());
+    $paused = structuredContent(agent()->tool(PauseCampaignTool::class, ['key' => 'april'])->assertOk());
+
+    expect($quiet['warning'])->toBeNull()
+        ->and($started['warning'])->toStartWith('The campaigns driver "fake" reads nothing back from its service')
+        ->and($started['warning'])->toContain('no bounce, spam report or unsubscribe made at the service reaches the package')
+        ->and($resumed['warning'])->toBe($started['warning'])
+        ->and($paused)->not->toHaveKey('warning');
+});

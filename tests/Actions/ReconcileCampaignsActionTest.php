@@ -491,6 +491,40 @@ describe('drivers', function (): void {
         $this->artisan('campaigns:reconcile')->assertSuccessful();
     });
 
+    it('settles an email left sending through a driver whose logs are never read as unknown, never failed or sent again, so its campaign completes', function (string $driver): void {
+        useDatabase($driver);
+        $campaign = sendingCampaign(3);
+        app(DriverManager::class)->swap('fake', new FakeSendOnlyDriver);
+        [$stuck, $recent, $read] = [
+            unclearMessage($campaign, 0, MessageStatus::Sending, now()->subSeconds(ReconcileCampaignsAction::LOOK_AFTER + 1)),
+            unclearMessage($campaign, 1, MessageStatus::Sending, now()->subSeconds(ReconcileCampaignsAction::LOOK_AFTER - 60)),
+            unclearMessage($campaign, 2, MessageStatus::Sending, now()->subSeconds(ReconcileCampaignsAction::LOOK_AFTER + 1)),
+        ];
+        $stuck->forceFill(['failure_reason' => null, 'failure_code' => null])->save();
+        // A driver whose logs are read looks its own up instead.
+        $read->forceFill(['driver' => 'mailgun'])->save();
+        app(DriverManager::class)->swap('mailgun', new RecordingDriver);
+        config()->set('campaigns.drivers.mailgun.webhook_signing_key', 'webhook-signing-key');
+
+        $result = reconcile();
+
+        expect($result->settled)->toBe(1)
+            ->and($result->problems)->toBe([])
+            ->and($stuck->fresh())
+            ->status->toBe(MessageStatus::Unknown)
+            ->failure_reason->toBe('unclear')
+            ->and($recent->fresh()->status)->toBe(MessageStatus::Sending)
+            ->and($read->fresh()->status)->toBe(MessageStatus::Sending);
+
+        $this->travel(61)->seconds();
+        $read->forceFill(['status' => MessageStatus::Sent])->save();
+        reconcile();
+        app(PumpCampaignsAction::class)->execute();
+
+        expect($recent->fresh()->status)->toBe(MessageStatus::Unknown)
+            ->and($campaign->fresh()->status)->toBe(CampaignStatus::Completed);
+    })->with('databases');
+
     it('looks each email up through the driver that sent it, with its own reach, and skips one no longer configured', function (): void {
         $campaign = sendingCampaign(3);
         [$byFake, $byMailgun, $byGone] = [
@@ -518,8 +552,10 @@ describe('drivers', function (): void {
             ->and($byFake->fresh()->status)->toBe(MessageStatus::Failed)
             ->and($byMailgun->fresh()->status)->toBe(MessageStatus::Delivered)
             ->and($byMailgun->events()->sole()->driver)->toBe('mailgun')
-            // Past the fake's one day, but no driver called "gone" is configured.
-            ->and($byGone->fresh()->status)->toBe(MessageStatus::Sending);
+            // Past the fake's one day, and no driver called "gone" is
+            // configured, so nothing can look it up: it waits no longer.
+            ->and($byGone->fresh()->status)->toBe(MessageStatus::Unknown)
+            ->and($result->settled)->toBe(1);
 
         config()->set('campaigns.drivers.mailgun.webhook_signing_key', null);
         reconcile();

@@ -42,7 +42,9 @@ use Throwable;
  * The logs are read through each configured driver that reads them
  * (ReadsEvents), for the messages it sent, with its own reach, so a switch
  * of drivers keeps reading the old one's. A driver without logs, or no
- * longer configured, is skipped, which is no problem to report.
+ * longer configured, is skipped, which is no problem to report: its
+ * messages left `sending` by a job that died are settled as unknown
+ * without a lookup (settleUnread()), so their campaign still completes.
  */
 class ReconcileCampaignsAction
 {
@@ -130,10 +132,11 @@ class ReconcileCampaignsAction
         $released = $this->attempt(fn (): int => $this->releaseQueued()) ?? 0;
         $requeued = $this->attempt(fn (): int => $this->requeueUnprocessed()) ?? 0;
         $readers = $this->readers();
+        $settled = $this->attempt(fn (): int => $this->settleUnread(array_keys($readers))) ?? 0;
         $this->attempt(fn () => $this->replay($readers));
         [$found, $lost] = $this->lookUp($readers);
 
-        return new ReconcileResult($released, $requeued, $this->stored, $found, $lost, array_values(array_unique($this->problems)));
+        return new ReconcileResult($released, $requeued, $this->stored, $found, $lost, array_values(array_unique($this->problems)), $settled);
     }
 
     /**
@@ -174,6 +177,26 @@ class ReconcileCampaignsAction
         }
 
         return $events->count();
+    }
+
+    /**
+     * Messages still `sending` LOOK_AFTER after they went to a driver whose
+     * logs aren't read (one that has none, or is no longer configured):
+     * their job ended long ago without settling them (a worker killed
+     * mid-send), and nothing can look them up, so they become unknown, never
+     * sent again and never failed, which lets their campaign complete. A
+     * webhook event about one still marks it sent.
+     *
+     * @param  list<string>  $readers  the names of the drivers whose logs are read
+     */
+    protected function settleUnread(array $readers): int
+    {
+        return CampaignMessage::query()
+            ->where('status', MessageStatus::Sending)
+            ->where('sending_at', '<', now()->subSeconds(static::LOOK_AFTER))
+            // NOT IN leaves out a null, so one is named on its own.
+            ->where(fn (Builder $query): Builder => $query->whereNull('driver')->orWhereNotIn('driver', $readers))
+            ->update(['status' => MessageStatus::Unknown, 'failure_reason' => SendFailure::Unclear->value, 'updated_at' => now()]);
     }
 
     /**

@@ -9,6 +9,7 @@ use Illuminate\Support\Str;
 use Mozex\Campaigns\Actions\PumpCampaignsAction;
 use Mozex\Campaigns\Enums\BlockReason;
 use Mozex\Campaigns\Enums\CampaignStatus;
+use Mozex\Campaigns\Enums\DeliveryFailure;
 use Mozex\Campaigns\Enums\FeedbackType;
 use Mozex\Campaigns\Enums\MessageStatus;
 use Mozex\Campaigns\Enums\SendFailure;
@@ -187,6 +188,19 @@ it('leaves a message unknown when the provider may have it', function (string $d
         ->status->toBe(CampaignStatus::Sending);
 })->with('databases');
 
+it('keeps a driver\'s status out of the message when the column can\'t hold it', function (string $driver): void {
+    useDatabase($driver);
+    sendingCampaign(1);
+    [$job] = claimedJobs();
+    fakeDriver()->failNext(new SendFailed(SendFailure::Unclear, 'An app\'s own driver gave its own number.', 70000));
+
+    runJob($job);
+
+    expect(CampaignMessage::query()->sole())
+        ->status->toBe(MessageStatus::Unknown)
+        ->failure_code->toBeNull();
+})->with('databases');
+
 it('pauses a campaign whose sends keep ending unclear, before it spends its audience', function (): void {
     $campaign = sendingCampaign(SendMessageJob::UNCLEAR_LIMIT + 2, ['per_minute' => SendMessageJob::UNCLEAR_LIMIT + 2]);
     $jobs = claimedJobs();
@@ -309,4 +323,103 @@ it('leaves a message unknown when a provider breaks its contract, and lets the e
         ->and(CampaignMessage::query()->sole())
         ->status->toBe(MessageStatus::Unknown)
         ->failure_reason->toBe('unclear');
+});
+
+it('fails an email refused for a mailbox that doesn\'t exist as a hard bounce: sent, its bounce recorded, the address blocked', function (string $driver): void {
+    useDatabase($driver);
+    $campaign = sendingCampaign(2);
+    [$job] = claimedJobs();
+    fakeDriver()->failNext(new SendFailed(SendFailure::Rejected, 'The SMTP server refused the email for good (550 5.1.1): the mailbox doesn\'t exist.', 550, DeliveryFailure::HardBounce));
+
+    runJob($job);
+
+    $message = CampaignMessage::query()->with('subscriber')->find($job->messageId);
+
+    expect($message)
+        ->status->toBe(MessageStatus::Failed)
+        ->failure_reason->toBe('hard_bounce')
+        ->failure_code->toBe(550)
+        ->sent_at->toEqual(now())
+        ->failed_at->toEqual(now())
+        ->and($message->events()->sole())
+        ->type->toBe(FeedbackType::Failed)
+        ->driver->toBe('fake')
+        ->processed_at->not->toBeNull()
+        ->and($message->events()->sole()->payload)->toMatchArray(['failure' => 'hard_bounce', 'code' => 550, 'severity' => 'permanent'])
+        ->and($message->subscriber->blocked_at)->not->toBeNull()
+        ->and($message->subscriber->blocked_reason)->toBe(BlockReason::HardBounce)
+        // One bounce is under the stop-loss's limits.
+        ->and($campaign->fresh()->status)->toBe(CampaignStatus::Sending);
+})->with('databases');
+
+it('reads no failure but a hard bounce from a refusal at send, so a driver\'s soft bounce there is a plain refusal', function (): void {
+    sendingCampaign(1);
+    [$job] = claimedJobs();
+    fakeDriver()->failNext(new SendFailed(SendFailure::Rejected, 'Refused for good.', 552, DeliveryFailure::SoftBounce));
+
+    runJob($job);
+
+    expect(CampaignMessage::query()->find($job->messageId))
+        ->status->toBe(MessageStatus::Failed)
+        ->failure_reason->toBe('rejected')
+        ->sent_at->toBeNull()
+        ->and(ProviderEvent::query()->count())->toBe(0)
+        ->and(Subscriber::query()->sole()->soft_bounces)->toBe(0);
+});
+
+it('counts bounces refused at send toward the stop-loss, which pauses the campaign', function (): void {
+    config()->set('campaigns.stop_loss.early_hard_bounces', 2);
+    $campaign = sendingCampaign(3, ['per_minute' => 3]);
+    $jobs = claimedJobs();
+    $bounce = fn (): SendFailed => new SendFailed(SendFailure::Rejected, 'The SMTP server refused the email for good (550 5.1.1): the mailbox doesn\'t exist.', 550, DeliveryFailure::HardBounce);
+    fakeDriver()->failNext($bounce(), $bounce());
+
+    array_map(runJob(...), $jobs);
+
+    expect($campaign->fresh())
+        ->status->toBe(CampaignStatus::Paused)
+        ->pause_reason->toStartWith('The stop-loss paused it: 2 of 2 emails bounced hard')
+        ->and(fakeDriver()->sent())->toBe([])
+        ->and(Subscriber::query()->whereNotNull('blocked_at')->count())->toBe(2);
+});
+
+it('fails an email refused for good, leaving its address alone, and pauses a campaign whose last sends were all refused, however slow its pace', function (): void {
+    $campaign = sendingCampaign(SendMessageJob::REJECTED_LIMIT + 2, ['per_minute' => 1]);
+    Event::fake([CampaignPausedEvent::class]);
+    $refusal = fn (): SendFailed => new SendFailed(SendFailure::Rejected, 'The SMTP server refused the email for good (554 5.7.1).', 554);
+    $next = function (?SendFailed $failure = null): void {
+        $this->travel(1)->minutes();
+
+        if ($failure !== null) {
+            fakeDriver()->failNext($failure);
+        }
+
+        [$job] = claimedJobs();
+        runJob($job);
+    };
+
+    // A refusal, then one that went: the run starts again after it.
+    $next($refusal());
+    $next();
+
+    foreach (range(1, SendMessageJob::REJECTED_LIMIT - 1) as $ignored) {
+        $next($refusal());
+    }
+
+    $before = $campaign->fresh()->status;
+    $next($refusal());
+
+    expect($before)->toBe(CampaignStatus::Sending)
+        ->and(CampaignMessage::query()->where('failure_reason', 'rejected')->count())->toBe(SendMessageJob::REJECTED_LIMIT + 1)
+        ->and(CampaignMessage::query()->where('failure_reason', 'rejected')->first())
+        ->status->toBe(MessageStatus::Failed)
+        ->sent_at->toBeNull()
+        ->failure_code->toBe(554)
+        ->and(ProviderEvent::query()->count())->toBe(0)
+        ->and(Subscriber::query()->whereNotNull('blocked_at')->count())->toBe(0)
+        ->and($campaign->fresh())
+        ->status->toBe(CampaignStatus::Paused)
+        ->pause_reason->toStartWith('The last '.SendMessageJob::REJECTED_LIMIT.' emails were each refused for good by the sending service');
+
+    Event::assertDispatched(CampaignPausedEvent::class, fn (CampaignPausedEvent $event): bool => $event->automatic);
 });

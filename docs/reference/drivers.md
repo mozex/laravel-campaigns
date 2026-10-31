@@ -3,7 +3,7 @@ title: Drivers
 weight: 5
 ---
 
-A driver is the package's code for one sending service. `campaigns.driver` (`CAMPAIGNS_DRIVER`) names the one that sends: `mailgun` (the default), `fake` (sends nothing, for tests and local runs), or one you register. Every email the package sends goes through it: campaign emails, test emails and the double opt-in confirmation. Only the alert mail goes through the app's default mailer.
+A driver is the package's code for one sending service. `campaigns.driver` (`CAMPAIGNS_DRIVER`) names the one that sends: `mailgun` (the default), `smtp` (any SMTP server, see [SMTP](../getting-started/smtp.md)), `fake` (sends nothing, for tests and local runs), or one you register. Every email the package sends goes through it: campaign emails, test emails and the double opt-in confirmation. Only the alert mail goes through the app's default mailer.
 
 ## The contract
 
@@ -18,11 +18,13 @@ What else a service offers, a driver says by implementing the abilities in `Moze
 | Ability | Methods | Without it |
 |---|---|---|
 | `ReceivesWebhooks` | `verifyWebhook()`, `parseWebhook()` | `/campaigns/webhooks/<name>` answers 404; the package learns what happened to an email only from the logs, if the driver reads them |
-| `ReadsEvents` | `eventsForMessage()`, `eventsBetween()`, `logDays()` | nothing a webhook missed is replayed, and an email whose send ended unclear stays `unknown`, never resent |
+| `ReadsEvents` | `eventsForMessage()`, `eventsBetween()`, `logDays()` | nothing a webhook missed is replayed, an email whose send ended unclear stays `unknown`, never resent, and one its job left `sending` becomes `unknown` after 15 minutes |
 | `ReadsSuppressions` | `suppressions()`, `suppressionsFor()` | `campaigns:import-provider-suppressions` refuses, and `unblock_contact` answers `checked: false` with the reason |
 | `ReadsMetrics` | `domainMetrics()` | `get_overview`'s `domain.provider` is null, with a note |
 
-The Mailgun driver has all four. The fake has all four too; `FakeSendOnlyDriver` (send only) and `FakeWebhookDriver` (webhooks and suppression lists) share its `FakesDriver` trait, for testing what the package does with fewer.
+A driver with neither `ReceivesWebhooks` nor `ReadsEvents` reads nothing back: its emails end at `sent`, never `delivered`, the report divides opens and clicks by sent emails, and the stop-loss sees only what's refused while sending ([Feedback](../campaigns/feedback.md#drivers-that-read-nothing-back)). `get_overview`, `start_campaign` and `resume_campaign` warn about it.
+
+The Mailgun driver has all four abilities, the SMTP driver none. The fake has all four too; `FakeSendOnlyDriver` (send only) and `FakeWebhookDriver` (webhooks and suppression lists) share its `FakesDriver` trait, for testing what the package does with fewer.
 
 ## Registering a driver
 
@@ -40,7 +42,7 @@ public function boot(): void
 
 The creator gets the driver's own block, `campaigns.drivers.postmark` in `config/campaigns.php`, and the app. Use that `$app` argument rather than `$this`: Laravel binds the closure to the driver manager, so `$this` inside it isn't your service provider. Then set `CAMPAIGNS_DRIVER=postmark`. A name is lower-case letters, digits, `-` and `_`, starting with a letter and at most 50 characters, since it's a path segment of the driver's webhook address. `campaigns` is reserved: the package records its own opens and clicks under it. A name a built-in driver has replaces that driver.
 
-A driver that sends through a Laravel mailer uses `campaigns.mail.mailer` and refuses a transport it can't drive. When the app gave that mailer no time limits, the driver sets some below the send job's 60-second timeout, as the Mailgun driver does (10 seconds idle, 30 in all).
+A driver that sends through a Laravel mailer uses `campaigns.mail.mailer` and refuses a transport it can't drive. A send must end before the send job's 60-second timeout. When the app gave the mailer no time limits, the package sets some for the built-in drivers while it registers: 10 seconds idle and 30 in all for Mailgun's, 10 seconds for each read of an SMTP server's reply. A driver of your own needs limits of its own.
 
 ## Sending
 
@@ -48,6 +50,7 @@ A driver that sends through a Laravel mailer uses `campaigns.mail.mailer` and re
 
 - `NotAccepted`: the service took nothing and may take it later (a rate limit, an outage). The email goes back to waiting and the campaign's rate halves for ten minutes.
 - `DomainRefused`: nothing more can go from this domain until someone acts (a revoked key, a disabled domain). Every campaign on the domain pauses.
+- `Rejected`: the service refuses this one email for good (an SMTP server's 5xx reply to it). The email fails and is never resent. Pass a `DeliveryFailure::HardBounce` as `SendFailed`'s fourth argument when the refusal names a mailbox that doesn't exist: the email then counts as sent and bounced, and the address is blocked. Any other refusal fails as `rejected`, and 10 of them in a row pause the campaign.
 - `Unclear`: anything you can't be sure of, such as a timeout after the request went out. The email is marked unknown, never resent, and the reconciler looks it up in the logs when the driver reads them.
 
 Decide by transport facts (no connection, no answer), the service's status and its error code, never by the words in its answer, which change without notice. Keep addresses out of the exception's message and never chain the transport's exception: both reach logs and error trackers.

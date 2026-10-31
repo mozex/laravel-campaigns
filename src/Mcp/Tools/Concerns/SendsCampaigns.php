@@ -11,11 +11,13 @@ use Laravel\Mcp\ResponseFactory;
 use Mozex\Campaigns\Mcp\Schemas;
 use Mozex\Campaigns\Models\Campaign;
 use Mozex\Campaigns\Reports\CampaignProgress;
+use Mozex\Campaigns\Reports\Overview;
 
 /**
  * What the sending tools share: a campaign named by its key, and an answer
  * showing where its sending stands after the call (as get_campaign_status
- * shows it).
+ * shows it). Starting and resuming also warn when the driver reads nothing
+ * back from its service, which the stop-loss and the blocks depend on.
  */
 trait SendsCampaigns
 {
@@ -39,10 +41,16 @@ trait SendsCampaigns
         return $schema->object()->description(Schemas::PACE);
     }
 
-    protected static function progress(Campaign $campaign): ResponseFactory
+    protected static function warningOutput(JsonSchema $schema): Type
+    {
+        return $schema->string()->nullable()->description('Set when the driver sending the campaign reads nothing back from its service (no webhooks, no logs): what that leaves the stop-loss and the blocks without. Tell the person you work for.');
+    }
+
+    protected static function progress(Campaign $campaign, bool $warn = false): ResponseFactory
     {
         return Response::structured([
             'campaign' => CampaignProgress::of($campaign),
+            ...($warn ? ['warning' => Overview::readsNothingBack()] : []),
         ]);
     }
 

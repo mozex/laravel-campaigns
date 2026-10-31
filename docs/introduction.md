@@ -21,7 +21,7 @@ An email service keeps a copy of your users and drifts from it. Here the lists a
 ## What you need
 
 - A Laravel 12 or 13 app on PHP 8.2 or later, with MySQL, MariaDB, PostgreSQL or SQLite.
-- A Mailgun account with a sending domain. Mailgun is one driver: another service plugs in as a driver of your own ([Drivers](./reference/drivers.md)), and a driver only has to send.
+- A Mailgun account with a sending domain, or an SMTP server ([SMTP](./getting-started/smtp.md)), which reads back only what it refuses on the spot. Another service plugs in as a driver of your own ([Drivers](./reference/drivers.md)), and a driver only has to send.
 - A queue worker and Laravel's scheduler running.
 
 [Installation](./getting-started/installation.md) takes it from there.
