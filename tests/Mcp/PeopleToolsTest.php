@@ -28,6 +28,8 @@ use Mozex\Campaigns\Models\ConsentRecord;
 use Mozex\Campaigns\Models\Subscriber;
 use Mozex\Campaigns\Models\Subscription;
 use Mozex\Campaigns\Reports\SubscriberSummary;
+use Mozex\Campaigns\Sending\Drivers\DriverManager;
+use Mozex\Campaigns\Sending\Drivers\FakeSendOnlyDriver;
 use Mozex\Campaigns\Sending\Suppression;
 use Mozex\Campaigns\Support\ConsentContext;
 use Mozex\Campaigns\Support\Keys;
@@ -251,12 +253,12 @@ it('unsubscribes and blocks one address, once each', function (): void {
 describe('unblocking', function (): void {
     beforeEach(function (): void {
         sendFromExample();
-        config(['campaigns.provider' => 'fake']);
+        config(['campaigns.driver' => 'fake']);
         Subscriber::factory()->create(['email' => 'ann@example.com', 'blocked_at' => now(), 'blocked_reason' => BlockReason::HardBounce, 'soft_bounces' => 2]);
     });
 
     it('lets the address be mailed and says which of the provider\'s lists still hold it', function (): void {
-        fakeProvider()->suppress(new Suppression('ann@example.com', SuppressionType::Bounce, Carbon::parse('2026-10-01T10:00:00Z'), '550 No such user'));
+        fakeDriver()->suppress(new Suppression('ann@example.com', SuppressionType::Bounce, Carbon::parse('2026-10-01T10:00:00Z'), '550 No such user'));
 
         $answer = structuredContent(agent()->tool(UnblockContactTool::class, ['email' => 'ann@example.com'])->assertOk());
 
@@ -271,7 +273,7 @@ describe('unblocking', function (): void {
     });
 
     it('keeps the unblock when the provider can\'t be asked', function (): void {
-        fakeProvider()->failReads(new CampaignsException('The provider couldn\'t be read.'));
+        fakeDriver()->failReads(new CampaignsException('The provider couldn\'t be read.'));
 
         $answer = structuredContent(agent()->tool(UnblockContactTool::class, ['email' => 'ann@example.com'])->assertOk());
         $again = structuredContent(agent()->tool(UnblockContactTool::class, ['email' => 'ann@example.com'])->assertOk());
@@ -283,5 +285,15 @@ describe('unblocking', function (): void {
             ->and(Subscriber::findByEmail('ann@example.com')->blocked_at)->toBeNull()
             ->and($again['changed'])->toBeFalse()
             ->and($again['notes'])->toBe(['Couldn\'t check whether the provider still holds the address; the unblock stands.']);
+    });
+
+    it('says why it can\'t check when the driver reads no suppression lists', function (): void {
+        app(DriverManager::class)->swap('fake', new FakeSendOnlyDriver);
+
+        $answer = structuredContent(agent()->tool(UnblockContactTool::class, ['email' => 'ann@example.com'])->assertOk());
+
+        expect($answer['changed'])->toBeTrue()
+            ->and($answer['provider']['checked'])->toBeFalse()
+            ->and($answer['provider']['error'])->toStartWith('The campaigns driver "fake" reads no suppression lists');
     });
 });

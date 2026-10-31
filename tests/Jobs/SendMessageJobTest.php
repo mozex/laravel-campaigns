@@ -7,7 +7,6 @@ use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
 use Mozex\Campaigns\Actions\PumpCampaignsAction;
-use Mozex\Campaigns\Contracts\CampaignProvider;
 use Mozex\Campaigns\Enums\BlockReason;
 use Mozex\Campaigns\Enums\CampaignStatus;
 use Mozex\Campaigns\Enums\FeedbackType;
@@ -21,7 +20,8 @@ use Mozex\Campaigns\Models\Campaign;
 use Mozex\Campaigns\Models\CampaignMessage;
 use Mozex\Campaigns\Models\ProviderEvent;
 use Mozex\Campaigns\Models\Subscriber;
-use Mozex\Campaigns\Sending\FakeProvider;
+use Mozex\Campaigns\Sending\Drivers\DriverManager;
+use Mozex\Campaigns\Sending\Drivers\FakeDriver;
 use Mozex\Campaigns\Sending\OutgoingMessage;
 use Mozex\Campaigns\Sending\SendFailed;
 use Mozex\Campaigns\Sending\SendReceipt;
@@ -57,19 +57,20 @@ it('sends a claimed message once, and nothing for a duplicate or another claim',
 
     runJob(new SendMessageJob($job->messageId, (string) Str::uuid()));
 
-    expect(fakeProvider()->sent())->toBe([])
+    expect(fakeDriver()->sent())->toBe([])
         ->and(CampaignMessage::query()->sole())
         ->status->toBe(MessageStatus::Queued)
-        ->claim_id->toBe($job->claimId);
+        ->claim_id->toBe($job->claimId)
+        ->driver->toBeNull();
 
     runJob($job);
     runJob($job);
 
     $message = CampaignMessage::query()->sole();
-    [$sent] = fakeProvider()->sent();
+    [$sent] = fakeDriver()->sent();
     $token = Str::after($sent->unsubscribeUrl, '/campaigns/u/');
 
-    expect(fakeProvider()->sent())->toHaveCount(1)
+    expect(fakeDriver()->sent())->toHaveCount(1)
         ->and($sent)
         ->uuid->toBe($message->uuid)
         ->to->toBe('news-1@example.org')
@@ -77,6 +78,7 @@ it('sends a claimed message once, and nothing for a duplicate or another claim',
         ->and($message)
         ->status->toBe(MessageStatus::Sent)
         ->provider_message_id->toBe("fake.{$message->uuid}@campaigns.test")
+        ->driver->toBe('fake')
         ->sent_at->toEqual(now())
         ->token_hash->toBe(Token::hash($token))
         ->and($message->subscriber->first_mailed_at)->toEqual(now())
@@ -98,7 +100,7 @@ it('skips a message whose person can no longer get it', function (Closure $chang
     $change(Subscriber::query()->sole(), $campaign);
     runJob($job);
 
-    expect(fakeProvider()->sent())->toBe([])
+    expect(fakeDriver()->sent())->toBe([])
         ->and(CampaignMessage::query()->sole())
         ->status->toBe(MessageStatus::Skipped)
         ->token_hash->toBeNull();
@@ -117,13 +119,13 @@ it('puts a message back when the provider took nothing, and halves the campaign\
     useDatabase($driver);
     $campaign = sendingCampaign(10, ['per_minute' => 4]);
     $jobs = claimedJobs();
-    fakeProvider()->failNext(new SendFailed(SendFailure::NotAccepted, 'Mailgun answered 429.', 429));
+    fakeDriver()->failNext(new SendFailed(SendFailure::NotAccepted, 'Mailgun answered 429.', 429));
 
     foreach ($jobs as $job) {
         runJob($job);
     }
 
-    expect(fakeProvider()->sent())->toHaveCount(3)
+    expect(fakeDriver()->sent())->toHaveCount(3)
         ->and(CampaignMessage::query()->find($jobs[0]->messageId))
         ->status->toBe(MessageStatus::Pending)
         ->claim_id->toBeNull()
@@ -149,7 +151,7 @@ it('pauses every campaign on the domain the provider refuses, and only those', f
     $other = Campaign::factory()->sending()->create(['from_email' => 'team@other.example.net']);
     CampaignMessage::factory()->for($other)->create();
     [$job] = claimedJobs();
-    fakeProvider()->failNext(new SendFailed(SendFailure::DomainRefused, 'Mailgun answered 401: Forbidden', 401));
+    fakeDriver()->failNext(new SendFailed(SendFailure::DomainRefused, 'Mailgun answered 401: Forbidden', 401));
     Event::fake([CampaignPausedEvent::class]);
 
     runJob($job);
@@ -169,7 +171,7 @@ it('leaves a message unknown when the provider may have it', function (string $d
     useDatabase($driver);
     sendingCampaign(1);
     [$job] = claimedJobs();
-    fakeProvider()->failNext(new SendFailed(SendFailure::Unclear, 'Mailgun answered 504.', 504));
+    fakeDriver()->failNext(new SendFailed(SendFailure::Unclear, 'Mailgun answered 504.', 504));
 
     runJob($job);
 
@@ -188,14 +190,14 @@ it('leaves a message unknown when the provider may have it', function (string $d
 it('pauses a campaign whose sends keep ending unclear, before it spends its audience', function (): void {
     $campaign = sendingCampaign(SendMessageJob::UNCLEAR_LIMIT + 2, ['per_minute' => SendMessageJob::UNCLEAR_LIMIT + 2]);
     $jobs = claimedJobs();
-    fakeProvider()->failNext(...array_fill(0, SendMessageJob::UNCLEAR_LIMIT, new SendFailed(SendFailure::Unclear, 'Connection lost.')));
+    fakeDriver()->failNext(...array_fill(0, SendMessageJob::UNCLEAR_LIMIT, new SendFailed(SendFailure::Unclear, 'Connection lost.')));
     Event::fake([CampaignPausedEvent::class]);
 
     array_map(runJob(...), $jobs);
 
     expect(CampaignMessage::query()->where('status', MessageStatus::Unknown)->count())->toBe(SendMessageJob::UNCLEAR_LIMIT)
         // The rest go back to waiting rather than out.
-        ->and(fakeProvider()->sent())->toBe([])
+        ->and(fakeDriver()->sent())->toBe([])
         ->and(CampaignMessage::query()->where('status', MessageStatus::Pending)->count())->toBe(2)
         ->and($campaign->fresh())
         ->status->toBe(CampaignStatus::Paused)
@@ -211,7 +213,7 @@ it('puts a queued message back, sending nothing', function (Closure $arrange): v
 
     runJob($job);
 
-    expect(fakeProvider()->sent())->toBe([])
+    expect(fakeDriver()->sent())->toBe([])
         ->and(CampaignMessage::query()->sole())
         ->status->toBe(MessageStatus::Pending)
         ->claim_id->toBeNull()
@@ -224,7 +226,7 @@ it('puts a queued message back, sending nothing', function (Closure $arrange): v
 it('marks a message sent that was taken for unknown while its send went on', function (): void {
     sendingCampaign(1);
     [$job] = claimedJobs();
-    app()->instance(CampaignProvider::class, new class extends FakeProvider
+    app(DriverManager::class)->swap('fake', new class extends FakeDriver
     {
         public function send(OutgoingMessage $message): SendReceipt
         {
@@ -245,7 +247,7 @@ it('marks a message sent that was taken for unknown while its send went on', fun
 it('keeps the provider\'s id on a message its events moved on before its send job finished', function (): void {
     sendingCampaign(1);
     [$job] = claimedJobs();
-    $provider = new class extends FakeProvider
+    $provider = new class extends FakeDriver
     {
         public ?string $id = null;
 
@@ -265,7 +267,7 @@ it('keeps the provider\'s id on a message its events moved on before its send jo
             return $receipt;
         }
     };
-    app()->instance(CampaignProvider::class, $provider);
+    app(DriverManager::class)->swap('fake', $provider);
 
     runJob($job);
 
@@ -295,7 +297,7 @@ it('settles a message whose job died: waiting again before its send, unknown dur
 it('leaves a message unknown when a provider breaks its contract, and lets the error through', function (): void {
     sendingCampaign(1);
     [$job] = claimedJobs();
-    app()->instance(CampaignProvider::class, new class extends FakeProvider
+    app(DriverManager::class)->swap('fake', new class extends FakeDriver
     {
         public function send(OutgoingMessage $message): SendReceipt
         {

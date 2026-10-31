@@ -29,6 +29,7 @@ use Mozex\Campaigns\Enums\MessageStatus;
  * @property MessageStatus $status
  * @property ?string $claim_id
  * @property ?string $token_hash
+ * @property ?string $driver
  * @property ?string $provider_message_id
  * @property ?Carbon $claimed_at
  * @property ?Carbon $sending_at
@@ -78,6 +79,7 @@ class CampaignMessage extends Model
         'status',
         'claim_id',
         'token_hash',
+        'driver',
         'provider_message_id',
         'claimed_at',
         'sending_at',

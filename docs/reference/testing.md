@@ -3,33 +3,42 @@ title: Testing Your App
 weight: 4
 ---
 
-## The fake provider
+## The fake driver
 
-Set the provider to `fake` in your test environment, in `phpunit.xml`:
+Set the driver to `fake` in your test environment, in `phpunit.xml`:
 
 ```xml
-<env name="CAMPAIGNS_PROVIDER" value="fake"/>
+<env name="CAMPAIGNS_DRIVER" value="fake"/>
 ```
 
-It keeps every message it's given and sends nothing. Resolve it from the container to read and script it:
+It keeps every message it's given and sends nothing, the double opt-in confirmation included. In production it refuses every send, so a campaign left on it pauses instead of being marked sent. Get it from the driver manager, which keeps the one it built, to read and script it:
 
 ```php
-use Mozex\Campaigns\Contracts\CampaignProvider;
 use Mozex\Campaigns\Enums\SendFailure;
-use Mozex\Campaigns\Sending\FakeProvider;
+use Mozex\Campaigns\Sending\Drivers\DriverManager;
+use Mozex\Campaigns\Sending\Drivers\FakeDriver;
 use Mozex\Campaigns\Sending\SendFailed;
 
-$provider = app(CampaignProvider::class);   // a FakeProvider
+/** @var FakeDriver $driver */
+$driver = app(DriverManager::class)->get('fake');
 
-$provider->sent();                          // every OutgoingMessage sent: to, subject, html, text...
-$provider->failNext(new SendFailed(SendFailure::NotAccepted, 'Rate limited', 429));
-$provider->count('2026-01-15', ['sent' => 1200, 'hard_bounces' => 3]);  // the domain's counts that day
-$provider->failReads();                     // every read of logs, suppression lists or metrics throws
-$provider->readsWork();                     // until this
-$provider->keepLogsFor(30);
+$driver->sent();                          // every OutgoingMessage sent: to, subject, html, text...
+$driver->failNext(new SendFailed(SendFailure::NotAccepted, 'Rate limited', 429));
+$driver->count('2026-01-15', ['sent' => 1200, 'hard_bounces' => 3]);  // the domain's counts that day
+$driver->failReads();                     // every read of logs, suppression lists or metrics throws
+$driver->readsWork();                     // until this
+$driver->keepLogsFor(30);
 ```
 
-`log()` and `suppress()` fill its logs and suppression lists, for code that reconciles or imports them.
+`log()` and `suppress()` fill its logs and suppression lists, for code that reconciles or imports them, and `webhook()` gives the next request to `/campaigns/webhooks/fake` the events it carries (a request made without it is refused).
+
+The fake has every ability a driver can have. To see what your code does with a driver that has fewer, put `FakeSendOnlyDriver` (it only sends) or `FakeWebhookDriver` (webhooks and suppression lists, no logs or counts) in its place; both take the same calls:
+
+```php
+use Mozex\Campaigns\Sending\Drivers\FakeSendOnlyDriver;
+
+app(DriverManager::class)->swap('fake', new FakeSendOnlyDriver);
+```
 
 ## Queues and time
 

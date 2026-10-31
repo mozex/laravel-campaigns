@@ -7,6 +7,7 @@ namespace Mozex\Campaigns\Facades;
 use Illuminate\Support\Facades\Facade;
 
 /**
+ * @method static void extend(string $name, \Closure $creator)
  * @method static string name()
  * @method static mixed withConsent(string $model, \Mozex\Campaigns\Support\ConsentContext $context, \Closure $callback)
  * @method static ?\Mozex\Campaigns\Support\ConsentContext consentFor(\Illuminate\Database\Eloquent\Model $record)

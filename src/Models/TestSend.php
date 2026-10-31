@@ -26,6 +26,7 @@ use Mozex\Campaigns\Database\Factories\TestSendFactory;
  * @property string $email
  * @property ?string $locale
  * @property ?string $token_hash
+ * @property ?string $driver
  * @property ?string $provider_message_id
  * @property ?Carbon $sent_at
  * @property ?Carbon $failed_at
@@ -58,6 +59,7 @@ class TestSend extends Model
         'email',
         'locale',
         'token_hash',
+        'driver',
         'provider_message_id',
         'sent_at',
         'failed_at',

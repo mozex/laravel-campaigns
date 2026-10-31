@@ -11,11 +11,14 @@ use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Route;
 use Mozex\Campaigns\Actions\RecordFeedbackAction;
 use Mozex\Campaigns\CampaignsException;
+use Mozex\Campaigns\Enums\BlockReason;
 use Mozex\Campaigns\Enums\FeedbackResult;
 use Mozex\Campaigns\Enums\FeedbackType;
+use Mozex\Campaigns\Enums\MessageStatus;
 use Mozex\Campaigns\Jobs\ProcessFeedbackJob;
 use Mozex\Campaigns\Models\CampaignMessage;
 use Mozex\Campaigns\Models\ProviderEvent;
+use Mozex\Campaigns\Models\Subscriber;
 use Mozex\Campaigns\Models\TestSend;
 use Mozex\Campaigns\Models\WebhookToken;
 use Mozex\Campaigns\Sending\Feedback;
@@ -23,7 +26,7 @@ use Mozex\Campaigns\Support\Token;
 
 beforeEach(function (): void {
     $this->travelTo(Carbon::parse('2026-03-02 12:00:00'));
-    config()->set('campaigns.mailgun.webhook_signing_key', 'webhook-signing-key');
+    config()->set('campaigns.drivers.mailgun.webhook_signing_key', 'webhook-signing-key');
     Queue::fake([ProcessFeedbackJob::class]);
 });
 
@@ -45,7 +48,7 @@ function eventFor(CampaignMessage $message, string $name = 'delivered', array $c
  */
 function postWebhook(array $body): int
 {
-    return test()->postJson(route('campaigns.webhooks.mailgun'), $body)->status();
+    return test()->postJson(route('campaigns.webhooks', 'mailgun'), $body)->status();
 }
 
 describe('verifying', function (): void {
@@ -77,37 +80,39 @@ describe('verifying', function (): void {
             ->toBe(['MXcc2gEpS-eN8HfkOnmK2w', 'event-three', 'event-seven']);
 
         // A form post, as a route forward would send, isn't a webhook.
-        $this->post(route('campaigns.webhooks.mailgun'), mailgunWebhook(eventFor($message, changes: ['id' => 'event-ten'])))
+        $this->post(route('campaigns.webhooks', 'mailgun'), mailgunWebhook(eventFor($message, changes: ['id' => 'event-ten'])))
             ->assertStatus(406);
 
         expect(ProviderEvent::query()->count())->toBe(3)
             ->and(WebhookToken::query()->count())->toBe(3);
     })->with('databases');
 
-    it('answers 500 while no signing key is configured, so Mailgun retries, and reports it once an hour', function (): void {
+    it('answers 500 while the active driver has no signing key, so Mailgun retries, and reports it once an hour', function (): void {
         Exceptions::fake();
-        config()->set('campaigns.mailgun.webhook_signing_key', null);
+        config()->set('campaigns.driver', 'mailgun');
+        config()->set('campaigns.drivers.mailgun.webhook_signing_key', null);
         $message = CampaignMessage::factory()->create();
 
-        $this->postJson(route('campaigns.webhooks.mailgun'), mailgunWebhook(eventFor($message)))->assertStatus(500);
-        $this->postJson(route('campaigns.webhooks.mailgun'), [])->assertStatus(500);
+        $this->postJson(route('campaigns.webhooks', 'mailgun'), mailgunWebhook(eventFor($message)))->assertStatus(500);
+        $this->postJson(route('campaigns.webhooks', 'mailgun'), [])->assertStatus(500);
 
         Exceptions::assertReportedCount(1);
         Exceptions::assertReported(CampaignsException::class);
 
         $this->travel(61)->minutes();
-        $this->postJson(route('campaigns.webhooks.mailgun'), [])->assertStatus(500);
+        $this->postJson(route('campaigns.webhooks', 'mailgun'), [])->assertStatus(500);
 
         Exceptions::assertReportedCount(2);
 
         expect(ProviderEvent::query()->count())->toBe(0);
     });
 
-    it('runs outside the app\'s web middleware and any throttle', function (): void {
-        $route = Route::getRoutes()->getByName('campaigns.webhooks.mailgun');
+    it('runs outside the app\'s web middleware and any throttle, at Mailgun\'s same address', function (): void {
+        $route = Route::getRoutes()->getByName('campaigns.webhooks');
 
         expect($route?->methods())->toBe(['POST'])
-            ->and($route?->uri())->toBe('campaigns/webhooks/mailgun')
+            ->and($route?->uri())->toBe('campaigns/webhooks/{driver}')
+            ->and(route('campaigns.webhooks', 'mailgun', absolute: false))->toBe('/campaigns/webhooks/mailgun')
             ->and($route?->gatherMiddleware())->not->toContain('web')
             ->and(collect($route?->gatherMiddleware())->filter(fn (string $middleware): bool => str_starts_with($middleware, 'throttle')))->toBeEmpty();
     });
@@ -153,14 +158,19 @@ describe('storing', function (): void {
         // The same event read back from the provider's logs carries no token,
         // and a caller's transaction stays usable after the lost insert
         // (PostgreSQL aborts a transaction on any failed statement).
-        $fromLogs = new Feedback(providerEventId: 'MXcc2gEpS-eN8HfkOnmK2w', type: FeedbackType::Delivered, occurredAt: now(), recipient: '', messageUuid: $message->uuid);
+        $fromLogs = new Feedback(providerEventId: 'MXcc2gEpS-eN8HfkOnmK2w', type: FeedbackType::Delivered, occurredAt: now(), messageUuid: $message->uuid);
 
         $result = DB::transaction(fn (): array => [
-            app(RecordFeedbackAction::class)->execute($fromLogs),
+            app(RecordFeedbackAction::class)->execute($fromLogs, 'mailgun'),
             ProviderEvent::query()->count(),
         ]);
 
-        expect($result)->toBe([FeedbackResult::Duplicate, 1]);
+        // Another driver's event of the same id is its own.
+        $otherDriver = app(RecordFeedbackAction::class)->execute($fromLogs, 'fake');
+
+        expect($result)->toBe([FeedbackResult::Duplicate, 1])
+            ->and($otherDriver)->toBe(FeedbackResult::Stored)
+            ->and(ProviderEvent::query()->orderBy('id')->pluck('driver')->all())->toBe(['mailgun', 'fake']);
     })->with('databases');
 
     it('queues an event again when it comes back unprocessed, and only then', function (string $driver): void {
@@ -198,12 +208,12 @@ describe('storing', function (): void {
             }
         });
 
-        $this->postJson(route('campaigns.webhooks.mailgun'), $body)->assertStatus(500);
+        $this->postJson(route('campaigns.webhooks', 'mailgun'), $body)->assertStatus(500);
 
         expect(ProviderEvent::query()->count())->toBe(0)
             ->and(WebhookToken::query()->count())->toBe(0);
 
-        $this->postJson(route('campaigns.webhooks.mailgun'), $body)->assertOk();
+        $this->postJson(route('campaigns.webhooks', 'mailgun'), $body)->assertOk();
 
         expect(ProviderEvent::query()->count())->toBe(1)
             ->and(WebhookToken::query()->sole()->token_hash)->toBe(Token::hash('token-one'));
@@ -215,12 +225,15 @@ describe('storing', function (): void {
         'another unique clash' => fn (): Throwable => new UniqueConstraintViolationException('testing', 'insert into campaign_provider_events', [], new PDOException('duplicate key value violates unique constraint "campaign_provider_events_pkey"')),
     ]);
 
-    it('finds the email by its uuid, else by the provider\'s message id, and a test email by its own uuid', function (string $driver): void {
+    it('finds the email by its uuid, else by the provider\'s message id among what the driver sent, and a test email by its own uuid', function (string $driver): void {
         useDatabase($driver);
         $byUuid = CampaignMessage::factory()->create();
-        $byProviderId = CampaignMessage::factory()->create(['provider_message_id' => '20260212174255.58bbb7ce85a423e5@mailgun.com']);
+        // Another service's message under the same id, which the fallback never reaches.
+        CampaignMessage::factory()->create(['driver' => 'fake', 'provider_message_id' => '20260212174255.58bbb7ce85a423e5@mailgun.com']);
+        $byProviderId = CampaignMessage::factory()->create(['driver' => 'mailgun', 'provider_message_id' => '20260212174255.58bbb7ce85a423e5@mailgun.com']);
         $testSend = TestSend::factory()->create();
-        $testByProviderId = TestSend::factory()->create(['provider_message_id' => '20260205213049.8e3a7bf607f78309@sample.mailgun.com']);
+        TestSend::factory()->create(['driver' => 'fake', 'provider_message_id' => '20260205213049.8e3a7bf607f78309@sample.mailgun.com']);
+        $testByProviderId = TestSend::factory()->create(['driver' => 'mailgun', 'provider_message_id' => '20260205213049.8e3a7bf607f78309@sample.mailgun.com']);
 
         expect(postWebhook(mailgunWebhook(mailgunEvent('opened', ['id' => 'by-uuid', 'user-variables' => ['campaign-message' => strtoupper($byUuid->uuid)]]))))->toBe(200)
             // No variables ([]), and a variable another sender set that is
@@ -351,4 +364,18 @@ describe('processing', function (): void {
         expect($processedAt)->not->toBeNull()
             ->and($event->fresh()?->processed_at?->equalTo($processedAt))->toBeTrue();
     })->with('databases');
+
+    it('carries a Mailgun bounce through to its effects: the email failed and the address blocked', function (): void {
+        $subscriber = Subscriber::factory()->create();
+        $message = CampaignMessage::factory()->for($subscriber)->create(['driver' => 'mailgun', 'status' => MessageStatus::Sent, 'sent_at' => now()->subHour()]);
+
+        expect(postWebhook(mailgunWebhook(eventFor($message, 'permanent-failure'))))->toBe(200);
+
+        $event = ProviderEvent::query()->sole();
+        app()->call([new ProcessFeedbackJob($event->id), 'handle']);
+
+        expect($event->driver)->toBe('mailgun')
+            ->and($message->fresh())->status->toBe(MessageStatus::Failed)->failure_reason->toBe('hard_bounce')->failure_code->toBe(550)
+            ->and($subscriber->fresh()?->blocked_reason)->toBe(BlockReason::HardBounce);
+    });
 });

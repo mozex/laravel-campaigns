@@ -5,18 +5,20 @@ declare(strict_types=1);
 namespace Mozex\Campaigns\Reports;
 
 use Mozex\Campaigns\CampaignsException;
-use Mozex\Campaigns\Contracts\CampaignProvider;
+use Mozex\Campaigns\Contracts\Drivers\ReadsMetrics;
 use Mozex\Campaigns\Enums\DeliveryFailure;
 use Mozex\Campaigns\Models\CampaignMessage;
 use Mozex\Campaigns\Sending\Allowance;
 use Mozex\Campaigns\Sending\DomainMetrics;
+use Mozex\Campaigns\Sending\Drivers\DriverManager;
 use Mozex\Campaigns\Sending\StopLoss;
 
 /**
  * The sending domain's standing, for an agent judging whether a campaign
  * may start or speed up: its last 24 hours from the app's own messages (the
  * stop-loss's measure, rates per send), its daily cap and what the last 24
- * hours used of it, and the provider's own counts for the last 30 days.
+ * hours used of it, and the service's own counts for the last 30 days, when
+ * the active driver reads them (ReadsMetrics).
  */
 class DomainSummary
 {
@@ -30,17 +32,25 @@ class DomainSummary
     {
         $notes = [];
         $metrics = null;
+        $drivers = app(DriverManager::class);
 
-        // Without Mailgun's reading key nothing is asked: the overview already
-        // says the key is missing.
-        if (config('campaigns.provider') !== 'mailgun' || filled(config('campaigns.mailgun.api_key'))) {
+        try {
+            $driver = $drivers->active();
+        } catch (CampaignsException) {
+            // A driver that can't be built is the overview's own note.
+            $driver = null;
+        }
+
+        if ($driver instanceof ReadsMetrics) {
             try {
-                // Counted back in UTC, the provider's days: in a zone with
+                // Counted back in UTC, the service's days: in a zone with
                 // daylight saving, 29 local days can span 30 or 31 UTC ones.
-                $metrics = app(CampaignProvider::class)->domainMetrics($domain, now()->utc()->subDays(static::DAYS - 1), now()->utc());
+                $metrics = $driver->domainMetrics($domain, now()->utc()->subDays(static::DAYS - 1), now()->utc());
             } catch (CampaignsException $exception) {
                 $notes[] = 'The provider\'s numbers for '.$domain.' couldn\'t be read: '.$exception->getMessage();
             }
+        } elseif ($driver !== null) {
+            $notes[] = CampaignsException::driverLacks($drivers->getDefaultDriver(), 'counts nothing by day, so domain.provider is null')->getMessage();
         }
 
         return [

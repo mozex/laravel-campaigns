@@ -51,7 +51,7 @@ Every 15 minutes, whether or not sending is switched on:
 - Mailgun's logs are replayed per sending domain from half an hour behind (its logs fill in out of order), storing every event no webhook brought except `accepted`, which the others prove;
 - a send that ended unclear is looked up by its id. If the logs show it, it's marked sent; if they hold nothing an hour after it went, it fails as `not_accepted` and is never resent. Past what the logs reach, it stays `unknown`.
 
-It needs the [reading key](../getting-started/mailgun.md#the-reading-key).
+It reads the logs through the driver that sent each email, so a switch of drivers keeps settling the old one's. A driver without logs is skipped: its unclear sends stay `unknown`, never resent. Mailgun's driver needs the [reading key](../getting-started/mailgun.md#the-reading-key).
 
 ## Reports
 

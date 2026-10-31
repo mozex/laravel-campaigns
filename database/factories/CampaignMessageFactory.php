@@ -34,6 +34,7 @@ class CampaignMessageFactory extends Factory
             'status' => MessageStatus::Pending,
             'claim_id' => null,
             'token_hash' => null,
+            'driver' => 'fake',
             'provider_message_id' => null,
             'claimed_at' => null,
             'sending_at' => null,

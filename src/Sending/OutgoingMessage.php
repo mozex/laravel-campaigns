@@ -8,9 +8,10 @@ use Symfony\Component\Mime\Address;
 use Symfony\Component\Mime\Email;
 
 /**
- * One fully rendered email, ready for the provider. The uuid travels with the
- * message so the provider's events lead back to it; recipients can see it,
- * so it is an opaque id and nothing more.
+ * One fully rendered email, ready for the driver. The uuid travels with the
+ * message so the service's events lead back to it; recipients can see it,
+ * so it is an opaque id and nothing more. The double opt-in email has no
+ * unsubscribe address: it is no marketing, and the person is on no list yet.
  */
 readonly class OutgoingMessage
 {
@@ -21,7 +22,7 @@ readonly class OutgoingMessage
 
     /**
      * The metadata key a test email carries its uuid under, so the
-     * provider's events for it lead to the test, never a campaign's numbers.
+     * service's events for it lead to the test, never a campaign's numbers.
      */
     public const TEST_KEY = 'campaign-test';
 
@@ -34,7 +35,7 @@ readonly class OutgoingMessage
         public string $subject,
         public string $html,
         public string $text,
-        public string $unsubscribeUrl,
+        public ?string $unsubscribeUrl,
         public string $tag,
         public bool $trackOpens,
         public bool $trackClicks,
@@ -42,13 +43,18 @@ readonly class OutgoingMessage
     ) {}
 
     /**
-     * The headers every send carries besides From, To, Reply-To and the
-     * subject: one-click unsubscribe (RFC 8058) with a single https address.
+     * The headers a send carries besides From, To, Reply-To and the
+     * subject: one-click unsubscribe (RFC 8058) with a single https address,
+     * when the email has one.
      *
      * @return array<string, string>
      */
     public function headers(): array
     {
+        if ($this->unsubscribeUrl === null) {
+            return [];
+        }
+
         return [
             'List-Unsubscribe' => "<{$this->unsubscribeUrl}>",
             'List-Unsubscribe-Post' => 'List-Unsubscribe=One-Click',
@@ -56,7 +62,7 @@ readonly class OutgoingMessage
     }
 
     /**
-     * What travels with the message for the provider to echo back in its
+     * What travels with the message for the service to echo back in its
      * events.
      *
      * @return array<string, string>
@@ -67,7 +73,7 @@ readonly class OutgoingMessage
     }
 
     /**
-     * The email as a mailbox gets it, the provider's own options left out:
+     * The email as a mailbox gets it, the service's own options left out:
      * what the pre-send spam check scores.
      */
     public function toEmail(): Email

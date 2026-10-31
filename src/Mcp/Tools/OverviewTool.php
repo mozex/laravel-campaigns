@@ -22,6 +22,7 @@ use Mozex\Campaigns\Enums\SubscriptionStatus;
 use Mozex\Campaigns\Reports\DomainSummary;
 use Mozex\Campaigns\Reports\Overview;
 use Mozex\Campaigns\Sending\DomainMetrics;
+use Mozex\Campaigns\Sending\Drivers\DriverManager;
 
 #[Name('get_overview')]
 #[Title('Get overview')]
@@ -51,13 +52,15 @@ class OverviewTool extends CampaignsTool
             'package_version' => $schema->string()->nullable(),
             'sending' => $schema->object([
                 'enabled' => $schema->boolean()->required()->description('Whether campaigns may start and test emails go out.'),
-                'provider' => $schema->string()->required(),
+                'driver' => $schema->object([
+                    'name' => $schema->string()->required(),
+                    'abilities' => $schema->array()->items($schema->string()->enum(array_keys(DriverManager::ABILITIES)))->required()->description('What the driver reads back from its service besides sending: webhooks, events (its logs), suppressions (its lists of refused addresses), metrics (its daily counts). sending.notes says what a missing one means.'),
+                ])->required()->description('The driver that sends (campaigns.driver).'),
                 'mailer' => $schema->string()->required(),
                 'from_address' => $schema->string()->nullable()->required(),
                 'from_name' => $schema->string()->nullable()->required(),
                 'reply_to' => $schema->string()->nullable()->required(),
                 'domain' => $schema->string()->nullable()->required()->description('The marketing domain campaigns are sent from.'),
-                'provider_logs_readable' => $schema->boolean()->required()->description('Whether the provider\'s logs and suppression lists can be read (campaigns.mailgun.api_key).'),
                 'test_addresses' => $schema->array()->items($schema->string())->required(),
                 'spam_score_check' => $schema->boolean()->required(),
                 'notes' => $schema->array()->items($schema->string())->required()->description('What is switched off or missing, in words.'),
@@ -84,7 +87,7 @@ class OverviewTool extends CampaignsTool
                     'to' => $schema->string()->nullable()->required()->description('The last UTC date counted: today, so far.'),
                     'totals' => $schema->object(static::providerCounts($schema))->required(),
                     'days' => $schema->array()->items($schema->object(['date' => $schema->string()->required(), ...static::providerCounts($schema)]))->required()->description('Oldest first.'),
-                ])->nullable()->required()->description('The provider\'s own counts for the domain over the last '.DomainSummary::DAYS.' days: sent is the domain\'s own outgoing mail; forwarded is inbound mail its routes passed on; the bounces, spam reports and unsubscribes are the provider\'s for all of the domain\'s mail. Null when they can\'t be read (sending.notes says why).'),
+                ])->nullable()->required()->description('The provider\'s own counts for the domain over the last '.DomainSummary::DAYS.' days: sent is the domain\'s own outgoing mail; forwarded is inbound mail its routes passed on; the bounces, spam reports and unsubscribes are the provider\'s for all of the domain\'s mail. A count the provider doesn\'t keep is null. Null when they can\'t be read or the driver reads no counts (sending.notes says why).'),
             ])->nullable()->description('The sending domain\'s standing; null when no domain is configured.'),
             'lists' => $schema->array()->items($schema->object([
                 'key' => $schema->string()->required(),
@@ -130,7 +133,7 @@ class OverviewTool extends CampaignsTool
         $counts = [];
 
         foreach (DomainMetrics::COUNTS as $count) {
-            $counts[$count] = $schema->integer()->required();
+            $counts[$count] = $schema->integer()->nullable()->required();
         }
 
         return $counts;

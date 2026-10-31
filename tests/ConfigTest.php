@@ -4,55 +4,52 @@ declare(strict_types=1);
 
 use Illuminate\Console\Scheduling\CacheEventMutex;
 use Illuminate\Console\Scheduling\Schedule;
-use Mozex\Campaigns\Campaigns;
 use Mozex\Campaigns\CampaignsException;
 use Mozex\Campaigns\CampaignsServiceProvider;
-use Mozex\Campaigns\Contracts\CampaignProvider;
-use Mozex\Campaigns\Sending\FakeProvider;
-use Mozex\Campaigns\Sending\MailgunProvider;
+use Mozex\Campaigns\Contracts\CampaignDriver;
+use Mozex\Campaigns\Sending\Drivers\DriverManager;
+use Mozex\Campaigns\Sending\Drivers\FakeDriver;
+use Mozex\Campaigns\Sending\Drivers\MailgunDriver;
 
 it('keeps sending off until the app turns it on', function (): void {
     expect(config('campaigns.enabled'))->toBeFalse()
         ->and(config('campaigns.queue.name'))->toBe('campaigns');
 });
 
-it('picks the provider the config names', function (mixed $value, ?string $class): void {
-    config()->set('campaigns.provider', $value);
-    app()->forgetInstance(CampaignProvider::class);
+it('sends through the driver the config names, Mailgun by default, resolved afresh so a switch reaches later callers', function (mixed $value, ?string $class): void {
+    config()->set('campaigns.driver', $value);
 
     if ($class === null) {
-        expect(fn () => app(CampaignProvider::class))->toThrow(CampaignsException::class, 'campaigns.provider');
+        expect(fn () => app(CampaignDriver::class))->toThrow(CampaignsException::class, 'campaigns.driver');
 
         return;
     }
 
-    expect(app(CampaignProvider::class))->toBeInstanceOf($class)
-        ->and(app(CampaignProvider::class))->toBe(app(CampaignProvider::class));
+    $driver = app(CampaignDriver::class);
+    config()->set('campaigns.driver', $class === FakeDriver::class ? 'mailgun' : 'fake');
+
+    expect($driver)->toBeInstanceOf($class)
+        ->and(app(CampaignDriver::class))->not->toBeInstanceOf($class)
+        ->and(app(DriverManager::class)->get(is_string($value) ? $value : ''))->toBe($driver);
 })->with([
-    'the default' => ['mailgun', MailgunProvider::class],
-    'the fake' => ['fake', FakeProvider::class],
-    'an app\'s own' => [FakeProvider::class, FakeProvider::class],
-    'something else' => [Campaigns::class, null],
+    'mailgun' => ['mailgun', MailgunDriver::class],
+    'the fake' => ['fake', FakeDriver::class],
+    'a class name, no longer read' => [FakeDriver::class, null],
+    'an unknown name' => ['postmark', null],
+    'the reserved name' => ['campaigns', null],
     'not text' => [['mailgun'], null],
 ]);
 
-it('bounds how long a campaigns Mailgun mailer may wait, unless the app said', function (): void {
-    config()->set('mail.mailers.campaigns', ['transport' => 'mailgun', 'scheme' => 'api', 'secret' => 'key-test', 'domain' => 'news.example.com']);
-    config()->set('mail.mailers.slow', ['transport' => 'mailgun', 'client' => ['timeout' => 90]]);
-    config()->set('mail.mailers.smtp', ['transport' => 'smtp']);
+it('defaults to the mailgun driver, keeping Mailgun\'s env names', function (): void {
+    $defaults = require __DIR__.'/../config/campaigns.php';
+    $config = file_get_contents(__DIR__.'/../config/campaigns.php');
 
-    $provider = new CampaignsServiceProvider(app());
-    $provider->packageRegistered();
-    $bounded = config('mail.mailers.campaigns.client');
-
-    config()->set('campaigns.mail.mailer', 'slow');
-    $provider->packageRegistered();
-    config()->set('campaigns.mail.mailer', 'smtp');
-    $provider->packageRegistered();
-
-    expect($bounded)->toBe(['timeout' => 10, 'max_duration' => 30])
-        ->and(config('mail.mailers.slow.client'))->toBe(['timeout' => 90])
-        ->and(config('mail.mailers.smtp'))->toBe(['transport' => 'smtp']);
+    expect($defaults['driver'])->toBe('mailgun')
+        ->and($defaults['drivers']['mailgun'])->toHaveKeys(['webhook_signing_key', 'api_key', 'endpoint', 'log_days'])
+        ->and($config)->toContain("env('CAMPAIGNS_DRIVER', 'mailgun')")
+        ->and($config)->toContain("env('MAILGUN_WEBHOOK_SIGNING_KEY')")
+        ->and($config)->toContain("env('CAMPAIGNS_MAILGUN_API_KEY')")
+        ->and($config)->toContain("env('CAMPAIGNS_MAILGUN_ENDPOINT')");
 });
 
 it('fills a published nested group in from the defaults', function (): void {

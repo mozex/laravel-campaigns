@@ -156,7 +156,7 @@ class PreSendChecks
         $url = config('campaigns.privacy_url');
 
         if (! is_string($url) || trim($url) === '') {
-            return $this->result('privacy_link', $content->locale, CheckStatus::Failed, 'campaigns.privacy_url is not set, so the email links no privacy policy: Mailgun\'s acceptable use policy asks for that link in every email.');
+            return $this->result('privacy_link', $content->locale, CheckStatus::Failed, 'campaigns.privacy_url is not set, so the email links no privacy policy: mailbox providers and sending services ask for that link in every email.');
         }
 
         $names = Placeholders::names($content->html);

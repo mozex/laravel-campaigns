@@ -15,11 +15,12 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
 use Mozex\Campaigns\CampaignsException;
+use Mozex\Campaigns\CampaignsServiceProvider;
 use Mozex\Campaigns\Enums\DeliveryFailure;
 use Mozex\Campaigns\Enums\FeedbackType;
 use Mozex\Campaigns\Enums\SendFailure;
 use Mozex\Campaigns\Enums\SuppressionType;
-use Mozex\Campaigns\Sending\MailgunProvider;
+use Mozex\Campaigns\Sending\Drivers\MailgunDriver;
 use Mozex\Campaigns\Sending\OutgoingMessage;
 use Mozex\Campaigns\Sending\SendFailed;
 use Mozex\Campaigns\Sending\Suppression;
@@ -129,8 +130,8 @@ it('posts the message as Mailgun\'s API fields, with every tracking flag set, an
         return new MockResponse('{"id":"<20261029.abc@news.example.com>","message":"Queued. Thank you."}', ['http_code' => 200]);
     });
 
-    $receipt = app(MailgunProvider::class)->send(outgoing(trackOpens: false));
-    $test = app(MailgunProvider::class)->send(outgoing(isTest: true));
+    $receipt = app(MailgunDriver::class)->send(outgoing(trackOpens: false));
+    $test = app(MailgunDriver::class)->send(outgoing(isTest: true));
 
     [$method, $url, $fields, $options] = $requests[0];
 
@@ -161,7 +162,7 @@ it('posts the message as Mailgun\'s API fields, with every tracking flag set, an
 it('tells what Mailgun\'s answer means for the message, without its addresses', function (int $status, string $body, SendFailure $failure): void {
     mailgunMailer(fn (): MockResponse => new MockResponse($body, ['http_code' => $status]));
 
-    $failed = sendFailure(fn () => app(MailgunProvider::class)->send(outgoing()));
+    $failed = sendFailure(fn () => app(MailgunDriver::class)->send(outgoing()));
 
     expect($failed->failure)->toBe($failure)
         ->and($failed->status)->toBe($status)
@@ -185,7 +186,7 @@ it('tells what Mailgun\'s answer means for the message, without its addresses', 
 it('treats a connection lost before Mailgun answered as unclear, never as not taken', function (): void {
     mailgunMailer(fn (): MockResponse => new MockResponse('', ['error' => 'Idle timeout reached for "https://api.eu.mailgun.net".']));
 
-    $failed = sendFailure(fn () => app(MailgunProvider::class)->send(outgoing()));
+    $failed = sendFailure(fn () => app(MailgunDriver::class)->send(outgoing()));
 
     expect($failed->failure)->toBe(SendFailure::Unclear)
         ->and($failed->status)->toBeNull()
@@ -198,7 +199,7 @@ it('treats a connection lost before Mailgun answered as unclear, never as not ta
 it('refuses for the domain, before anything goes out, a mailer that would put Mailgun\'s options in the email', function (Closure $setUp, string $says): void {
     $setUp();
 
-    $failed = sendFailure(fn () => app(MailgunProvider::class)->send(outgoing()));
+    $failed = sendFailure(fn () => app(MailgunDriver::class)->send(outgoing()));
 
     expect($failed->failure)->toBe(SendFailure::DomainRefused)
         ->and($failed->getMessage())->toContain($says);
@@ -225,8 +226,8 @@ it('sends through the log and array mailers locally, as the campaign says whatev
     config()->set('mail.return_path', 'bounces@example.com');
     config()->set('mail.mailers.campaigns', ['transport' => 'array']);
 
-    $receipt = app(MailgunProvider::class)->send(outgoing());
-    app(MailgunProvider::class)->send(new OutgoingMessage(
+    $receipt = app(MailgunDriver::class)->send(outgoing());
+    app(MailgunDriver::class)->send(new OutgoingMessage(
         uuid: 'x', to: 'reader@example.org', fromEmail: 'news@news.example.com', fromName: null, replyTo: null, subject: '',
         html: '<p>Hi</p>', text: 'Hi', unsubscribeUrl: 'https://app.example.com/campaigns/u/abc', tag: 't', trackOpens: true, trackClicks: true,
     ));
@@ -236,7 +237,7 @@ it('sends through the log and array mailers locally, as the campaign says whatev
 
     config()->set('mail.mailers.local', ['transport' => 'log']);
     config()->set('campaigns.mail.mailer', 'local');
-    $logged = app(MailgunProvider::class)->send(outgoing());
+    $logged = app(MailgunDriver::class)->send(outgoing());
 
     expect($receipt->providerMessageId)->not->toBe('')
         ->and($receipt->providerMessageId)->not->toContain('<')
@@ -250,16 +251,43 @@ it('sends through the log and array mailers locally, as the campaign says whatev
         ->and($sent[1]->getSubject())->toBe('');
 });
 
+it('has its mailer built with time limits, set as the package registers, unless the app set its own', function (): void {
+    $seen = [];
+    Mail::extend('mailgun', function (array $config) use (&$seen): MailgunApiTransport {
+        $seen[] = $config['client'] ?? null;
+
+        return new MailgunApiTransport('key-test', 'news.example.com', 'eu', new MockHttpClient(fn (): MockResponse => new MockResponse('{"id":"<1@news.example.com>","message":"Queued. Thank you."}', ['http_code' => 200])));
+    });
+    config()->set('mail.mailers.campaigns', ['transport' => 'mailgun', 'scheme' => 'api', 'secret' => 'key-test', 'domain' => 'news.example.com']);
+    config()->set('mail.mailers.slow', ['transport' => 'mailgun', 'scheme' => 'api', 'secret' => 'key-test', 'domain' => 'news.example.com', 'client' => ['timeout' => 90]]);
+    config()->set('mail.mailers.smtp', ['transport' => 'smtp']);
+    $provider = new CampaignsServiceProvider(app());
+
+    $provider->packageRegistered();
+    app(MailgunDriver::class)->send(outgoing());
+
+    config()->set('campaigns.mail.mailer', 'slow');
+    $provider->packageRegistered();
+    app(MailgunDriver::class)->send(outgoing());
+
+    config()->set('campaigns.mail.mailer', 'smtp');
+    $provider->packageRegistered();
+
+    expect($seen)->toBe([MailgunDriver::CLIENT_LIMITS, ['timeout' => 90]])
+        ->and(MailgunDriver::CLIENT_LIMITS)->toBe(['timeout' => 10, 'max_duration' => 30])
+        ->and(config('mail.mailers.smtp'))->toBe(['transport' => 'smtp']);
+});
+
 it('reports a send it can\'t confirm as unclear: a listener that stopped it, or one that failed after it', function (): void {
     Exceptions::fake();
     config()->set('mail.mailers.campaigns', ['transport' => 'array']);
 
     Event::listen(MessageSending::class, fn (): bool => false);
-    $stopped = sendFailure(fn () => app(MailgunProvider::class)->send(outgoing()));
+    $stopped = sendFailure(fn () => app(MailgunDriver::class)->send(outgoing()));
 
     Event::forget(MessageSending::class);
     Event::listen(MessageSent::class, fn () => throw new RuntimeException('A listener of the app failed.'));
-    $afterwards = sendFailure(fn () => app(MailgunProvider::class)->send(outgoing()));
+    $afterwards = sendFailure(fn () => app(MailgunDriver::class)->send(outgoing()));
 
     expect($stopped->failure)->toBe(SendFailure::Unclear)
         ->and($afterwards->failure)->toBe(SendFailure::Unclear)
@@ -270,10 +298,10 @@ it('reports a send it can\'t confirm as unclear: a listener that stopped it, or 
 });
 
 it('tells what a failure means: still being tried, a hard or soft bounce, a suppression, or nothing against the address', function (array $changes, ?DeliveryFailure $failure): void {
-    config()->set('campaigns.mailgun.webhook_signing_key', 'webhook-signing-key');
+    config()->set('campaigns.drivers.mailgun.webhook_signing_key', 'webhook-signing-key');
     $request = Request::create('/', 'POST', server: ['CONTENT_TYPE' => 'application/json'], content: (string) json_encode(['event-data' => mailgunEvent('permanent-failure', $changes)]));
 
-    expect(app(MailgunProvider::class)->parseWebhook($request)[0]->failure)->toBe($failure);
+    expect(app(MailgunDriver::class)->parseWebhook($request)[0]->failure)->toBe($failure);
 })->with([
     // The documented sample: a permanent bounce, its type hard.
     'a hard bounce' => [[], DeliveryFailure::HardBounce],
@@ -299,7 +327,7 @@ it('tells what a failure means: still being tried, a hard or soft bounce, a supp
 describe('reading Mailgun\'s logs and suppressions', function (): void {
     beforeEach(function (): void {
         Http::preventStrayRequests();
-        config()->set('campaigns.mailgun.api_key', 'key-reader');
+        config()->set('campaigns.drivers.mailgun.api_key', 'key-reader');
         config()->set('mail.mailers.campaigns', ['transport' => 'mailgun', 'scheme' => 'api', 'secret' => 'key-sending', 'domain' => 'news.example.com', 'endpoint' => 'api.eu.mailgun.net']);
     });
 
@@ -321,7 +349,7 @@ describe('reading Mailgun\'s logs and suppressions', function (): void {
             });
         });
 
-        $events = app(MailgunProvider::class)->eventsForMessage($uuid, now()->subHour());
+        $events = app(MailgunDriver::class)->eventsForMessage($uuid, now()->subHour());
 
         expect($events)->toHaveCount(2)
             ->and($events[0]->type)->toBe(FeedbackType::Accepted)
@@ -355,7 +383,7 @@ describe('reading Mailgun\'s logs and suppressions', function (): void {
             return Http::response(mailgunLogs([mailgunLogItem('delivered', ['id' => "other-{$page}", 'user-variables' => ['campaign-message' => (string) Str::uuid()]])], "page-{$page}"));
         });
 
-        expect(app(MailgunProvider::class)->eventsForMessage((string) Str::uuid(), now()->subHour()))->toBeNull()
+        expect(app(MailgunDriver::class)->eventsForMessage((string) Str::uuid(), now()->subHour()))->toBeNull()
             ->and($page)->toBe(5);
     });
 
@@ -369,7 +397,7 @@ describe('reading Mailgun\'s logs and suppressions', function (): void {
             return Http::response(count($posted) === 1 ? mailgunLogs([mailgunLogItem('opened')], 'next') : mailgunLogs([], 'next'));
         });
 
-        $provider = app(MailgunProvider::class);
+        $provider = app(MailgunDriver::class);
         $events = $provider->eventsBetween('news.example.com', now()->subDays(30), now()->subMinutes(30));
 
         // Lazy: nothing is asked until the events are read.
@@ -383,7 +411,7 @@ describe('reading Mailgun\'s logs and suppressions', function (): void {
             ->and($posted[0]['events'])->toBe(['delivered', 'failed', 'opened', 'clicked', 'unsubscribed', 'complained'])
             ->and($provider->logDays())->toBe(5);
 
-        config()->set('campaigns.mailgun.log_days', 30);
+        config()->set('campaigns.drivers.mailgun.log_days', 30);
 
         expect(iterator_to_array($provider->eventsBetween('news.example.com', now(), now()->subMinute())))->toBe([])
             ->and($posted)->toHaveCount(2)
@@ -391,14 +419,14 @@ describe('reading Mailgun\'s logs and suppressions', function (): void {
     });
 
     it('reads a log item as the webhook\'s event: its ISO time, its variables as a string, its delivery time kept as a number', function (): void {
-        $docs = json_decode((string) file_get_contents(__DIR__.'/../Fixtures/Mailgun/logs.json'), true);
+        $docs = json_decode((string) file_get_contents(__DIR__.'/../../Fixtures/Mailgun/logs.json'), true);
 
         Http::fake(['*' => Http::response(mailgunLogs([
             $docs['items'][0],
             mailgunLogItem('clicked', ['user-variables' => ['campaign-message' => 'abc'], 'delivered-at' => 1770146431.5]),
         ]))]);
 
-        [$failure, $clicked] = iterator_to_array(app(MailgunProvider::class)->eventsBetween('news.example.com', now()->subHour(), now()), false);
+        [$failure, $clicked] = iterator_to_array(app(MailgunDriver::class)->eventsBetween('news.example.com', now()->subHour(), now()), false);
 
         expect($failure->providerEventId)->toBe('JDhSWf9mT5OFxCkZfpDU5d')
             ->and($failure->type)->toBe(FeedbackType::Failed)
@@ -411,7 +439,7 @@ describe('reading Mailgun\'s logs and suppressions', function (): void {
     });
 
     it('reads every suppression list to its end, scrubbing addresses from the reasons, and never follows a page off Mailgun\'s API', function (): void {
-        $docs = json_decode((string) file_get_contents(__DIR__.'/../Fixtures/Mailgun/bounces.json'), true);
+        $docs = json_decode((string) file_get_contents(__DIR__.'/../../Fixtures/Mailgun/bounces.json'), true);
         $base = 'https://api.eu.mailgun.net/v3/news.example.com';
         $asked = [];
 
@@ -437,7 +465,7 @@ describe('reading Mailgun\'s logs and suppressions', function (): void {
         $exception = null;
 
         try {
-            foreach (app(MailgunProvider::class)->suppressions('news.example.com') as $suppression) {
+            foreach (app(MailgunDriver::class)->suppressions('news.example.com') as $suppression) {
                 $read[] = $suppression;
             }
         } catch (CampaignsException $exception) {
@@ -464,11 +492,11 @@ describe('reading Mailgun\'s logs and suppressions', function (): void {
             'api.eu.mailgun.net/v3/domains/elsewhere.example.com' => Http::response(['message' => 'Domain not found'], 404),
         ]);
 
-        $held = app(MailgunProvider::class)->suppressionsFor('news.example.com', 'a+b@example.org');
+        $held = app(MailgunDriver::class)->suppressionsFor('news.example.com', 'a+b@example.org');
 
         expect(array_map(fn (Suppression $s): SuppressionType => $s->type, $held))->toBe([SuppressionType::Bounce, SuppressionType::Unsubscribe])
             ->and($held[0]->email)->toBe('a+b@example.org')
-            ->and(fn (): array => app(MailgunProvider::class)->suppressionsFor('elsewhere.example.com', 'a+b@example.org'))
+            ->and(fn (): array => app(MailgunDriver::class)->suppressionsFor('elsewhere.example.com', 'a+b@example.org'))
             ->toThrow(CampaignsException::class, 'Mailgun has no domain elsewhere.example.com');
     });
 
@@ -477,10 +505,10 @@ describe('reading Mailgun\'s logs and suppressions', function (): void {
         config()->set('mail.mailers.campaigns.domain', 'mg.example.com');
         Http::fake(fn (ClientRequest $request): PromiseInterface => Http::response(str_contains($request->url(), '/domains/') ? ['domain' => []] : mailgunLogs([]), str_contains($request->url(), '/bounces/') || str_contains($request->url(), '/complaints/') || str_contains($request->url(), '/unsubscribes/') ? 404 : 200));
 
-        app(MailgunProvider::class)->suppressionsFor('example.com', 'a@example.org');
-        iterator_to_array(app(MailgunProvider::class)->suppressions('example.com'));
-        iterator_to_array(app(MailgunProvider::class)->eventsBetween('example.com', now()->subHour(), now()));
-        iterator_to_array(app(MailgunProvider::class)->eventsBetween('other.example.org', now()->subHour(), now()));
+        app(MailgunDriver::class)->suppressionsFor('example.com', 'a@example.org');
+        iterator_to_array(app(MailgunDriver::class)->suppressions('example.com'));
+        iterator_to_array(app(MailgunDriver::class)->eventsBetween('example.com', now()->subHour(), now()));
+        iterator_to_array(app(MailgunDriver::class)->eventsBetween('other.example.org', now()->subHour(), now()));
 
         $domain = fn (ClientRequest $request): mixed => data_get($request->data(), 'filter.AND.0.values.0.value');
 
@@ -498,11 +526,11 @@ describe('reading Mailgun\'s logs and suppressions', function (): void {
 
         Http::fake(fn (ClientRequest $request): PromiseInterface => Http::response([], str_contains($request->url(), '/domains/') ? 200 : 404));
 
-        app(MailgunProvider::class)->suppressionsFor('news.example.com', 'a@example.org');
+        app(MailgunDriver::class)->suppressionsFor('news.example.com', 'a@example.org');
 
         Http::assertSent(fn (ClientRequest $request): bool => str_starts_with($request->url(), "https://{$host}/v3/"));
     })->with([
-        'the config' => [['campaigns.mailgun.endpoint' => 'https://api.mailgun.net/'], 'api.mailgun.net'],
+        'the config' => [['campaigns.drivers.mailgun.endpoint' => 'https://api.mailgun.net/'], 'api.mailgun.net'],
         'the mailer' => [[], 'api.eu.mailgun.net'],
         'the service' => [['mail.mailers.campaigns' => ['transport' => 'mailgun', 'scheme' => 'api'], 'services.mailgun.endpoint' => 'api.eu.mailgun.net'], 'api.eu.mailgun.net'],
         'Symfony\'s default' => [['mail.mailers.campaigns.endpoint' => 'default'], 'api.mailgun.net'],
@@ -512,7 +540,7 @@ describe('reading Mailgun\'s logs and suppressions', function (): void {
     it('refuses to read without a reading key, and fails without the address it asked for or Mailgun\'s answer', function (Closure $answer, string $says): void {
         Http::fake(['*' => $answer]);
 
-        $read = fn (): array => app(MailgunProvider::class)->suppressionsFor('news.example.com', 'person@example.org');
+        $read = fn (): array => app(MailgunDriver::class)->suppressionsFor('news.example.com', 'person@example.org');
         $exception = null;
 
         try {
@@ -524,7 +552,7 @@ describe('reading Mailgun\'s logs and suppressions', function (): void {
             ->not->toContain('person')
             ->and($exception?->getPrevious())->toBeNull();
 
-        config()->set('campaigns.mailgun.api_key', '');
+        config()->set('campaigns.drivers.mailgun.api_key', '');
         Http::fake(fn (): never => throw new RuntimeException('A request went out.'));
 
         expect($read)->toThrow(CampaignsException::class, 'CAMPAIGNS_MAILGUN_API_KEY');
@@ -538,14 +566,14 @@ describe('reading Mailgun\'s logs and suppressions', function (): void {
 describe('reading Mailgun\'s metrics', function (): void {
     beforeEach(function (): void {
         Http::preventStrayRequests();
-        config()->set('campaigns.mailgun.api_key', 'key-reader');
+        config()->set('campaigns.drivers.mailgun.api_key', 'key-reader');
         config()->set('campaigns.mail.from', ['address' => 'news@example.com', 'name' => 'Example News']);
         config()->set('mail.mailers.campaigns', ['transport' => 'mailgun', 'scheme' => 'api', 'secret' => 'key-sending', 'domain' => 'news.example.com', 'endpoint' => 'api.eu.mailgun.net']);
     });
 
     it('reads a domain\'s days with explicit times inside the period, keeping only its days', function (): void {
         $this->travelTo(Carbon::parse('2026-02-03 14:30:00', 'UTC'));
-        $answer = json_decode((string) file_get_contents(__DIR__.'/../Fixtures/Mailgun/metrics.json'), true);
+        $answer = json_decode((string) file_get_contents(__DIR__.'/../../Fixtures/Mailgun/metrics.json'), true);
         $posted = [];
 
         Http::fake(function (ClientRequest $request) use (&$posted, &$answer): PromiseInterface {
@@ -556,7 +584,7 @@ describe('reading Mailgun\'s metrics', function (): void {
 
         // Mailgun rounds the start down to its day and answers that day too:
         // the day before the period is dropped.
-        $metrics = app(MailgunProvider::class)->domainMetrics('example.com', now()->subDay(), now());
+        $metrics = app(MailgunDriver::class)->domainMetrics('example.com', now()->subDay(), now());
 
         expect($metrics->days)->toBe([
             '2026-02-02' => ['sent' => 340, 'forwarded' => 0, 'hard_bounces' => 3, 'complaints' => 1, 'unsubscribes' => 2],
@@ -584,7 +612,7 @@ describe('reading Mailgun\'s metrics', function (): void {
         unset($answer['items'][1]);
         $answer['items'][2]['metrics'] = ['accepted_outgoing_count' => '75', 'hard_bounces_count' => 'n/a', 'delivered_rate' => '0.9070'];
 
-        expect(app(MailgunProvider::class)->domainMetrics('other.example.org', now()->subDays(2), now())->days)->toBe([
+        expect(app(MailgunDriver::class)->domainMetrics('other.example.org', now()->subDays(2), now())->days)->toBe([
             '2026-02-01' => ['sent' => 120, 'forwarded' => 4, 'hard_bounces' => 2, 'complaints' => 0, 'unsubscribes' => 1],
             '2026-02-02' => ['sent' => 0, 'forwarded' => 0, 'hard_bounces' => 0, 'complaints' => 0, 'unsubscribes' => 0],
             '2026-02-03' => ['sent' => 75, 'forwarded' => 0, 'hard_bounces' => 0, 'complaints' => 0, 'unsubscribes' => 0],
@@ -595,7 +623,7 @@ describe('reading Mailgun\'s metrics', function (): void {
     it('fails without Mailgun\'s answer when the metrics can\'t be read', function (): void {
         Http::fake(['*' => Http::response(['message' => 'Invalid private key'], 401)]);
 
-        expect(fn (): mixed => app(MailgunProvider::class)->domainMetrics('example.com', now()->subDay(), now()))
-            ->toThrow(CampaignsException::class, 'Mailgun answered 401 when its logs, suppressions or metrics were read. campaigns.mailgun.api_key must be an account API key');
+        expect(fn (): mixed => app(MailgunDriver::class)->domainMetrics('example.com', now()->subDay(), now()))
+            ->toThrow(CampaignsException::class, 'Mailgun answered 401 when its logs, suppressions or metrics were read. campaigns.drivers.mailgun.api_key must be an account API key');
     });
 });

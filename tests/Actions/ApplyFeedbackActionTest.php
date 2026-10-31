@@ -9,11 +9,14 @@ use Illuminate\Support\Facades\Exceptions;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
 use Mozex\Campaigns\Actions\ApplyFeedbackAction;
+use Mozex\Campaigns\Actions\RecordFeedbackAction;
 use Mozex\Campaigns\Actions\UnsubscribeAction;
 use Mozex\Campaigns\Enums\BlockReason;
 use Mozex\Campaigns\Enums\CampaignStatus;
 use Mozex\Campaigns\Enums\ConsentAction;
 use Mozex\Campaigns\Enums\DeliveryFailure;
+use Mozex\Campaigns\Enums\FeedbackResult;
+use Mozex\Campaigns\Enums\FeedbackType;
 use Mozex\Campaigns\Enums\MessageStatus;
 use Mozex\Campaigns\Events\CampaignPausedEvent;
 use Mozex\Campaigns\Jobs\ProcessFeedbackJob;
@@ -23,11 +26,11 @@ use Mozex\Campaigns\Models\ConsentRecord;
 use Mozex\Campaigns\Models\ProviderEvent;
 use Mozex\Campaigns\Models\Subscriber;
 use Mozex\Campaigns\Models\TestSend;
+use Mozex\Campaigns\Sending\Feedback;
 use Mozex\Campaigns\Support\Token;
 
 beforeEach(function (): void {
     $this->travelTo(Carbon::parse('2026-03-02 12:00:00'));
-    config()->set('campaigns.mailgun.webhook_signing_key', 'webhook-signing-key');
     Queue::fake([ProcessFeedbackJob::class]);
 });
 
@@ -46,20 +49,49 @@ function messageTo(Subscriber $subscriber, array $attributes = []): CampaignMess
 }
 
 /**
- * Posts Mailgun's documented event about an email as a signed webhook, with
- * the given fields replaced and an id of its own, and returns it as stored,
- * its effects not applied yet.
+ * An event about an email in the package's terms, as any driver reports it:
+ * each kind carries the time, code and message id of Mailgun's documented
+ * sample of it (the timing rules count from them), and nothing of Mailgun's
+ * own fields. The Mailgun driver's reading of its webhooks is tested apart.
  *
- * @param  array<string, mixed>  $changes
+ * @param  array<string, mixed>  $fields  Feedback's arguments to replace
  */
-function reported(CampaignMessage|TestSend $email, string $fixture, array $changes = []): ProviderEvent
+function feedbackAbout(CampaignMessage|TestSend $email, string $kind, array $fields = []): Feedback
 {
-    $key = $email instanceof TestSend ? 'campaign-test' : 'campaign-message';
-    $event = mailgunEvent($fixture, ['id' => Str::random(22), 'user-variables' => [$key => $email->uuid], ...$changes]);
+    $at = fn (float $timestamp): CarbonInterface => Carbon::createFromTimestampUTC($timestamp);
 
-    test()->postJson(route('campaigns.webhooks.mailgun'), mailgunWebhook($event))->assertOk();
+    $defaults = match ($kind) {
+        'accepted' => ['type' => FeedbackType::Accepted, 'occurredAt' => $at(1770146798.372891), 'providerMessageId' => '20260203192638.000be97f99f8cea1@sample.mailgun.com'],
+        'delivered' => ['type' => FeedbackType::Delivered, 'occurredAt' => $at(1770146431.6585283), 'code' => 250],
+        'hard bounce' => ['type' => FeedbackType::Failed, 'occurredAt' => $at(1770918175.5923693), 'severity' => 'permanent', 'reason' => 'bounce', 'failure' => DeliveryFailure::HardBounce, 'code' => 550],
+        'deferred' => ['type' => FeedbackType::Failed, 'occurredAt' => $at(1770919267.4288595), 'severity' => 'temporary', 'reason' => 'generic', 'failure' => DeliveryFailure::Deferred, 'code' => 421],
+        'complained' => ['type' => FeedbackType::Complained, 'occurredAt' => $at(1770920772.2684145)],
+        'unsubscribed' => ['type' => FeedbackType::Unsubscribed, 'occurredAt' => $at(1770327090.4656289)],
+        'opened' => ['type' => FeedbackType::Opened, 'occurredAt' => $at(1770327074.5549328), 'payload' => ['delivered-at' => 1770327049.0]],
+        'clicked' => ['type' => FeedbackType::Clicked, 'occurredAt' => $at(1770327118.6648676), 'url' => 'https://sample.mailgun.com', 'payload' => ['delivered-at' => 1770327049.0]],
+    };
 
-    return ProviderEvent::query()->where('provider_event_id', $event['id'])->sole();
+    return new Feedback(...[
+        'providerEventId' => Str::random(22),
+        ($email instanceof TestSend ? 'testSendUuid' : 'messageUuid') => $email->uuid,
+        ...$defaults,
+        ...$fields,
+    ]);
+}
+
+/**
+ * Records an event about an email as a driver's webhook would, and returns
+ * it as stored, its effects not applied yet.
+ *
+ * @param  array<string, mixed>  $fields
+ */
+function reported(CampaignMessage|TestSend $email, string $kind, array $fields = []): ProviderEvent
+{
+    $feedback = feedbackAbout($email, $kind, $fields);
+
+    expect(app(RecordFeedbackAction::class)->execute($feedback, 'fake'))->toBe(FeedbackResult::Stored);
+
+    return ProviderEvent::query()->where('provider_event_id', $feedback->providerEventId)->sole();
 }
 
 /**
@@ -73,22 +105,19 @@ function process(ProviderEvent $event): void
 /**
  * Reports an event and applies it at once.
  *
- * @param  array<string, mixed>  $changes
+ * @param  array<string, mixed>  $fields
  */
-function mailgunSays(CampaignMessage|TestSend $email, string $fixture, array $changes = []): ProviderEvent
+function says(CampaignMessage|TestSend $email, string $kind, array $fields = []): ProviderEvent
 {
-    $event = reported($email, $fixture, $changes);
+    $event = reported($email, $kind, $fields);
     process($event);
 
     return $event;
 }
 
-/**
- * A Mailgun timestamp this many seconds before the test's now.
- */
-function secondsAgo(int $seconds): int
+function secondsAgo(int $seconds): CarbonInterface
 {
-    return now()->subSeconds($seconds)->getTimestamp();
+    return now()->subSeconds($seconds);
 }
 
 function iso(?CarbonInterface $date): ?string
@@ -102,11 +131,11 @@ describe('deliveries and failures', function (): void {
         $subscriber = Subscriber::factory()->create(['soft_bounces' => 2]);
         $message = messageTo($subscriber);
 
-        $delivered = mailgunSays($message, 'delivered', ['timestamp' => secondsAgo(1800)]);
+        $delivered = says($message, 'delivered', ['occurredAt' => secondsAgo(1800)]);
         $afterDelivery = [$message->fresh()?->status, iso($message->fresh()?->delivered_at), $subscriber->fresh()?->soft_bounces];
-        $bounce = mailgunSays($message, 'permanent-failure', ['timestamp' => secondsAgo(600)]);
+        $bounce = says($message, 'hard bounce', ['occurredAt' => secondsAgo(600)]);
         // A delivery report read after the bounce leaves the message failed.
-        mailgunSays($message, 'delivered', ['timestamp' => secondsAgo(1200)]);
+        says($message, 'delivered', ['occurredAt' => secondsAgo(1200)]);
 
         $block = ConsentRecord::query()->where('action', ConsentAction::Block)->sole();
 
@@ -130,7 +159,7 @@ describe('deliveries and failures', function (): void {
     it('counts a soft bounce once per message, never a sender block or code 611, and blocks the third in a row', function (string $driver): void {
         useDatabase($driver);
         $subscriber = Subscriber::factory()->create();
-        $gaveUp = ['severity' => 'permanent', 'reason' => 'old'];
+        $gaveUp = ['severity' => 'permanent', 'reason' => 'old', 'failure' => DeliveryFailure::SoftBounce];
         $counts = [];
         $count = function () use ($subscriber, &$counts): void {
             $counts[] = $subscriber->fresh()?->soft_bounces;
@@ -138,41 +167,41 @@ describe('deliveries and failures', function (): void {
 
         // Still being tried, then given up on, reported twice.
         $first = messageTo($subscriber);
-        mailgunSays($first, 'temporary-failure');
+        says($first, 'deferred');
         $stillTried = $first->fresh()?->status;
-        mailgunSays($first, 'temporary-failure', $gaveUp);
-        mailgunSays($first, 'temporary-failure', $gaveUp);
+        says($first, 'deferred', $gaveUp);
+        says($first, 'deferred', $gaveUp);
         $count();
 
-        // The receiving provider refused the sender, and Mailgun's own limit
-        // (its bounce type hard, which the code outranks); then one tried
-        // while the sender was refused, and given up on.
+        // The receiving provider refused the sender, and the service's own
+        // connection limit; then one tried while the sender was refused, and
+        // given up on.
         $senderBlocked = messageTo($subscriber);
-        mailgunSays($senderBlocked, 'temporary-failure', ['severity' => 'permanent', 'reason' => 'espblock']);
+        says($senderBlocked, 'deferred', ['severity' => 'permanent', 'reason' => 'espblock', 'failure' => DeliveryFailure::SenderBlocked]);
         $ownLimit = messageTo($subscriber);
-        mailgunSays($ownLimit, 'permanent-failure', ['reason' => 'generic', 'delivery-status' => ['code' => 611]]);
+        says($ownLimit, 'hard bounce', ['reason' => 'generic', 'failure' => DeliveryFailure::SenderBlocked, 'code' => 611]);
         $refusedThenGaveUp = messageTo($subscriber);
         // An hour before the sample's own time, which the give-up keeps.
-        mailgunSays($refusedThenGaveUp, 'temporary-failure', ['reason' => 'espblock', 'timestamp' => mailgunEvent('temporary-failure')['timestamp'] - 3600]);
-        mailgunSays($refusedThenGaveUp, 'temporary-failure', $gaveUp);
+        says($refusedThenGaveUp, 'deferred', ['reason' => 'espblock', 'failure' => DeliveryFailure::SenderDeferred, 'occurredAt' => feedbackAbout($refusedThenGaveUp, 'deferred')->occurredAt->copy()->subHour()]);
+        says($refusedThenGaveUp, 'deferred', $gaveUp);
         $count();
 
-        // Mailgun couldn't reach the servers: still trying, then gave up.
+        // The servers couldn't be reached: still being tried, then given up on.
         $unreachable = messageTo($subscriber);
-        mailgunSays($unreachable, 'temporary-failure', ['severity' => 'internal', 'delivery-status' => ['code' => 612]]);
+        says($unreachable, 'deferred', ['severity' => 'internal', 'code' => 612]);
         $count();
-        mailgunSays($unreachable, 'temporary-failure', ['severity' => 'permanent', 'delivery-status' => ['code' => 612]]);
+        says($unreachable, 'deferred', ['severity' => 'permanent', 'failure' => DeliveryFailure::SoftBounce, 'code' => 612]);
         $count();
 
         // A delivery between starts the count over.
-        mailgunSays(messageTo($subscriber), 'delivered');
+        says(messageTo($subscriber), 'delivered');
         $count();
 
-        mailgunSays(messageTo($subscriber), 'temporary-failure', $gaveUp);
-        mailgunSays(messageTo($subscriber), 'temporary-failure', $gaveUp);
+        says(messageTo($subscriber), 'deferred', $gaveUp);
+        says(messageTo($subscriber), 'deferred', $gaveUp);
         $notYet = $subscriber->fresh()?->blocked_at;
         $third = messageTo($subscriber);
-        $last = mailgunSays($third, 'temporary-failure', ['severity' => 'permanent', 'delivery-status' => ['bounce-type' => 'soft']]);
+        $last = says($third, 'deferred', ['severity' => 'permanent', 'failure' => DeliveryFailure::SoftBounce]);
 
         $block = ConsentRecord::query()->where('action', ConsentAction::Block)->sole();
 
@@ -193,14 +222,14 @@ describe('deliveries and failures', function (): void {
 
     it('blocks an address on the provider\'s bounce and complaint lists, and opts out one on its unsubscribe list', function (string $driver): void {
         useDatabase($driver);
-        $suppressed = fn (string $reason): array => ['reason' => $reason, 'delivery-status' => ['code' => 605, 'bounce-type' => null]];
+        $suppressed = fn (DeliveryFailure $failure): array => ['reason' => 'suppressed', 'failure' => $failure, 'code' => 605];
         [$bounced, $complained, $unsubscribed] = Subscriber::factory()->count(3)->create()
             ->map(fn (Subscriber $subscriber): CampaignMessage => messageTo($subscriber))
             ->all();
 
-        mailgunSays($bounced, 'permanent-failure', $suppressed('suppress-bounce'));
-        mailgunSays($complained, 'permanent-failure', $suppressed('suppress-complaint'));
-        mailgunSays($unsubscribed, 'permanent-failure', $suppressed('suppress-unsubscribe'));
+        says($bounced, 'hard bounce', $suppressed(DeliveryFailure::SuppressedBounce));
+        says($complained, 'hard bounce', $suppressed(DeliveryFailure::SuppressedComplaint));
+        says($unsubscribed, 'hard bounce', $suppressed(DeliveryFailure::SuppressedUnsubscribe));
 
         expect($bounced->fresh())->status->toBe(MessageStatus::Failed)->failure_reason->toBe('suppressed_bounce')
             ->and($bounced->subscriber?->fresh())->blocked_reason->toBe(BlockReason::HardBounce)->opted_out_at->toBeNull()
@@ -218,8 +247,8 @@ describe('spam reports and unsubscribes', function (): void {
         $subscriber = Subscriber::factory()->create();
         $message = messageTo($subscriber);
 
-        $complaint = mailgunSays($message, 'complained', ['timestamp' => secondsAgo(300)]);
-        mailgunSays($message, 'complained', ['timestamp' => secondsAgo(100)]);
+        $complaint = says($message, 'complained', ['occurredAt' => secondsAgo(300)]);
+        says($message, 'complained', ['occurredAt' => secondsAgo(100)]);
 
         expect(iso($message->fresh()?->complained_at))->toBe(iso(now()->subSeconds(300)))
             ->and($message->fresh()?->status)->toBe(MessageStatus::Sent)
@@ -239,9 +268,9 @@ describe('spam reports and unsubscribes', function (): void {
         $subscriber = Subscriber::factory()->create();
         $message = messageTo($subscriber);
 
-        mailgunSays($message, 'unsubscribed');
+        says($message, 'unsubscribed');
         $unsubscribedAt = $message->fresh()?->unsubscribed_at;
-        mailgunSays($message, 'unsubscribed');
+        says($message, 'unsubscribed');
 
         $record = ConsentRecord::query()->sole();
 
@@ -263,10 +292,10 @@ describe('spam reports and unsubscribes', function (): void {
         $kept = Subscriber::factory()->optedOut()->create(['email' => 'mover-old@example.org']);
         $bounced = messageTo($mover, ['email' => 'mover-old@example.org']);
 
-        mailgunSays($complainedAbout, 'complained');
+        says($complainedAbout, 'complained');
         $personAfterComplaint = $person->fresh();
-        mailgunSays($unsubscribedFrom, 'unsubscribed');
-        mailgunSays($bounced, 'permanent-failure');
+        says($unsubscribedFrom, 'unsubscribed');
+        says($bounced, 'hard bounce');
 
         $oldAddress = Subscriber::findByEmail('reader-old@example.org');
 
@@ -290,8 +319,8 @@ describe('spam reports and unsubscribes', function (): void {
         $address = Subscriber::factory()->create();
         $test = TestSend::factory()->create(['email' => $address->email, 'provider_message_id' => 'test@example.org']);
 
-        $events = collect(['delivered', 'permanent-failure', 'complained', 'unsubscribed', 'opened', 'clicked'])
-            ->map(fn (string $fixture): ProviderEvent => mailgunSays($test, $fixture));
+        $events = collect(['delivered', 'hard bounce', 'complained', 'unsubscribed', 'opened', 'clicked'])
+            ->map(fn (string $kind): ProviderEvent => says($test, $kind));
 
         $applied = app(ApplyFeedbackAction::class)->execute($events->first());
 
@@ -310,17 +339,17 @@ describe('opens and clicks', function (): void {
         $message = messageTo($subscriber);
         $other = messageTo(Subscriber::factory()->create(['last_opened_at' => now()]));
 
-        mailgunSays($message, 'opened', ['timestamp' => secondsAgo(600)]);
+        says($message, 'opened', ['occurredAt' => secondsAgo(600)]);
         // An earlier open read later: the email's first open moves back to
         // it, the person's latest stays.
-        mailgunSays($message, 'opened', ['timestamp' => secondsAgo(900)]);
+        says($message, 'opened', ['occurredAt' => secondsAgo(900)]);
         $person = [iso($message->fresh()?->opened_at), iso($subscriber->fresh()?->last_opened_at)];
-        mailgunSays($message, 'opened', ['timestamp' => secondsAgo(300), 'client-info' => ['bot' => 'gmail']]);
+        says($message, 'opened', ['occurredAt' => secondsAgo(300), 'bot' => 'gmail']);
         $gmail = iso($subscriber->fresh()?->last_opened_at);
-        mailgunSays($message, 'opened', ['timestamp' => secondsAgo(200), 'client-info' => ['bot' => 'apple']]);
-        mailgunSays($message, 'opened', ['timestamp' => secondsAgo(100), 'client-info' => ['bot' => 'generic']]);
+        says($message, 'opened', ['occurredAt' => secondsAgo(200), 'bot' => 'apple']);
+        says($message, 'opened', ['occurredAt' => secondsAgo(100), 'bot' => 'generic']);
         // An open older than the person's own latest moves nothing back.
-        mailgunSays($other, 'opened', ['timestamp' => secondsAgo(600)]);
+        says($other, 'opened', ['occurredAt' => secondsAgo(600)]);
 
         expect($person)->toBe([iso(now()->subSeconds(900)), iso(now()->subSeconds(600))])
             ->and($gmail)->toBe(iso(now()->subSeconds(300)))
@@ -334,10 +363,10 @@ describe('opens and clicks', function (): void {
         useDatabase($driver);
         $subscriber = Subscriber::factory()->create();
         $message = messageTo($subscriber);
-        $deliveredAt = secondsAgo(3600);
+        $deliveredAt = now()->subSeconds(3600)->getTimestamp();
         $click = fn (int $at, string $url): ProviderEvent => reported($message, 'clicked', [
-            'timestamp' => $deliveredAt + $at,
-            'delivered-at' => $deliveredAt,
+            'occurredAt' => Carbon::createFromTimestampUTC($deliveredAt + $at),
+            'payload' => ['delivered-at' => $deliveredAt],
             'url' => $url,
         ]);
 
@@ -377,11 +406,11 @@ describe('opens and clicks', function (): void {
         $message = messageTo($kept, ['email' => null]);
         $unclear = messageTo($kept, ['email' => null, 'status' => MessageStatus::Unknown, 'sent_at' => null]);
 
-        mailgunSays($unclear, 'accepted');
-        mailgunSays($message, 'opened');
-        mailgunSays($message, 'clicked', ['delivered-at' => null]);
-        mailgunSays($message, 'complained');
-        mailgunSays($message, 'permanent-failure');
+        says($unclear, 'accepted');
+        says($message, 'opened');
+        says($message, 'clicked', ['payload' => []]);
+        says($message, 'complained');
+        says($message, 'hard bounce');
 
         expect($kept->fresh())
             ->last_opened_at->toBeNull()
@@ -411,7 +440,7 @@ describe('what proves a message went out', function (): void {
                 'failure_code' => 504,
             ]));
 
-        $messages->each(fn (CampaignMessage $message) => mailgunSays($message, 'accepted', ['timestamp' => secondsAgo(60)]));
+        $messages->each(fn (CampaignMessage $message) => says($message, 'accepted', ['occurredAt' => secondsAgo(60)]));
 
         expect($messages->map(fn (CampaignMessage $message): array => [
             $message->fresh()?->status,
@@ -434,9 +463,9 @@ describe('what proves a message went out', function (): void {
         $skipped = messageTo(Subscriber::factory()->create(), ['status' => MessageStatus::Skipped, 'sent_at' => null]);
         $failed = messageTo(Subscriber::factory()->create(['soft_bounces' => 1]), ['status' => MessageStatus::Failed, 'failure_reason' => 'hard_bounce']);
 
-        mailgunSays($skipped, 'delivered');
-        mailgunSays($failed, 'delivered');
-        mailgunSays($failed, 'temporary-failure', ['severity' => 'permanent', 'reason' => 'old']);
+        says($skipped, 'delivered');
+        says($failed, 'delivered');
+        says($failed, 'deferred', ['severity' => 'permanent', 'reason' => 'old', 'failure' => DeliveryFailure::SoftBounce]);
 
         expect($skipped->fresh())->status->toBe(MessageStatus::Skipped)->sent_at->toBeNull()
             ->and($failed->fresh())->status->toBe(MessageStatus::Failed)->failure_reason->toBe('hard_bounce')
@@ -449,9 +478,9 @@ it('tells what changed for the campaign: a failure now, a first complaint, an un
     $message = messageTo(Subscriber::factory()->create());
     $apply = fn (ProviderEvent $event): array => (array) app(ApplyFeedbackAction::class)->execute($event);
 
-    $temporary = $apply(reported($message, 'temporary-failure'));
-    $bounce = $apply(reported($message, 'permanent-failure'));
-    $again = $apply(reported($message, 'permanent-failure'));
+    $temporary = $apply(reported($message, 'deferred'));
+    $bounce = $apply(reported($message, 'hard bounce'));
+    $again = $apply(reported($message, 'hard bounce'));
     $complaint = $apply(reported($message, 'complained'));
     $secondComplaint = $apply(reported($message, 'complained'));
 
@@ -482,7 +511,7 @@ it('runs the stop-loss once the effects have committed, a pause listener that fa
     sends($campaign, 9, hardBounce());
     $message = messageTo(Subscriber::factory()->create(), ['campaign_id' => $campaign->id]);
 
-    $event = mailgunSays($message, 'permanent-failure');
+    $event = says($message, 'hard bounce');
 
     expect($message->fresh()?->failure_reason)->toBe('hard_bounce')
         ->and($event->fresh()?->processed_at)->not->toBeNull()

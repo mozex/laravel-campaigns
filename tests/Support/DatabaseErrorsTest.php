@@ -57,7 +57,7 @@ function mentions(Throwable $exception, array $values): bool
 }
 
 it('keeps the address out of a feedback job\'s database error', function (): void {
-    config()->set('campaigns.mailgun.webhook_signing_key', 'webhook-signing-key');
+    config()->set('campaigns.drivers.mailgun.webhook_signing_key', 'webhook-signing-key');
     Queue::fake([ProcessFeedbackJob::class]);
     // A spam report about mail an address change moved makes a row for the
     // old address.
@@ -65,7 +65,7 @@ it('keeps the address out of a feedback job\'s database error', function (): voi
     $message = CampaignMessage::factory()->for($person)->create(['status' => MessageStatus::Sent, 'sent_at' => now()->subHour(), 'email' => 'reader-old@example.org']);
     $id = Str::random(22);
 
-    $this->postJson(route('campaigns.webhooks.mailgun'), mailgunWebhook(mailgunEvent('complained', ['id' => $id, 'user-variables' => ['campaign-message' => $message->uuid]])))->assertOk();
+    $this->postJson(route('campaigns.webhooks', 'mailgun'), mailgunWebhook(mailgunEvent('complained', ['id' => $id, 'user-variables' => ['campaign-message' => $message->uuid]])))->assertOk();
     refuseInserts('campaign_subscribers');
 
     $thrown = null;
@@ -119,11 +119,11 @@ it('keeps the visitor\'s IP address and browser out of a confirmation\'s and a r
 
 it('scrubs a webhook\'s database error', function (): void {
     Exceptions::fake();
-    config()->set('campaigns.mailgun.webhook_signing_key', 'webhook-signing-key');
+    config()->set('campaigns.drivers.mailgun.webhook_signing_key', 'webhook-signing-key');
     $message = CampaignMessage::factory()->create();
     refuseInserts('campaign_provider_events');
 
-    $this->postJson(route('campaigns.webhooks.mailgun'), mailgunWebhook(mailgunEvent('delivered', ['user-variables' => ['campaign-message' => $message->uuid]])))
+    $this->postJson(route('campaigns.webhooks', 'mailgun'), mailgunWebhook(mailgunEvent('delivered', ['user-variables' => ['campaign-message' => $message->uuid]])))
         ->assertServerError();
 
     Exceptions::assertReported(fn (DatabaseFailedException $exception): bool => $exception->getMessage() === 'The database refused a provider event (SQLSTATE 23000).');

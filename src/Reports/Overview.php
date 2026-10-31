@@ -11,6 +11,7 @@ use Mozex\Campaigns\Content\Placeholders;
 use Mozex\Campaigns\Enums\CampaignStatus;
 use Mozex\Campaigns\Models\Campaign;
 use Mozex\Campaigns\Models\CampaignList;
+use Mozex\Campaigns\Sending\Drivers\DriverManager;
 use Mozex\Campaigns\Support\Sender;
 use Mozex\Campaigns\Support\ShownText;
 use Mozex\Campaigns\Support\TestAddresses;
@@ -45,6 +46,16 @@ class Overview
     ];
 
     /**
+     * What a driver without each ability can't do, by the ability's name
+     * (the domain summary says what a driver without counts can't).
+     */
+    protected const MISSING = [
+        'webhooks' => 'takes no webhooks, so what happens to an email after its service takes it is learnt only from its logs, if it reads any',
+        'events' => 'reads no logs, so nothing a webhook missed is replayed, and an email whose send ended unclear stays unknown, never sent again',
+        'suppressions' => 'reads no suppression lists, so campaigns:import-provider-suppressions and unblock_contact can\'t ask its service which addresses it refuses',
+    ];
+
+    /**
      * @return array<string, mixed>
      */
     public static function build(): array
@@ -71,7 +82,7 @@ class Overview
     }
 
     /**
-     * @return array{enabled: bool, provider: string, mailer: string, from_address: ?string, from_name: ?string, reply_to: ?string, domain: ?string, provider_logs_readable: bool, test_addresses: list<string>, spam_score_check: bool, notes: list<string>}
+     * @return array{enabled: bool, driver: array{name: string, abilities: list<string>}, mailer: string, from_address: ?string, from_name: ?string, reply_to: ?string, domain: ?string, test_addresses: list<string>, spam_score_check: bool, notes: list<string>}
      */
     protected static function sending(): array
     {
@@ -85,16 +96,25 @@ class Overview
         }
 
         $enabled = (bool) config('campaigns.enabled');
-        $provider = config('campaigns.provider');
-        $logsReadable = filled(config('campaigns.mailgun.api_key'));
+        $drivers = app(DriverManager::class);
+        $name = $drivers->getDefaultDriver();
         $testAddresses = TestAddresses::configured();
+
+        try {
+            $abilities = DriverManager::abilities($drivers->active());
+
+            foreach (static::MISSING as $ability => $missing) {
+                if (! in_array($ability, $abilities, true)) {
+                    $notes[] = CampaignsException::driverLacks($name, $missing)->getMessage();
+                }
+            }
+        } catch (CampaignsException $exception) {
+            $abilities = [];
+            $notes[] = $exception->getMessage();
+        }
 
         if (! $enabled) {
             $notes[] = 'Sending is switched off (campaigns.enabled): campaigns can be written, previewed and given an audience, but none can start, and no test or confirmation email goes out.';
-        }
-
-        if ($provider === 'mailgun' && ! $logsReadable) {
-            $notes[] = 'campaigns.mailgun.api_key isn\'t set, so nothing is reconciled from Mailgun\'s logs and campaigns:reconcile fails every run.';
         }
 
         if ($testAddresses === []) {
@@ -103,13 +123,12 @@ class Overview
 
         return [
             'enabled' => $enabled,
-            'provider' => is_string($provider) ? $provider : get_debug_type($provider),
+            'driver' => ['name' => (string) ShownText::of($name, 50), 'abilities' => $abilities],
             'mailer' => Sender::mailer(),
             'from_address' => Sender::address(),
             'from_name' => Sender::name(),
             'reply_to' => Sender::replyTo(),
             'domain' => $domain,
-            'provider_logs_readable' => $logsReadable,
             'test_addresses' => $testAddresses,
             'spam_score_check' => (bool) config('campaigns.checks.spam_score'),
             'notes' => $notes,

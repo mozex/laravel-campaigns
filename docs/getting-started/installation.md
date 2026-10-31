@@ -20,9 +20,9 @@ The tables work on MySQL, MariaDB, PostgreSQL and SQLite. SQL Server isn't suppo
 
 ## Add the campaigns mailer
 
-Campaigns and the package's own emails (the double opt-in confirmation) go through a mailer named `campaigns`. Send them from a domain of their own, such as `news.example.com`, so a bad week of marketing never touches the reputation of your password resets and receipts.
+Campaigns and the package's own emails (the double opt-in confirmation) go through a driver, the package's code for one sending service, and the driver sends through a mailer named `campaigns`. Send them from a domain of their own, such as `news.example.com`, so a bad week of marketing never touches the reputation of your password resets and receipts.
 
-Add the mailer to `config/mail.php`. It must use Mailgun's API (`'scheme' => 'api'`): the SMTP transport would put Mailgun's options into the email as headers.
+The default driver is Mailgun's (`CAMPAIGNS_DRIVER=mailgun`). Add its mailer to `config/mail.php`. It must use Mailgun's API (`'scheme' => 'api'`): the SMTP transport would put Mailgun's options into the email as headers.
 
 ```php
 'mailers' => [
@@ -38,9 +38,9 @@ Add the mailer to `config/mail.php`. It must use Mailgun's API (`'scheme' => 'ap
 ],
 ```
 
-`secret` is a sending key for that domain; use `api.eu.mailgun.net` as the endpoint for a domain in Mailgun's EU region. When the mailer leaves out `client` options, the package gives it a 10-second idle timeout and 30 seconds in all, so a stuck request ends before the job sending it does. [Mailgun](./mailgun.md) covers the webhooks and the reading key.
+`secret` is a sending key for that domain; use `api.eu.mailgun.net` as the endpoint for a domain in Mailgun's EU region. When the mailer leaves out `client` options, the driver gives it a 10-second idle timeout and 30 seconds in all, so a stuck request ends before the job sending it does. [Mailgun](./mailgun.md) covers the webhooks and the reading key, and [Drivers](../reference/drivers.md) how to add a driver for another service.
 
-On your own machine, set `CAMPAIGNS_PROVIDER=fake`: the fake provider keeps what it's given and sends nothing.
+On your own machine, set `CAMPAIGNS_DRIVER=fake`: the fake driver keeps what it's given and sends nothing.
 
 ## Set the sender
 
@@ -55,7 +55,7 @@ CAMPAIGNS_TEST_ADDRESSES=you@example.com,colleague@example.com
 ```
 
 - The From address must be on the marketing domain: `CAMPAIGNS_DOMAIN` when you set it, else the sender's own domain. Replies can go anywhere someone reads them.
-- The postal address and privacy link appear in every email's footer. Some laws (the US CAN-SPAM Act among them) require the address, and Mailgun's acceptable use policy asks for the link.
+- The postal address and privacy link appear in every email's footer. Some laws (the US CAN-SPAM Act among them) require the address, and mailbox providers and sending services ask for the link.
 - The alert address hears about automatic pauses, a campaign's first spam report and a stalled queue, through your app's default mailer.
 - Test emails go only to the test addresses. Until you list one, no test email goes out.
 
@@ -78,7 +78,7 @@ The package schedules three commands itself:
 | Command | When | What it does |
 |---|---|---|
 | `campaigns:pump` | every minute | starts scheduled campaigns and hands each sending campaign's next emails to the queue |
-| `campaigns:reconcile` | every 15 minutes | settles sends and events that jobs and webhooks left open, from Mailgun's logs |
+| `campaigns:reconcile` | every 15 minutes | settles sends and events that jobs and webhooks left open, from the service's logs when the driver reads them (Mailgun's does) |
 | `campaigns:prune` | daily | deletes old provider events and expired uploads |
 
 They run as long as your server runs Laravel's scheduler (`php artisan schedule:run` from cron, or `schedule:work`). Their overlap locks live in `CAMPAIGNS_CACHE_STORE`, the app's default cache store unless you set it. Point it at a store your deploys don't flush, so a release can't free a lock a running pump still holds. To schedule them yourself, set `campaigns.schedule` to `false`.

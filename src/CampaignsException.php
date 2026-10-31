@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Mozex\Campaigns;
 
-use Mozex\Campaigns\Contracts\CampaignProvider;
+use Mozex\Campaigns\Contracts\CampaignDriver;
 use Mozex\Campaigns\Contracts\ListSource;
 use Mozex\Campaigns\Enums\UploadPurpose;
 use Mozex\Campaigns\Imports\ImportedContact;
@@ -104,24 +104,41 @@ class CampaignsException extends RuntimeException
         return new self("campaigns.{$kind}.{$key} ({$class}) must implement {$contract}.");
     }
 
-    public static function invalidProvider(string $value): self
+    /**
+     * @param  list<string>  $known
+     */
+    public static function unknownDriver(string $name, array $known): self
     {
-        return new self('campaigns.provider ("'.mb_strimwidth($value, 0, 120, '...').'") must be "mailgun", "fake" or a class implementing '.CampaignProvider::class.'.');
+        return new self('No campaigns driver is called "'.mb_strimwidth($name, 0, 60, '...').'" (campaigns.driver, CAMPAIGNS_DRIVER): use one of '.implode(', ', $known).', or register one with Campaigns::extend().');
     }
 
-    public static function missingWebhookSigningKey(): self
+    public static function invalidDriver(string $name, string $type): self
     {
-        return new self('A Mailgun webhook arrived, but no webhook signing key is configured (campaigns.mailgun.webhook_signing_key, MAILGUN_WEBHOOK_SIGNING_KEY), so it can\'t be verified.');
+        return new self("The campaigns driver \"{$name}\" was built as {$type}, which doesn't implement ".CampaignDriver::class.'.');
     }
 
-    public static function missingMailgunApiKey(): self
+    public static function reservedDriverName(string $name): self
     {
-        return new self('Reading Mailgun\'s logs, suppressions and metrics needs an API key that can read them (campaigns.mailgun.api_key, CAMPAIGNS_MAILGUN_API_KEY); the campaigns mailer\'s sending key can only send.');
+        return new self("\"{$name}\" is the name the package records its own opens and clicks under, so no driver may take it.");
+    }
+
+    public static function invalidDriverName(string $name, string $pattern): self
+    {
+        return new self('"'.mb_strimwidth($name, 0, 60, '...')."\" can't name a campaigns driver: a name is lower-case letters, digits, - and _, starting with a letter, at most 50 characters ({$pattern}), since it is a path segment of the driver's webhook address.");
     }
 
     /**
-     * The provider couldn't be read. The message never holds the request's
-     * address or the provider's answer, which can name a recipient.
+     * The active driver can't do what was asked, and why.
+     */
+    public static function driverLacks(string $name, string $what): self
+    {
+        return new self("The campaigns driver \"{$name}\" {$what}.");
+    }
+
+    /**
+     * The service behind a driver couldn't be read. The message never holds
+     * the request's address or the service's answer, which can name a
+     * recipient.
      */
     public static function providerUnreadable(string $what): self
     {

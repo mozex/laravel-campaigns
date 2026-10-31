@@ -10,7 +10,6 @@ use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Foundation\Queue\Queueable;
 use Mozex\Campaigns\Actions\PauseCampaignAction;
 use Mozex\Campaigns\CampaignsException;
-use Mozex\Campaigns\Contracts\CampaignProvider;
 use Mozex\Campaigns\Enums\CampaignStatus;
 use Mozex\Campaigns\Enums\MessageStatus;
 use Mozex\Campaigns\Enums\SendFailure;
@@ -19,6 +18,7 @@ use Mozex\Campaigns\Models\Campaign;
 use Mozex\Campaigns\Models\CampaignMessage;
 use Mozex\Campaigns\Models\Subscriber;
 use Mozex\Campaigns\Models\Subscription;
+use Mozex\Campaigns\Sending\Drivers\DriverManager;
 use Mozex\Campaigns\Sending\MessageComposer;
 use Mozex\Campaigns\Sending\SendFailed;
 use Mozex\Campaigns\Sending\SendReceipt;
@@ -31,7 +31,8 @@ use Throwable;
  * conditional update on both, and sends nothing unless that changed the row,
  * so a duplicate job, or one left from an older claim, does nothing. The
  * links' token is made here and only its hash stored, in that same update,
- * so the raw token never sits in the queue.
+ * so the raw token never sits in the queue; so is the active driver's name,
+ * whose service the message's events are then read from.
  */
 class SendMessageJob implements ShouldQueue
 {
@@ -58,7 +59,8 @@ class SendMessageJob implements ShouldQueue
     public int $tries = 1;
 
     /**
-     * Above the 30 seconds a campaigns Mailgun mailer is given by default.
+     * Above the 30 seconds a driver gives its mailer when the app set no
+     * limit of its own.
      */
     public int $timeout = 60;
 
@@ -68,11 +70,16 @@ class SendMessageJob implements ShouldQueue
         $this->onQueue(config('campaigns.queue.name'));
     }
 
-    public function handle(CampaignProvider $provider, MessageComposer $composer, PauseCampaignAction $pause): void
+    public function handle(DriverManager $drivers, MessageComposer $composer, PauseCampaignAction $pause): void
     {
         $token = Token::generate();
+        $name = $drivers->getDefaultDriver();
 
-        if (! $this->take($token)) {
+        // Built before the message is taken: a driver that can't be built
+        // fails the job with the message still queued, so it waits again.
+        $driver = $drivers->active();
+
+        if (! $this->take($token, $name)) {
             return;
         }
 
@@ -98,13 +105,13 @@ class SendMessageJob implements ShouldQueue
         }
 
         try {
-            $receipt = $provider->send($outgoing);
+            $receipt = $driver->send($outgoing);
         } catch (SendFailed $failed) {
             $this->refused($failed, $message, $pause);
 
             return;
         } catch (Throwable $exception) {
-            // A provider of the app's own broke its contract: it may have the
+            // A driver of the app's own broke its contract: it may have the
             // message, so it is never sent again blindly.
             $this->unclear($message, $pause);
 
@@ -121,7 +128,7 @@ class SendMessageJob implements ShouldQueue
      * cancelled, sending switched off, the claim stale) goes back to pending,
      * with nothing sent.
      */
-    protected function take(string $token): bool
+    protected function take(string $token, string $driver): bool
     {
         $now = now();
 
@@ -132,6 +139,7 @@ class SendMessageJob implements ShouldQueue
                 'status' => MessageStatus::Sending,
                 'sending_at' => $now,
                 'token_hash' => Token::hash($token),
+                'driver' => $driver,
                 'updated_at' => $now,
             ]) === 1;
 

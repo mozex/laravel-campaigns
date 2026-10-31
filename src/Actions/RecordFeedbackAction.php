@@ -18,13 +18,14 @@ use Mozex\Campaigns\Support\Rows;
 use Mozex\Campaigns\Support\Token;
 
 /**
- * Stores one event the provider reported, once, against the campaign message
- * or test email it is about, and queues its effects. An event is known by the
- * provider's id. A webhook's signature covers only its timestamp and one-time
- * token, never the body, so every verified webhook's token is recorded with
- * the event it carried, in the same transaction as the event: the same token
- * with the same event is a retry, answered as done; with another event it is
- * a replay, refused. Events about mail the package didn't send are dropped,
+ * Stores one event a driver reported, once, against the campaign message or
+ * test email it is about, and queues its effects. An event is known by the
+ * service's id and the driver's name, since two services' ids may meet. A
+ * webhook's signature covers only its timestamp and one-time token, never
+ * the body, so every verified webhook's token is recorded with the event it
+ * carried, in the same transaction as the event: the same token with the
+ * same event is a retry, answered as done; with another event it is a
+ * replay, refused. Events about mail the package didn't send are dropped,
  * their token recorded all the same.
  */
 class RecordFeedbackAction
@@ -36,11 +37,14 @@ class RecordFeedbackAction
      */
     public const HUMAN_PROXIES = ['gmail'];
 
-    public function execute(Feedback $feedback): FeedbackResult
+    /**
+     * @param  string  $driver  the name of the driver that reported it
+     */
+    public function execute(Feedback $feedback, string $driver): FeedbackResult
     {
-        [$messageId, $testSendId] = $this->target($feedback);
+        [$messageId, $testSendId] = $this->target($feedback, $driver);
 
-        $result = (new ProviderEvent)->getConnection()->transaction(function () use ($feedback, $messageId, $testSendId): FeedbackResult|ProviderEvent {
+        $result = (new ProviderEvent)->getConnection()->transaction(function () use ($feedback, $driver, $messageId, $testSendId): FeedbackResult|ProviderEvent {
             if ($feedback->replayKey !== null) {
                 $token = Rows::firstOrCreate(
                     WebhookToken::query(),
@@ -59,7 +63,7 @@ class RecordFeedbackAction
                 return FeedbackResult::Unknown;
             }
 
-            return $this->store($feedback, $messageId, $testSendId) ?? FeedbackResult::Duplicate;
+            return $this->store($feedback, $driver, $messageId, $testSendId) ?? FeedbackResult::Duplicate;
         });
 
         if ($result instanceof ProviderEvent) {
@@ -69,7 +73,7 @@ class RecordFeedbackAction
         }
 
         if ($result === FeedbackResult::Duplicate) {
-            $this->requeue($feedback);
+            $this->requeue($feedback, $driver);
         }
 
         return $result;
@@ -83,11 +87,12 @@ class RecordFeedbackAction
      * primary key behind its sequence after a restore) is rethrown, so the
      * token rolls back with it and the provider's retry can store the event.
      */
-    protected function store(Feedback $feedback, ?int $messageId, ?int $testSendId): ?ProviderEvent
+    protected function store(Feedback $feedback, string $driver, ?int $messageId, ?int $testSendId): ?ProviderEvent
     {
         try {
             return (new ProviderEvent)->getConnection()->transaction(fn (): ProviderEvent => ProviderEvent::query()->create([
                 'provider_event_id' => $feedback->providerEventId,
+                'driver' => $driver,
                 'message_id' => $messageId,
                 'test_send_id' => $testSendId,
                 'type' => $feedback->type,
@@ -98,6 +103,7 @@ class RecordFeedbackAction
         } catch (UniqueConstraintViolationException $exception) {
             $stored = ProviderEvent::query()
                 ->where('provider_event_id', $feedback->providerEventId)
+                ->where('driver', $driver)
                 ->sharedLock()
                 ->exists();
 
@@ -116,10 +122,11 @@ class RecordFeedbackAction
      * one costs at most one job too many or one left to the stored event's
      * own, while a locking one would wait behind a running job's lock.
      */
-    protected function requeue(Feedback $feedback): void
+    protected function requeue(Feedback $feedback, string $driver): void
     {
         $event = ProviderEvent::query()
             ->where('provider_event_id', $feedback->providerEventId)
+            ->where('driver', $driver)
             ->first(['id', 'type', 'processed_at']);
 
         if ($event !== null && $event->processed_at === null) {
@@ -129,14 +136,14 @@ class RecordFeedbackAction
 
     /**
      * The campaign message or test email an event is about: by the uuid the
-     * package sent with it, else by the provider's own message id. A uuid is
-     * checked before it reaches a query, since PostgreSQL's uuid columns
-     * answer a malformed one with an error, and another sender on the domain
-     * may use the same variable name.
+     * package sent with it, else by the service's own message id among what
+     * the same driver sent. A uuid is checked before it reaches a query,
+     * since PostgreSQL's uuid columns answer a malformed one with an error,
+     * and another sender on the domain may use the same variable name.
      *
      * @return array{0: ?int, 1: ?int}
      */
-    protected function target(Feedback $feedback): array
+    protected function target(Feedback $feedback, string $driver): array
     {
         if ($feedback->messageUuid !== null && Str::isUuid($feedback->messageUuid)) {
             $id = CampaignMessage::query()->where('uuid', strtolower($feedback->messageUuid))->value('id');
@@ -160,19 +167,19 @@ class RecordFeedbackAction
             return [null, null];
         }
 
-        $id = CampaignMessage::query()->where('provider_message_id', $providerMessageId)->value('id');
+        $id = CampaignMessage::query()->where('provider_message_id', $providerMessageId)->where('driver', $driver)->value('id');
 
         if (is_int($id)) {
             return [$id, null];
         }
 
-        $id = TestSend::query()->where('provider_message_id', $providerMessageId)->value('id');
+        $id = TestSend::query()->where('provider_message_id', $providerMessageId)->where('driver', $driver)->value('id');
 
         return [null, is_int($id) ? $id : null];
     }
 
     /**
-     * What is kept of an event: the package's own fields and the provider's
+     * What is kept of an event: the package's own fields and the service's
      * details, never the recipient's address or IP. A clicked link keeps
      * neither a token of the package's own pages nor an address it carries.
      *

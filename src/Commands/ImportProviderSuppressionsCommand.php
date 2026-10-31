@@ -8,11 +8,12 @@ use Generator;
 use Illuminate\Console\Command;
 use Mozex\Campaigns\Actions\ImportContactsAction;
 use Mozex\Campaigns\CampaignsException;
-use Mozex\Campaigns\Contracts\CampaignProvider;
+use Mozex\Campaigns\Contracts\Drivers\ReadsSuppressions;
 use Mozex\Campaigns\Enums\BlockReason;
 use Mozex\Campaigns\Enums\ImportChange;
 use Mozex\Campaigns\Enums\SuppressionType;
 use Mozex\Campaigns\Imports\ImportedContact;
+use Mozex\Campaigns\Sending\Drivers\DriverManager;
 use Mozex\Campaigns\Sending\Suppression;
 use Mozex\Campaigns\Support\ConsentContext;
 use Mozex\Campaigns\Support\EmailAddress;
@@ -28,7 +29,8 @@ use Mozex\Campaigns\Support\Sender;
  * provider's unsubscribe list is read only for the marketing domain, where it
  * means marketing: an address there is opted out. Through ImportContactsAction
  * with no list, so an address no subscriber has is kept bare, only so it is
- * never mailed, and a dry run is the real run rolled back.
+ * never mailed, and a dry run is the real run rolled back. The lists are the
+ * active driver's (ReadsSuppressions); a driver without them is refused.
  */
 class ImportProviderSuppressionsCommand extends Command
 {
@@ -45,12 +47,26 @@ class ImportProviderSuppressionsCommand extends Command
 
     protected $description = 'Block the addresses the provider holds on a sending domain\'s bounce and complaint lists';
 
-    public function handle(CampaignProvider $provider, ImportContactsAction $import): int
+    public function handle(DriverManager $drivers, ImportContactsAction $import): int
     {
         $domain = strtolower(trim((string) $this->argument('domain')));
 
         if ($domain === '') {
             $this->error('Name the sending domain whose lists to read.');
+
+            return self::FAILURE;
+        }
+
+        try {
+            $driver = $drivers->active();
+        } catch (CampaignsException $exception) {
+            $this->error($exception->getMessage());
+
+            return self::FAILURE;
+        }
+
+        if (! $driver instanceof ReadsSuppressions) {
+            $this->error(CampaignsException::driverLacks($drivers->getDefaultDriver(), 'reads no suppression lists, so there is nothing to import')->getMessage());
 
             return self::FAILURE;
         }
@@ -78,8 +94,8 @@ class ImportProviderSuppressionsCommand extends Command
             // One address is looked up on its own, rather than read out of the
             // whole lists.
             $suppressions = $address === null
-                ? $provider->suppressions($domain)
-                : $provider->suppressionsFor($domain, $address);
+                ? $driver->suppressions($domain)
+                : $driver->suppressionsFor($domain, $address);
 
             $result = $import->execute(
                 $this->contacts($suppressions, $marketing),

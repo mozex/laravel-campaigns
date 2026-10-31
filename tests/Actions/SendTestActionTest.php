@@ -12,14 +12,13 @@ use Mozex\Campaigns\Models\Campaign;
 use Mozex\Campaigns\Models\Revision;
 use Mozex\Campaigns\Models\Template;
 use Mozex\Campaigns\Models\TestSend;
-use Mozex\Campaigns\Sending\MessageComposer;
 use Mozex\Campaigns\Sending\OutgoingMessage;
 use Mozex\Campaigns\Sending\SendFailed;
 use Mozex\Campaigns\Support\Token;
 
 beforeEach(function (): void {
     sendFromExample();
-    config()->set('campaigns.provider', 'fake');
+    config()->set('campaigns.driver', 'fake');
     config()->set('campaigns.test_addresses', ['owner@example.com', 'Editor@Example.com']);
 });
 
@@ -31,9 +30,9 @@ it('sends a draft\'s current email to the test addresses only, each test once', 
     $tests = app(SendTestAction::class)->execute($campaign, locales: ['en', 'FR']);
 
     // A duplicate job for a test already sent sends nothing.
-    (new SendTestJob($tests[0]->id))->handle(fakeProvider(), app(MessageComposer::class));
+    app()->call([new SendTestJob($tests[0]->id), 'handle']);
 
-    $sent = fakeProvider()->sent();
+    $sent = fakeDriver()->sent();
     $stored = TestSend::query()->orderBy('id')->get();
 
     expect($tests)->toHaveCount(4)
@@ -43,6 +42,7 @@ it('sends a draft\'s current email to the test addresses only, each test once', 
         ->and($stored->pluck('campaign_id')->unique()->all())->toBe([$campaign->id])
         ->and($stored->every(fn (TestSend $test): bool => $test->sent_at !== null && $test->token_hash !== null && $test->failed_at === null))->toBeTrue()
         ->and($stored->first()->provider_message_id)->toBe('fake.'.$stored->first()->uuid.'@campaigns.test')
+        ->and($stored->pluck('driver')->unique()->all())->toBe(['fake'])
         ->and($sent)->toHaveCount(4)
         ->and(array_map(fn (OutgoingMessage $message): string => $message->subject, $sent))->toBe(['Second', 'Deuxième', 'Second', 'Deuxième'])
         ->and($sent[0]->isTest)->toBeTrue()
@@ -62,7 +62,7 @@ it('sends a started campaign\'s frozen email, and a template\'s current one, to 
     app(SendTestAction::class)->execute($campaign, [' OWNER@example.com ']);
     app(SendTestAction::class)->execute($template, ['owner@example.com', 'owner@example.com']);
 
-    expect(array_map(fn (OutgoingMessage $message): string => $message->subject, fakeProvider()->sent()))->toBe(['Frozen', 'Template'])
+    expect(array_map(fn (OutgoingMessage $message): string => $message->subject, fakeDriver()->sent()))->toBe(['Frozen', 'Template'])
         ->and(TestSend::query()->where('campaign_id', null)->count())->toBe(1);
 });
 
@@ -99,7 +99,7 @@ it('records why a test failed, and sends nothing to an address taken off the lis
     $campaign = Campaign::factory()->create();
     Revision::factory()->of($campaign)->withContent('en')->create();
 
-    fakeProvider()->failNext(new SendFailed(SendFailure::DomainRefused, 'Mailgun answered 401: Forbidden', 401));
+    fakeDriver()->failNext(new SendFailed(SendFailure::DomainRefused, 'Mailgun answered 401: Forbidden', 401));
     [$refused] = app(SendTestAction::class)->execute($campaign, ['owner@example.com']);
 
     Queue::fake();
@@ -107,10 +107,10 @@ it('records why a test failed, and sends nothing to an address taken off the lis
     [$switchedOff] = app(SendTestAction::class)->execute($campaign, ['owner@example.com']);
 
     config()->set('campaigns.test_addresses', ['owner@example.com']);
-    (new SendTestJob($removed->id))->handle(fakeProvider(), app(MessageComposer::class));
+    app()->call([new SendTestJob($removed->id), 'handle']);
 
     config()->set('campaigns.enabled', false);
-    (new SendTestJob($switchedOff->id))->handle(fakeProvider(), app(MessageComposer::class));
+    app()->call([new SendTestJob($switchedOff->id), 'handle']);
 
     expect($refused->fresh())
         ->failed_at->not->toBeNull()
@@ -120,7 +120,7 @@ it('records why a test failed, and sends nothing to an address taken off the lis
         ->failure->toContain('no longer one of the test addresses')
         ->token_hash->toBeNull()
         ->and($switchedOff->fresh()->failure)->toContain('switched off')
-        ->and(fakeProvider()->sent())->toBe([]);
+        ->and(fakeDriver()->sent())->toBe([]);
 });
 
 it('answers for a test whose job died after claiming it, and refuses a template\'s test from off the marketing domain', function (): void {
@@ -138,14 +138,14 @@ it('answers for a test whose job died after claiming it, and refuses a template\
     $template = Template::factory()->create();
     Revision::factory()->of($template)->withContent('en')->create();
     [$offDomain] = app(SendTestAction::class)->execute($template, ['owner@example.com']);
-    (new SendTestJob($offDomain->id))->handle(fakeProvider(), app(MessageComposer::class));
+    app()->call([new SendTestJob($offDomain->id), 'handle']);
 
     expect($died->fresh())
         ->failed_at->not->toBeNull()
         ->failure->toContain('may still arrive')
         ->and($sent->fresh()->failed_at)->toBeNull()
         ->and($offDomain->fresh()->failure)->toContain('must be on the sending domain, other.example.com')
-        ->and(fakeProvider()->sent())->toBe([]);
+        ->and(fakeDriver()->sent())->toBe([]);
 });
 
 it('opens the real unsubscribe page from a test\'s link and changes only the test', function (): void {
@@ -153,7 +153,7 @@ it('opens the real unsubscribe page from a test\'s link and changes only the tes
     Revision::factory()->of($campaign)->withContent('en')->create();
 
     [$test] = app(SendTestAction::class)->execute($campaign, ['owner@example.com']);
-    $link = fakeProvider()->sent()[0]->unsubscribeUrl;
+    $link = fakeDriver()->sent()[0]->unsubscribeUrl;
     $token = basename($link);
 
     $this->post($link)->assertOk();

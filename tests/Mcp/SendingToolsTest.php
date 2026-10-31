@@ -34,7 +34,7 @@ use Mozex\Campaigns\Sending\Pace;
 
 beforeEach(function (): void {
     sendFromExample();
-    config(['campaigns.provider' => 'fake']);
+    config(['campaigns.driver' => 'fake']);
 });
 
 /**

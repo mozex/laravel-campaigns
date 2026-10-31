@@ -292,6 +292,10 @@ return new class extends Migration
             $table->string('status', 32);
             $table->uuid('claim_id')->nullable();
             $table->string('token_hash', 64)->nullable()->unique();
+            // The driver that sent it, written when its send job takes it,
+            // so a switch of drivers still reads each message's events from
+            // the service that has them.
+            $table->string('driver', 50)->nullable();
             $table->string('provider_message_id', 255)->nullable()->index();
             $table->timestamp('claimed_at')->nullable();
             $table->timestamp('sending_at')->nullable();
@@ -315,6 +319,9 @@ return new class extends Migration
             // The stop-loss reads a campaign's sends in the order they went
             // (its last 500), and its domain's last 24 hours.
             $table->index(['campaign_id', 'sent_at']);
+            // The reconciler asks which drivers a domain's campaigns sent
+            // through.
+            $table->index(['campaign_id', 'driver']);
         });
 
         // A test email of a campaign's or a template's revision, apart from
@@ -329,6 +336,7 @@ return new class extends Migration
             $table->string('email', 254);
             $table->string('locale', 35)->nullable();
             $table->string('token_hash', 64)->nullable()->unique();
+            $table->string('driver', 50)->nullable();
             $table->string('provider_message_id', 255)->nullable()->index();
             $table->timestamp('sent_at')->nullable();
             $table->timestamp('failed_at')->nullable();
@@ -338,12 +346,15 @@ return new class extends Migration
             $table->timestamps();
         });
 
-        // Stored once by the provider's id, whether it came by webhook or
-        // from the provider's logs. processed_at is set in the same
-        // transaction as the event's effects, so they apply once.
+        // Stored once by the service's id and the driver that reported it,
+        // whether it came by webhook or from the service's logs (driver
+        // "campaigns" for the package's own opens and clicks). Never null,
+        // which a unique index would let through twice. processed_at is set
+        // in the same transaction as the event's effects, so they apply once.
         Schema::create('campaign_provider_events', function (Blueprint $table): void {
             $table->id();
-            $table->string('provider_event_id', 255)->unique();
+            $table->string('provider_event_id', 255);
+            $table->string('driver', 50);
             $table->foreignId('message_id')->nullable()->constrained('campaign_messages')->nullOnDelete();
             $table->foreignId('test_send_id')->nullable()->index()->constrained('campaign_test_sends')->nullOnDelete();
             $table->string('type', 32);
@@ -353,6 +364,8 @@ return new class extends Migration
             $table->timestamp('processed_at')->nullable()->index();
             $table->timestamp('created_at')->nullable();
 
+            // The id first, so a lookup by it alone keeps the index.
+            $table->unique(['provider_event_id', 'driver']);
             // A message's events in time order (an effect reads the failure
             // reported before another); it also serves the foreign key.
             $table->index(['message_id', 'occurred_at']);

@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Mozex\Campaigns\Sending;
+namespace Mozex\Campaigns\Sending\Drivers;
 
 use Carbon\CarbonInterface;
 use Generator;
@@ -15,12 +15,22 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Mail;
 use Mozex\Campaigns\CampaignsException;
-use Mozex\Campaigns\Contracts\CampaignProvider;
+use Mozex\Campaigns\Contracts\CampaignDriver;
+use Mozex\Campaigns\Contracts\Drivers\ReadsEvents;
+use Mozex\Campaigns\Contracts\Drivers\ReadsMetrics;
+use Mozex\Campaigns\Contracts\Drivers\ReadsSuppressions;
+use Mozex\Campaigns\Contracts\Drivers\ReceivesWebhooks;
 use Mozex\Campaigns\Enums\DeliveryFailure;
 use Mozex\Campaigns\Enums\FeedbackType;
 use Mozex\Campaigns\Enums\SendFailure;
 use Mozex\Campaigns\Enums\SuppressionType;
 use Mozex\Campaigns\Mail\CampaignEmail;
+use Mozex\Campaigns\Sending\DomainMetrics;
+use Mozex\Campaigns\Sending\Feedback;
+use Mozex\Campaigns\Sending\OutgoingMessage;
+use Mozex\Campaigns\Sending\SendFailed;
+use Mozex\Campaigns\Sending\SendReceipt;
+use Mozex\Campaigns\Sending\Suppression;
 use Mozex\Campaigns\Support\Sender;
 use Symfony\Component\Mailer\Bridge\Mailgun\Transport\MailgunApiTransport;
 use Symfony\Component\Mailer\Exception\HttpTransportException;
@@ -35,11 +45,14 @@ use Throwable;
  * transport turns the message's tag, metadata and o: options into the API's
  * own fields, where the MIME and SMTP ones would put them in the email as
  * headers. The log and array mailers are allowed too, for local runs and
- * tests, since they deliver nothing. Its logs and suppression lists are read
- * with campaigns.mailgun.api_key, since the mailer's sending key can only
- * send.
+ * tests, since they deliver nothing. Its webhooks post to
+ * /campaigns/webhooks/mailgun, signed with campaigns.drivers.mailgun's
+ * webhook_signing_key; its logs, suppression lists and metrics are read with
+ * that block's api_key, since the mailer's sending key can only send. Its
+ * config is read on every call, never kept, so a change reaches a driver
+ * already built.
  */
-class MailgunProvider implements CampaignProvider
+class MailgunDriver implements CampaignDriver, ReadsEvents, ReadsMetrics, ReadsSuppressions, ReceivesWebhooks
 {
     /**
      * Mailgun took nothing and may take it later: rate limited, or its
@@ -58,6 +71,14 @@ class MailgunProvider implements CampaignProvider
      * How far a webhook's signed timestamp may be from now, in seconds.
      */
     public const WEBHOOK_MAX_AGE = 86400;
+
+    /**
+     * The client options a mailgun mailer gets when the app gave it none
+     * (DriverManager::boundMailer()): Symfony's HTTP client only times out a
+     * connection that goes quiet, so a slow answer could outlast the job
+     * sending to it without a total limit below the job's timeout.
+     */
+    public const CLIENT_LIMITS = ['timeout' => 10, 'max_duration' => 30];
 
     /**
      * Mailgun's event names the package acts on. Both failure webhooks
@@ -169,10 +190,10 @@ class MailgunProvider implements CampaignProvider
      */
     public function verifyWebhook(Request $request): bool
     {
-        $key = config('campaigns.mailgun.webhook_signing_key');
+        $key = config('campaigns.drivers.mailgun.webhook_signing_key');
 
         if (! is_string($key) || $key === '') {
-            throw CampaignsException::missingWebhookSigningKey();
+            throw new CampaignsException('A Mailgun webhook arrived, but no webhook signing key is configured (campaigns.drivers.mailgun.webhook_signing_key, MAILGUN_WEBHOOK_SIGNING_KEY), so it can\'t be verified.');
         }
 
         $signature = $request->json('signature');
@@ -268,7 +289,7 @@ class MailgunProvider implements CampaignProvider
 
     public function logDays(): int
     {
-        return max(1, (int) config('campaigns.mailgun.log_days', 5));
+        return max(1, (int) config('campaigns.drivers.mailgun.log_days', 5));
     }
 
     /**
@@ -315,7 +336,7 @@ class MailgunProvider implements CampaignProvider
         $domain = $this->mailgunDomain($domain);
 
         if ($this->read('GET', $this->apiBase().'/v3/domains/'.rawurlencode($domain), notFound: true) === null) {
-            throw CampaignsException::providerUnreadable("Mailgun has no domain {$domain} for this key in this region (campaigns.mailgun.endpoint).");
+            throw CampaignsException::providerUnreadable("Mailgun has no domain {$domain} for this key in this region (campaigns.drivers.mailgun.endpoint).");
         }
 
         $found = [];
@@ -379,11 +400,6 @@ class MailgunProvider implements CampaignProvider
 
         /** @var array<string, array{sent: int, forwarded: int, hard_bounces: int, complaints: int, unsubscribes: int}> $days */
         return new DomainMetrics($days);
-    }
-
-    public function tracks(): bool
-    {
-        return true;
     }
 
     /**
@@ -503,10 +519,10 @@ class MailgunProvider implements CampaignProvider
      */
     protected function read(string $method, string $url, array $body = [], bool $notFound = false): ?array
     {
-        $key = config('campaigns.mailgun.api_key');
+        $key = config('campaigns.drivers.mailgun.api_key');
 
         if (! is_string($key) || $key === '') {
-            throw CampaignsException::missingMailgunApiKey();
+            throw new CampaignsException('Reading Mailgun\'s logs, suppressions and metrics needs an API key that can read them (campaigns.drivers.mailgun.api_key, CAMPAIGNS_MAILGUN_API_KEY); the campaigns mailer\'s sending key can only send.');
         }
 
         $request = Http::withBasicAuth('api', $key)->acceptJson()->connectTimeout(10)->timeout(30);
@@ -523,8 +539,8 @@ class MailgunProvider implements CampaignProvider
 
         if (! $response->successful()) {
             $fix = match ($response->status()) {
-                401, 403 => ' campaigns.mailgun.api_key must be an account API key that may read logs, metrics and suppressions (a domain sending key can only send), in the region campaigns.mailgun.endpoint names.',
-                404 => ' Check that the sending domain exists in the region campaigns.mailgun.endpoint names.',
+                401, 403 => ' campaigns.drivers.mailgun.api_key must be an account API key that may read logs, metrics and suppressions (a domain sending key can only send), in the region campaigns.drivers.mailgun.endpoint names.',
+                404 => ' Check that the sending domain exists in the region campaigns.drivers.mailgun.endpoint names.',
                 default => '',
             };
 
@@ -541,13 +557,14 @@ class MailgunProvider implements CampaignProvider
     }
 
     /**
-     * The API's address for the region: campaigns.mailgun.endpoint, else the
-     * campaigns mailer's endpoint (or services.mailgun's, which Laravel uses
-     * for a mailer with no secret of its own), else Mailgun's US host.
+     * The API's address for the region: campaigns.drivers.mailgun.endpoint,
+     * else the campaigns mailer's endpoint (or services.mailgun's, which
+     * Laravel uses for a mailer with no secret of its own), else Mailgun's US
+     * host.
      */
     protected function apiBase(): string
     {
-        $endpoint = config('campaigns.mailgun.endpoint');
+        $endpoint = config('campaigns.drivers.mailgun.endpoint');
 
         if (! is_string($endpoint) || trim($endpoint) === '') {
             $endpoint = $this->mailerSetting('endpoint');
@@ -753,7 +770,6 @@ class MailgunProvider implements CampaignProvider
             providerEventId: $id,
             type: $type,
             occurredAt: $occurredAt,
-            recipient: $this->string($event['recipient'] ?? null) ?? '',
             messageUuid: $this->string($variables[OutgoingMessage::MESSAGE_KEY] ?? null),
             testSendUuid: $this->string($variables[OutgoingMessage::TEST_KEY] ?? null),
             providerMessageId: $messageId,

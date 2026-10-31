@@ -35,7 +35,7 @@ Error trackers record request paths, bodies and outgoing requests. Some of the p
 | paths under `/campaigns/u/`, `/campaigns/c/` and `/campaigns/v/` | each holds a link token that unsubscribes, confirms or shows one person's email |
 | the `signature` query of `/campaigns/preview/...` and of the links under the MCP path (`/mcp/campaigns/uploads/...`, `/mcp/campaigns/downloads/...`) | the signature is the link's only authorization |
 | the body of `PUT /mcp/campaigns/uploads/...` | an unsent email or a list of contacts |
-| the `event-data` field of `POST /campaigns/webhooks/mailgun` | the recipient's address and IP, and a clicked link that may hold a token |
+| the body of `POST /campaigns/webhooks/<driver>` (Mailgun's `event-data` field) | the recipient's address and IP, and a clicked link that may hold a token |
 | the arguments of MCP tool calls (`POST /mcp/campaigns`) | addresses an agent adds, blocks or looks up |
 | outgoing requests to `api.*.mailgun.net/v3/<domain>/bounces`, `/complaints` and `/unsubscribes`, path and query | one address's lookup puts the address in the path, and the lists' next pages carry one in the query |
 | the `Authorization` header | an MCP token or an OAuth bearer |

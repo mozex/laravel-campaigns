@@ -19,7 +19,6 @@ use Mozex\Campaigns\Actions\StartCampaignAction;
 use Mozex\Campaigns\Audiences\CampaignAudience;
 use Mozex\Campaigns\Content\EmailContent;
 use Mozex\Campaigns\Content\EmailSource;
-use Mozex\Campaigns\Contracts\CampaignProvider;
 use Mozex\Campaigns\Enums\MessageStatus;
 use Mozex\Campaigns\Enums\Rights;
 use Mozex\Campaigns\Enums\SubscriptionStatus;
@@ -35,7 +34,8 @@ use Mozex\Campaigns\Models\ConsentRecord;
 use Mozex\Campaigns\Models\Subscriber;
 use Mozex\Campaigns\Models\Subscription;
 use Mozex\Campaigns\Models\Upload;
-use Mozex\Campaigns\Sending\FakeProvider;
+use Mozex\Campaigns\Sending\Drivers\DriverManager;
+use Mozex\Campaigns\Sending\Drivers\FakeDriver;
 use Mozex\Campaigns\Support\Token;
 use Mozex\Campaigns\Tests\TestCase;
 
@@ -217,7 +217,7 @@ function subscriberOn(array $lists, array $attributes = [], SubscriptionStatus $
 /**
  * A campaign started on a list of new subscribers, with the given pace: its
  * recipients frozen into pending messages in send order, and sending (or
- * scheduled, given a time). Sending is on and goes to the fake provider.
+ * scheduled, given a time). Sending is on and goes to the fake driver.
  *
  * @param  int|list<string>  $recipients  how many, or their addresses
  * @param  array<string, mixed>  $pace
@@ -225,7 +225,7 @@ function subscriberOn(array $lists, array $attributes = [], SubscriptionStatus $
 function sendingCampaign(int|array $recipients, array $pace = [], string $key = 'news', string $list = 'readers', ?CarbonInterface $at = null): Campaign
 {
     sendFromExample();
-    config()->set('campaigns.provider', 'fake');
+    config()->set('campaigns.driver', 'fake');
 
     $target = CampaignList::query()->where('key', $list)->first() ?? CampaignList::factory()->create(['key' => $list]);
     $emails = is_int($recipients) ? array_map(fn (int $i): string => "{$key}-{$i}@example.org", range(1, $recipients)) : $recipients;
@@ -259,6 +259,7 @@ function sends(Campaign $campaign, int $count, array $columns = [], ?CarbonInter
             'email' => 'r'.Str::lower(Str::random(16)).'@example.org',
             'position' => random_int(0, 1_000_000),
             'status' => MessageStatus::Delivered->value,
+            'driver' => 'fake',
             'sent_at' => $at,
             'delivered_at' => $at,
             'created_at' => now(),
@@ -283,12 +284,13 @@ function hardBounce(): array
 }
 
 /**
- * The provider, once campaigns.provider is "fake".
+ * The fake driver the manager built (the active one, which TestCase sets),
+ * or the one a test swapped in under its name.
  */
-function fakeProvider(): FakeProvider
+function fakeDriver(): FakeDriver
 {
-    /** @var FakeProvider */
-    return app(CampaignProvider::class);
+    /** @var FakeDriver */
+    return app(DriverManager::class)->get('fake');
 }
 
 /**

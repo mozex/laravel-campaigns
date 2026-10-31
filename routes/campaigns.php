@@ -9,6 +9,7 @@ use Mozex\Campaigns\Http\Controllers\UnsubscribeController;
 use Mozex\Campaigns\Http\Controllers\WebhookController;
 use Mozex\Campaigns\Http\Controllers\WebVersionController;
 use Mozex\Campaigns\Http\Middleware\PageHeaders;
+use Mozex\Campaigns\Sending\Drivers\DriverManager;
 
 /*
  * Outside the app's web middleware on purpose: a mail app's one-click
@@ -37,7 +38,10 @@ Route::prefix('campaigns')
             Route::post('c/{token}', [ConfirmationController::class, 'confirm'])->name('confirm.submit');
         });
 
-        // Not throttled: the signature is the gate, and a limit would turn
-        // away the provider's bursts after a campaign's sends.
-        Route::post('webhooks/mailgun', WebhookController::class)->name('webhooks.mailgun');
+        // One address per driver, answered by that driver. Not throttled: the
+        // signature is the gate, and a limit would turn away a service's
+        // bursts after a campaign's sends.
+        Route::post('webhooks/{driver}', WebhookController::class)
+            ->name('webhooks')
+            ->where('driver', DriverManager::NAME_PATTERN);
     });

@@ -6,18 +6,21 @@ namespace Mozex\Campaigns;
 
 use Carbon\CarbonInterface;
 use Closure;
+use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\ValidationException;
 use Mozex\Campaigns\Contracts\AgentResource;
 use Mozex\Campaigns\Contracts\Audience;
+use Mozex\Campaigns\Contracts\CampaignDriver;
 use Mozex\Campaigns\Contracts\ListSource;
 use Mozex\Campaigns\Enums\ConsentBasis;
 use Mozex\Campaigns\Enums\ListKind;
 use Mozex\Campaigns\Enums\SubscriptionStatus;
 use Mozex\Campaigns\Models\CampaignList;
 use Mozex\Campaigns\Models\Subscriber;
+use Mozex\Campaigns\Sending\Drivers\DriverManager;
 use Mozex\Campaigns\Support\ConsentContext;
 use Mozex\Campaigns\Support\Keys;
 use Mozex\Campaigns\Support\Rows;
@@ -59,6 +62,22 @@ class Campaigns
                 $this->consents[$model] = $previous;
             }
         }
+    }
+
+    /**
+     * Registers a driver for campaigns.driver to name, from a service
+     * provider's boot(). Its creator gets the driver's own
+     * campaigns.drivers.<name> block and the app; a name taken by a built-in
+     * driver replaces it. Kept by the driver manager, a singleton, since this
+     * service is made afresh for each request and job.
+     *
+     * @param  Closure(array<string, mixed>, Application): CampaignDriver  $creator
+     *
+     * @throws CampaignsException for the reserved name "campaigns", or one that can't be a path segment
+     */
+    public function extend(string $name, Closure $creator): void
+    {
+        app(DriverManager::class)->extend($name, $creator);
     }
 
     /**

@@ -6,7 +6,7 @@ This server runs the app's email marketing on the app's own server. Its lists ar
 
 Call `get_overview` first. It tells you:
 
-- whether sending is switched on, which provider, mailer and domain send, who emails come from, and what is switched off or missing (`sending.notes`, in words);
+- whether sending is switched on, which driver (the sending service), mailer and domain send, what the driver reads back besides sending (`sending.driver.abilities`), who emails come from, and what is switched off or missing (`sending.notes`, in words, including what a driver without an ability can't tell you);
 - the addresses a test email may go to;
 - the sending domain's standing (`domain`): its last 24 hours from the app's own records (sends, hard bounces, spam reports and unsubscribes, with their rates per send), its daily cap and what is left of it, and the provider's own counts for its last 30 days;
 - every list in use with its counts: `subscribed`, `pending` (waiting for a double opt-in), `unsubscribed`, `mailable` (subscribed people who aren't opted out, blocked or sunset) and the subscribed people by engagement tier;
@@ -132,7 +132,7 @@ and nothing outside its `sending_hours` in its `timezone`. `get_campaign_status`
   - `suppressed_bounce`, `suppressed_complaint`, `suppressed_unsubscribe`: the provider held the address from before and sent nothing; the first two block it, the last opts the person out.
   - `other`: anything else permanent.
   - `not_accepted`: the send ended unclear and the provider's logs held nothing for it an hour later; it is never resent.
-- A message `unknown` ended unclear. The reconciler looks it up in the provider's logs from 15 minutes on: it becomes sent when they show it went, or `not_accepted` when they hold nothing an hour later. One too old to look up stays `unknown`. None is ever resent.
+- A message `unknown` ended unclear. When the driver reads its service's logs, the reconciler looks it up from 15 minutes on: it becomes sent when they show it went, or `not_accepted` when they hold nothing an hour later. One too old to look up, or sent by a driver without logs, stays `unknown`. None is ever resent.
 - A spam report blocks the address and opts the person out of everything; an unsubscribe opts them out of all the app's marketing.
 
 ## The stop-loss
@@ -161,7 +161,7 @@ If the provider refuses the sending domain itself (a key or domain problem), the
 ## What runs on its own
 
 - The pump, every minute: starts scheduled campaigns, hands out each sending campaign's next emails, and completes a campaign with nothing left.
-- The reconciler, every 15 minutes: puts back emails whose job was lost, replays the provider's logs from half an hour behind (deliveries and failures a webhook missed), and looks up sends that ended unclear. It runs while sending is off too.
+- The reconciler, every 15 minutes: puts back emails whose job was lost, replays the provider's logs from half an hour behind (deliveries and failures a webhook missed) and looks up sends that ended unclear, for each driver that reads logs. It runs while sending is off too.
 - Pruning, daily: the provider's events older than the app's retention (180 days unless it sets another) go once their campaign is completed or cancelled and its report kept; a campaign still sending or paused keeps its own.
 
 ## Unblocking

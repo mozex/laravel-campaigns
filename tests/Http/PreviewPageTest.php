@@ -6,7 +6,6 @@ use Illuminate\Support\Facades\DB;
 use Mozex\Campaigns\Actions\CreatePreviewLinkAction;
 use Mozex\Campaigns\CampaignsException;
 use Mozex\Campaigns\Content\Personalization;
-use Mozex\Campaigns\Contracts\CampaignProvider;
 use Mozex\Campaigns\Http\Controllers\PreviewController;
 use Mozex\Campaigns\Jobs\SendTestJob;
 use Mozex\Campaigns\Models\Campaign;
@@ -178,7 +177,7 @@ it('refuses a changed, moved or expired link, and a revision that is gone', func
 });
 
 it('makes one never-sent row per language, reused by every later link', function (): void {
-    config(['campaigns.provider' => 'fake', 'campaigns.enabled' => true, 'campaigns.test_addresses' => [Personalization::SAMPLE_EMAIL]]);
+    config(['campaigns.driver' => 'fake', 'campaigns.enabled' => true, 'campaigns.test_addresses' => [Personalization::SAMPLE_EMAIL]]);
     $revision = Revision::factory()->of(Template::factory()->create())
         ->withContent('en', ['html' => '<p>Hi {{first_name}}</p>{{footer}}'])
         ->withContent('fr')
@@ -192,7 +191,7 @@ it('makes one never-sent row per language, reused by every later link', function
     app()->call([new SendTestJob($rows->firstOrFail()->id), 'handle']);
 
     expect($rows)->toHaveCount(2)
-        ->and(app(CampaignProvider::class)->sent())->toBe([])
+        ->and(fakeDriver()->sent())->toBe([])
         ->and($rows->firstOrFail()->fresh()?->only(['sent_at', 'failed_at']))->toBe(['sent_at' => null, 'failed_at' => null]);
 
     // Its web version shows the preview's made-up details, as the preview did.

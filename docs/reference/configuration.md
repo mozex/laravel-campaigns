@@ -12,15 +12,16 @@ weight: 1
 | `enabled` | `CAMPAIGNS_ENABLED` | `false` | the master switch: nothing is sent while it's off |
 | `url` | `CAMPAIGNS_URL` | `APP_URL` | the base of every link in an email |
 | `name` | `CAMPAIGNS_NAME` | `APP_NAME` | what the pages and emails call your app |
-| `mail.mailer` | `CAMPAIGNS_MAILER` | `campaigns` | the mailer campaigns go through |
+| `mail.mailer` | `CAMPAIGNS_MAILER` | `campaigns` | the mailer a driver sends through |
 | `mail.from.address`, `mail.from.name` | `CAMPAIGNS_FROM_ADDRESS`, `CAMPAIGNS_FROM_NAME` | the mailer's own sender | who campaigns come from |
 | `mail.reply_to` | `CAMPAIGNS_REPLY_TO` | none | where replies go |
 | `mail.domain` | `CAMPAIGNS_DOMAIN` | the sender's domain | the marketing domain a From address must be on |
-| `provider` | `CAMPAIGNS_PROVIDER` | `mailgun` | `mailgun`, `fake` or your own class |
-| `mailgun.webhook_signing_key` | `MAILGUN_WEBHOOK_SIGNING_KEY` | none | verifies Mailgun's webhooks |
-| `mailgun.api_key` | `CAMPAIGNS_MAILGUN_API_KEY` | none | reads Mailgun's logs, metrics and suppression lists |
-| `mailgun.endpoint` | `CAMPAIGNS_MAILGUN_ENDPOINT` | the mailer's endpoint, else `api.mailgun.net` | the region's API host |
-| `mailgun.log_days` | | `5` | how many days back Mailgun keeps logs on your plan |
+| `driver` | `CAMPAIGNS_DRIVER` | `mailgun` | the driver that sends: `mailgun`, `fake` or one you register ([Drivers](./drivers.md)) |
+| `drivers.<name>` | | | each driver's own settings, handed to a registered driver's creator |
+| `drivers.mailgun.webhook_signing_key` | `MAILGUN_WEBHOOK_SIGNING_KEY` | none | verifies Mailgun's webhooks, whichever driver sends |
+| `drivers.mailgun.api_key` | `CAMPAIGNS_MAILGUN_API_KEY` | none | reads Mailgun's logs, metrics and suppression lists |
+| `drivers.mailgun.endpoint` | `CAMPAIGNS_MAILGUN_ENDPOINT` | the mailer's endpoint, else `api.mailgun.net` | the region's API host |
+| `drivers.mailgun.log_days` | | `5` | how many days back Mailgun keeps logs on your plan |
 | `no_open_tracking_countries` | | `['FR']` | where opens are never tracked |
 | `postal_address` | `CAMPAIGNS_POSTAL_ADDRESS` | none | shown in the footer |
 | `privacy_url` | `CAMPAIGNS_PRIVACY_URL` | none | linked in the footer |

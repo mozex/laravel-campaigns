@@ -18,6 +18,7 @@ use Mozex\Campaigns\Enums\FeedbackType;
  *
  * @property int $id
  * @property string $provider_event_id
+ * @property string $driver
  * @property ?int $message_id
  * @property ?int $test_send_id
  * @property FeedbackType $type
@@ -39,6 +40,7 @@ class ProviderEvent extends Model
 
     protected $fillable = [
         'provider_event_id',
+        'driver',
         'message_id',
         'test_send_id',
         'type',

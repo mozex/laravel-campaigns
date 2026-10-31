@@ -41,7 +41,7 @@ function pump(): PumpResult
  */
 function sentTo(): array
 {
-    return array_map(fn (OutgoingMessage $message): string => $message->to, fakeProvider()->sent());
+    return array_map(fn (OutgoingMessage $message): string => $message->to, fakeDriver()->sent());
 }
 
 /**

@@ -24,8 +24,8 @@ class CampaignEmail extends Mailable
     {
         // Set again on the built message, after Laravel's own steps: Laravel
         // adds an app-wide reply-to beside the campaign's and puts in a
-        // return path, which Mailgun's API would send as the From, and it
-        // swaps an empty subject for the class name.
+        // return path, which a sending service's API may send as the From,
+        // and it swaps an empty subject for the class name.
         $this->withSymfonyMessage(function (Email $email) use ($outgoing): void {
             $email->text($outgoing->text)->subject($outgoing->subject);
             $email->getHeaders()->remove('Return-Path');

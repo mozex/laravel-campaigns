@@ -9,28 +9,37 @@ use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Cache;
 use Mozex\Campaigns\Actions\RecordFeedbackAction;
 use Mozex\Campaigns\CampaignsException;
-use Mozex\Campaigns\Contracts\CampaignProvider;
+use Mozex\Campaigns\Contracts\Drivers\ReceivesWebhooks;
 use Mozex\Campaigns\Enums\FeedbackResult;
+use Mozex\Campaigns\Sending\Drivers\DriverManager;
 use Mozex\Campaigns\Support\DatabaseErrors;
 
 /**
- * Where the provider posts what happened to the emails it sent. A 406 tells
- * Mailgun to stop retrying (a bad signature, a stale or replayed request);
- * a 500 makes it retry for about 8 hours.
+ * Where a driver's service posts what happened to the emails it sent,
+ * answered by the driver the path names whether or not it is the active one,
+ * so late events after a switch still land. A driver that isn't configured
+ * answers 404 without being built, and one that takes no webhooks 404 too. A
+ * 406 tells the service to stop retrying (a bad signature, a stale or
+ * replayed request); a 500 makes it retry.
  */
 class WebhookController
 {
-    public function __invoke(Request $request, CampaignProvider $provider, RecordFeedbackAction $record): Response
+    public function __invoke(Request $request, string $driver, DriverManager $drivers, RecordFeedbackAction $record): Response
     {
         try {
-            $verified = $provider->verifyWebhook($request);
+            $receiver = $drivers->configured($driver);
+
+            abort_unless($receiver instanceof ReceivesWebhooks, 404);
+
+            $verified = $receiver->verifyWebhook($request);
         } catch (CampaignsException $exception) {
-            // The app isn't set up to verify webhooks (no signing key). The
-            // route takes anyone's posts, so it is reported once an hour,
-            // not on every request, and answered so Mailgun retries.
+            // The app isn't set up to verify this driver's webhooks (no
+            // signing key, a creator that failed). The route takes anyone's
+            // posts, so it is reported once an hour, not on every request,
+            // and answered so the service retries.
             $store = config('campaigns.cache_store') ?: null;
 
-            if (Cache::store(is_string($store) ? $store : null)->add('campaigns:webhook-unverifiable', true, 3600)) {
+            if (Cache::store(is_string($store) ? $store : null)->add('campaigns:webhook-unverifiable:'.$driver, true, 3600)) {
                 report($exception);
             }
 
@@ -43,8 +52,8 @@ class WebhookController
 
         $refused = false;
 
-        foreach ($provider->parseWebhook($request) as $feedback) {
-            if (DatabaseErrors::scrubbed('a provider event', fn (): FeedbackResult => $record->execute($feedback)) === FeedbackResult::Refused) {
+        foreach ($receiver->parseWebhook($request) as $feedback) {
+            if (DatabaseErrors::scrubbed('a provider event', fn (): FeedbackResult => $record->execute($feedback, $driver)) === FeedbackResult::Refused) {
                 $refused = true;
             }
         }

@@ -26,6 +26,7 @@ class TestSendFactory extends Factory
             'email' => strtolower($this->faker->unique()->safeEmail()),
             'locale' => 'en',
             'token_hash' => hash('sha256', $this->faker->unique()->uuid()),
+            'driver' => 'fake',
             'provider_message_id' => null,
             'sent_at' => null,
             'failed_at' => null,

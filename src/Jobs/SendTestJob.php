@@ -9,8 +9,8 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Foundation\Queue\Queueable;
 use Mozex\Campaigns\CampaignsException;
-use Mozex\Campaigns\Contracts\CampaignProvider;
 use Mozex\Campaigns\Models\TestSend;
+use Mozex\Campaigns\Sending\Drivers\DriverManager;
 use Mozex\Campaigns\Sending\MessageComposer;
 use Mozex\Campaigns\Sending\SendFailed;
 use Mozex\Campaigns\Support\TestAddresses;
@@ -19,10 +19,10 @@ use Throwable;
 
 /**
  * Sends one test email. It carries only the test's id: the links' token is
- * made here, its hash stored by a conditional update that only one run can
- * make, so a duplicate job sends nothing and the raw token never sits in the
- * queue. A send that fails is recorded on the test (failed_at, failure) for
- * the agent that asked to read.
+ * made here, its hash stored with the active driver's name by a conditional
+ * update that only one run can make, so a duplicate job sends nothing and
+ * the raw token never sits in the queue. A send that fails is recorded on
+ * the test (failed_at, failure) for the agent that asked to read.
  */
 class SendTestJob implements ShouldQueue
 {
@@ -35,7 +35,8 @@ class SendTestJob implements ShouldQueue
     public int $tries = 1;
 
     /**
-     * Above the 30 seconds a campaigns Mailgun mailer is given by default.
+     * Above the 30 seconds a driver gives its mailer when the app set no
+     * limit of its own.
      */
     public int $timeout = 60;
 
@@ -45,7 +46,7 @@ class SendTestJob implements ShouldQueue
         $this->onQueue(config('campaigns.queue.name'));
     }
 
-    public function handle(CampaignProvider $provider, MessageComposer $composer): void
+    public function handle(DriverManager $drivers, MessageComposer $composer): void
     {
         $test = TestSend::query()->find($this->testSendId);
 
@@ -66,20 +67,28 @@ class SendTestJob implements ShouldQueue
             return;
         }
 
+        try {
+            $driver = $drivers->active();
+        } catch (CampaignsException $exception) {
+            $this->markFailed($test, $exception->getMessage(), claimed: false);
+
+            return;
+        }
+
         $token = Token::generate();
 
         $claimed = TestSend::query()
             ->whereKey($test->id)
             ->whereNull('token_hash')
             ->whereNull('failed_at')
-            ->update(['token_hash' => Token::hash($token), 'updated_at' => now()]);
+            ->update(['token_hash' => Token::hash($token), 'driver' => $drivers->getDefaultDriver(), 'updated_at' => now()]);
 
         if ($claimed === 0) {
             return;
         }
 
         try {
-            $receipt = $provider->send($composer->outgoing($test, $token));
+            $receipt = $driver->send($composer->outgoing($test, $token));
         } catch (SendFailed|CampaignsException $exception) {
             $this->markFailed($test, $exception->getMessage());
 

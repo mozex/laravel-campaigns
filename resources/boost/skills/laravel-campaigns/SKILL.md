@@ -1,6 +1,6 @@
 ---
 name: laravel-campaigns
-description: Wire mozex/laravel-campaigns into a Laravel app and extend it - dynamic lists from app models (ListSource, HasCampaignSubscriber, campaigns:sync-list), recording consent on sign-up forms (withCampaignConsent, ConsentContext), newsletter and double opt-in sign-ups, imports from another email service (ImportContactsAction), named audiences and agent resources, the campaigns mailer and Mailgun webhooks, MCP tokens, OAuth guards and gate abilities, events, error-tracker redaction, and testing with the fake provider. Use whenever the user works on email marketing, newsletters, unsubscribes, marketing consent, mailing lists or campaigns in an app that has this package, even when they don't name it.
+description: Wire mozex/laravel-campaigns into a Laravel app and extend it - dynamic lists from app models (ListSource, HasCampaignSubscriber, campaigns:sync-list), recording consent on sign-up forms (withCampaignConsent, ConsentContext), newsletter and double opt-in sign-ups, imports from another email service (ImportContactsAction), named audiences and agent resources, the campaigns mailer, Mailgun webhooks and sending drivers for other services (Campaigns::extend), MCP tokens, OAuth guards and gate abilities, events, error-tracker redaction, and testing with the fake driver. Use whenever the user works on email marketing, newsletters, unsubscribes, marketing consent, mailing lists or campaigns in an app that has this package, even when they don't name it.
 ---
 
 # Laravel Campaigns
@@ -13,7 +13,7 @@ This app has `mozex/laravel-campaigns` installed. AI agents run its email market
 - A newsletter form, a double opt-in list, or an unsubscribe needs handling in app code.
 - Contacts, opt-outs or bounces come over from another email service.
 - Agents need app data: an audience by the app's own records ("people who bought X") or read-only data (products, a brand guide).
-- Setting up the mailer, Mailgun's webhooks, the queue worker, the scheduler, MCP tokens or OAuth sign-in.
+- Setting up the mailer, Mailgun's webhooks, a driver for another sending service, the queue worker, the scheduler, MCP tokens or OAuth sign-in.
 - Writing tests for any of it.
 
 ## Rules that keep consent provable
@@ -105,17 +105,21 @@ An import never clears an opt-out or block, never changes an existing subscripti
 
 ## Setup checklist
 
-- A `campaigns` mailer in `config/mail.php`: `'transport' => 'mailgun', 'scheme' => 'api'` with the marketing domain's `domain`, `secret` and `endpoint`. Locally, `CAMPAIGNS_PROVIDER=fake`.
+- A `campaigns` mailer in `config/mail.php`: `'transport' => 'mailgun', 'scheme' => 'api'` with the marketing domain's `domain`, `secret` and `endpoint`, for the default `mailgun` driver. Locally, `CAMPAIGNS_DRIVER=fake`.
 - `CAMPAIGNS_FROM_ADDRESS` on the marketing domain, `CAMPAIGNS_POSTAL_ADDRESS`, `CAMPAIGNS_PRIVACY_URL`, `CAMPAIGNS_ALERT_ADDRESS`, `CAMPAIGNS_TEST_ADDRESSES`.
-- Mailgun webhooks to `/campaigns/webhooks/mailgun` with `MAILGUN_WEBHOOK_SIGNING_KEY`; an account key in `CAMPAIGNS_MAILGUN_API_KEY` for logs, metrics and suppressions; `php artisan campaigns:import-provider-suppressions <domain>` before the first campaign.
+- Mailgun webhooks to `/campaigns/webhooks/mailgun` with `MAILGUN_WEBHOOK_SIGNING_KEY` (keep it set for a few days after switching drivers, so late events land); an account key in `CAMPAIGNS_MAILGUN_API_KEY` for logs, metrics and suppressions; `php artisan campaigns:import-provider-suppressions <domain>` before the first campaign.
 - A worker for the `campaigns` queue with `--timeout` above 300 seconds and the connection's `retry_after` above that; the scheduler running; `CAMPAIGNS_CACHE_STORE` on a store deploys don't flush.
 - `php artisan campaigns:token create <name> [--read-only]` for an agent's machine. For OAuth (claude.ai, ChatGPT): Passport with laravel/mcp's `Mcp::oauthRoutes()`, then `'guards' => ['campaigns', 'api']` under `campaigns.mcp` and the gate abilities `campaigns.read` and `campaigns.full`, which the package never defines.
 - A CDN's bot or browser check off, and caching off, for the MCP path and its sub-paths, `/campaigns/`, `/oauth/` and `/.well-known/oauth-`.
 - `campaigns.mcp.instructions` for the app's own rules for agents: about 2,300 characters fit beside the package's.
 
+## Another sending service
+
+A driver implements `Mozex\Campaigns\Contracts\CampaignDriver` (`send(OutgoingMessage): SendReceipt`, throwing `SendFailed` with `NotAccepted`, `DomainRefused` or `Unclear`, decided by status and error code, never the service's words, and no address in the message) plus the abilities its service has in `Contracts\Drivers`: `ReceivesWebhooks`, `ReadsEvents`, `ReadsSuppressions`, `ReadsMetrics`. Register it in a service provider's `boot()` with `Campaigns::extend('name', fn (array $config, Application $app) => new NameDriver($config))`; it gets `campaigns.drivers.name` and answers webhooks at `/campaigns/webhooks/name`. Names are lower-case, at most 50 characters; `campaigns` is reserved. `get_overview` says what a missing ability costs.
+
 ## Error trackers
 
-Redact: paths under `/campaigns/u/`, `/campaigns/c/` and `/campaigns/v/` (link tokens); the `signature` query of `/campaigns/preview/` and of the upload and download links under the MCP path; the body of the upload `PUT`; the Mailgun webhook's `event-data` field; MCP tool call arguments; outgoing requests to `api.*.mailgun.net/v3/<domain>/bounces`, `/complaints` and `/unsubscribes` (path and query); the `Authorization` header.
+Redact: paths under `/campaigns/u/`, `/campaigns/c/` and `/campaigns/v/` (link tokens); the `signature` query of `/campaigns/preview/` and of the upload and download links under the MCP path; the body of the upload `PUT`; the body of `POST /campaigns/webhooks/<driver>` (Mailgun's `event-data` field); MCP tool call arguments; outgoing requests to `api.*.mailgun.net/v3/<domain>/bounces`, `/complaints` and `/unsubscribes` (path and query); the `Authorization` header.
 
 ## Events
 
@@ -123,7 +127,7 @@ Redact: paths under `/campaigns/u/`, `/campaigns/c/` and `/campaigns/v/` (link t
 
 ## Testing
 
-- `CAMPAIGNS_PROVIDER=fake` in `phpunit.xml`; `app(CampaignProvider::class)` is the `FakeProvider`: `sent()`, `failNext()`, `count($date, $counts)`, `log()`, `suppress()`, `failReads()` and `readsWork()`.
+- `CAMPAIGNS_DRIVER=fake` in `phpunit.xml`; `app(DriverManager::class)->get('fake')` is the `FakeDriver` (`Mozex\Campaigns\Sending\Drivers`): `sent()`, `failNext()`, `count($date, $counts)`, `log()`, `suppress()`, `webhook()`, `failReads()` and `readsWork()`. `->swap('fake', new FakeSendOnlyDriver)` tests a driver with no abilities.
 - `Queue::fake([SendMessageJob::class])` only, so a started campaign still freezes. Travel time with UTC instants.
 - Bind `StaticHostResolver` in place of `HostResolver` so link checks and image fetches never look up real hosts.
 - Factories for every model ship with the package: `Subscriber::factory()`, `CampaignList::factory()`, `Campaign::factory()`.

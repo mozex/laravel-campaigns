@@ -29,9 +29,9 @@ class WebhookToken extends Model
     public const UPDATED_AT = null;
 
     /**
-     * How long a token must be kept: past the oldest signed timestamp a
-     * webhook is accepted with (MailgunProvider::WEBHOOK_MAX_AGE, a day),
-     * after which its request is refused anyway.
+     * How long a token must be kept: twice the day a webhook's signed
+     * timestamp may be off from now (ReceivesWebhooks), since that day runs
+     * both ways; a request older than that is refused anyway.
      */
     public const KEEP_HOURS = 48;
 

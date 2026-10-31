@@ -33,11 +33,11 @@ return [
      * takes the mailer's own sender. A campaign's From address must be on
      * the marketing domain: "domain", else the sender's domain. Replies go
      * to "reply_to", an inbox someone reads (it may be on another domain).
-     * Default mailer: "campaigns", which you define in config/mail.php. With
-     * the Mailgun provider it uses the mailgun transport with
-     * 'scheme' => 'api' (or the log mailer locally); a mailgun mailer with
-     * no 'client' options gets a 10-second idle timeout and 30 seconds in
-     * all, so a stuck request ends before the job that sends it.
+     * Default mailer: "campaigns", which you define in config/mail.php with
+     * the transport your driver sends through (for Mailgun, the mailgun
+     * transport with 'scheme' => 'api'; the log mailer locally). A driver
+     * gives a mailer with no time limits of its own limits shorter than the
+     * job that sends, so a stuck request ends before the job does.
      */
     'mail' => [
         'mailer' => env('CAMPAIGNS_MAILER', 'campaigns'),
@@ -50,33 +50,42 @@ return [
     ],
 
     /*
-     * The service that delivers campaign email: "mailgun", "fake" (keeps
-     * what it is given and sends nothing, for tests and local runs), or the
-     * class name of your own Mozex\Campaigns\Contracts\CampaignProvider.
+     * The driver that sends campaign email, and the package's own emails:
+     * "mailgun", "fake" (keeps what it is given and sends nothing, for tests
+     * and local runs; refused in production), or the name of one you
+     * register with Campaigns::extend() in a service provider. Switching
+     * drivers keeps the old one's webhooks answering while its block below
+     * still holds their credential, so late events about the mail it sent
+     * still land.
      * Default: mailgun.
      */
-    'provider' => env('CAMPAIGNS_PROVIDER', 'mailgun'),
+    'driver' => env('CAMPAIGNS_DRIVER', 'mailgun'),
 
     /*
-     * Mailgun's settings beyond the campaigns mailer. Its webhooks post to
-     * /campaigns/webhooks/mailgun and are verified with the account's HTTP
-     * webhook signing key (Settings, API Security in Mailgun), which is
-     * neither the API key nor a domain sending key.
+     * Each driver's own settings, beyond the campaigns mailer. A driver you
+     * register gets its block here (campaigns.drivers.<name>) as its
+     * creator's first argument.
      *
-     * api_key reads Mailgun's logs and suppression lists, which the
-     * reconciler, the suppressions import and an unblock's check need: an
-     * account API key, since a domain sending key can only send. Where your
-     * plan offers roles, the Support role is the narrowest that reads logs
-     * and suppressions. endpoint is the region's API host, such as
+     * Mailgun's webhooks post to /campaigns/webhooks/mailgun and are verified
+     * with the account's HTTP webhook signing key (Settings, API Security in
+     * Mailgun), which is neither the API key nor a domain sending key.
+     * api_key reads Mailgun's logs, suppression lists and daily counts, which
+     * the reconciler, the suppressions import, an unblock's check and the
+     * overview need: an account API key, since a domain sending key can only
+     * send. Where your plan offers roles, the Support role is the narrowest
+     * that reads them. endpoint is the region's API host, such as
      * api.eu.mailgun.net (default: the campaigns mailer's endpoint, else
      * api.mailgun.net). log_days is how many days back your plan keeps logs
      * (5 on Foundation, 30 on Scale): nothing older is looked for.
      */
-    'mailgun' => [
-        'webhook_signing_key' => env('MAILGUN_WEBHOOK_SIGNING_KEY'),
-        'api_key' => env('CAMPAIGNS_MAILGUN_API_KEY'),
-        'endpoint' => env('CAMPAIGNS_MAILGUN_ENDPOINT'),
-        'log_days' => 5,
+    'drivers' => [
+        'mailgun' => [
+            'webhook_signing_key' => env('MAILGUN_WEBHOOK_SIGNING_KEY'),
+            'api_key' => env('CAMPAIGNS_MAILGUN_API_KEY'),
+            'endpoint' => env('CAMPAIGNS_MAILGUN_ENDPOINT'),
+            'log_days' => 5,
+        ],
+        'fake' => [],
     ],
 
     /*
@@ -95,9 +104,9 @@ return [
     'postal_address' => env('CAMPAIGNS_POSTAL_ADDRESS'),
 
     /*
-     * Your privacy policy, linked by {{footer}} and {{privacy_url}}. Mailgun's
-     * acceptable use policy asks for a link to it in every email. Default:
-     * none.
+     * Your privacy policy, linked by {{footer}} and {{privacy_url}}. Mailbox
+     * providers and sending services ask for a link to it in every email.
+     * Default: none.
      */
     'privacy_url' => env('CAMPAIGNS_PRIVACY_URL'),
 

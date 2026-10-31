@@ -6,6 +6,9 @@ use Illuminate\Http\Client\Request as ClientRequest;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Mozex\Campaigns\CampaignsException;
+use Mozex\Campaigns\Contracts\Drivers\ReadsEvents;
+use Mozex\Campaigns\Contracts\Drivers\ReadsSuppressions;
+use Mozex\Campaigns\Contracts\Drivers\ReceivesWebhooks;
 use Mozex\Campaigns\Enums\CampaignStatus;
 use Mozex\Campaigns\Enums\Rights;
 use Mozex\Campaigns\Enums\SubscriptionStatus;
@@ -19,6 +22,8 @@ use Mozex\Campaigns\Models\Subscriber;
 use Mozex\Campaigns\Reports\DomainSummary;
 use Mozex\Campaigns\Reports\Overview;
 use Mozex\Campaigns\Sending\DomainMetrics;
+use Mozex\Campaigns\Sending\Drivers\DriverManager;
+use Mozex\Campaigns\Sending\Drivers\FakeSendOnlyDriver;
 
 it('reads every list\'s counts, the open campaigns and the placeholders with the app\'s values', function (string $driver): void {
     useDatabase($driver);
@@ -28,7 +33,8 @@ it('reads every list\'s counts, the open campaigns and the placeholders with the
         'app.name' => 'Acme',
         'campaigns.postal_address' => '1 Main Street, Springfield',
         'campaigns.privacy_url' => 'https://acme.example/privacy',
-        'campaigns.mailgun.api_key' => 'key-123',
+        'campaigns.driver' => 'mailgun',
+        'campaigns.drivers.mailgun.api_key' => 'key-123',
         'campaigns.test_addresses' => ['Owner@Acme.example'],
         'campaigns.checks.spam_score' => true,
     ]);
@@ -71,13 +77,12 @@ it('reads every list\'s counts, the open campaigns and the placeholders with the
     expect($content['app'])->toBe('Acme')
         ->and($content['sending'])->toBe([
             'enabled' => true,
-            'provider' => 'mailgun',
+            'driver' => ['name' => 'mailgun', 'abilities' => ['webhooks', 'events', 'suppressions', 'metrics']],
             'mailer' => 'campaigns',
             'from_address' => 'news@news.example.com',
             'from_name' => 'Example News',
             'reply_to' => null,
             'domain' => 'news.example.com',
-            'provider_logs_readable' => true,
             'test_addresses' => ['owner@acme.example'],
             'spam_score_check' => true,
             'notes' => [],
@@ -142,10 +147,10 @@ it('stays under the answer limit with every column at its longest', function (st
 
     // The domain's 30 days, every count at its longest.
     sendFromExample();
-    config(['campaigns.provider' => 'fake', 'campaigns.domain_daily_caps' => ['news.example.com' => 100_000_000]]);
+    config(['campaigns.driver' => 'fake', 'campaigns.domain_daily_caps' => ['news.example.com' => 100_000_000]]);
 
     foreach (range(0, DomainSummary::DAYS - 1) as $day) {
-        fakeProvider()->count(now()->utc()->subDays($day)->toDateString(), array_fill_keys(DomainMetrics::COUNTS, 1_000_000_000));
+        fakeDriver()->count(now()->utc()->subDays($day)->toDateString(), array_fill_keys(DomainMetrics::COUNTS, 1_000_000_000));
     }
 
     $content = structuredContent(CampaignsServer::actingAs(ApiToken::factory()->readOnly()->create(), 'campaigns')
@@ -161,11 +166,10 @@ it('stays under the answer limit with every column at its longest', function (st
         ->and(mb_strlen($content['campaigns'][0]['pause_reason']))->toBe(Overview::PAUSE_REASON_LENGTH + 3);
 })->with('costly characters');
 
-it('says what is switched off or missing', function (): void {
+it('says what is switched off or missing, and what a driver without each ability can\'t do', function (): void {
+    app(DriverManager::class)->swap('fake', new FakeSendOnlyDriver);
     config([
         'campaigns.enabled' => false,
-        'campaigns.provider' => 'mailgun',
-        'campaigns.mailgun.api_key' => null,
         'campaigns.test_addresses' => [],
         'campaigns.mail.from' => ['address' => null, 'name' => null],
         'campaigns.mail.domain' => null,
@@ -179,12 +183,31 @@ it('says what is switched off or missing', function (): void {
     $sending = structuredContent($overview)['sending'];
 
     expect($sending['enabled'])->toBeFalse()
+        ->and($sending['driver'])->toBe(['name' => 'fake', 'abilities' => []])
         ->and($sending['domain'])->toBeNull()
-        ->and($sending['notes'])->toHaveCount(4)
+        ->and($sending['notes'])->toHaveCount(6)
         ->and($sending['notes'][0])->toStartWith('No sending domain is configured')
-        ->and($sending['notes'][1])->toStartWith('Sending is switched off')
-        ->and($sending['notes'][2])->toStartWith('campaigns.mailgun.api_key isn\'t set')
-        ->and($sending['notes'][3])->toStartWith('No test addresses are set');
+        ->and($sending['notes'][1])->toStartWith('The campaigns driver "fake" takes no webhooks')
+        ->and($sending['notes'][2])->toStartWith('The campaigns driver "fake" reads no logs')
+        ->and($sending['notes'][3])->toStartWith('The campaigns driver "fake" reads no suppression lists')
+        ->and($sending['notes'][4])->toStartWith('Sending is switched off')
+        ->and($sending['notes'][5])->toStartWith('No test addresses are set');
+
+    // A driver with every ability but counts, and one that can't be built.
+    sendFromExample();
+    config(['campaigns.test_addresses' => ['owner@example.com'], 'campaigns.enabled' => true]);
+    app(DriverManager::class)->swap('fake', new class extends FakeSendOnlyDriver implements ReadsEvents, ReadsSuppressions, ReceivesWebhooks {});
+    $noCounts = structuredContent(agent(Rights::Read)->tool(OverviewTool::class)->assertOk());
+    config(['campaigns.driver' => 'postmark']);
+    $unknown = structuredContent(agent(Rights::Read)->tool(OverviewTool::class)->assertOk());
+
+    expect($noCounts['sending']['driver']['abilities'])->toBe(['webhooks', 'events', 'suppressions'])
+        ->and($noCounts['domain']['provider'])->toBeNull()
+        ->and($noCounts['sending']['notes'])->toBe(['The campaigns driver "fake" counts nothing by day, so domain.provider is null.'])
+        ->and($unknown['sending']['driver'])->toBe(['name' => 'postmark', 'abilities' => []])
+        ->and($unknown['domain']['provider'])->toBeNull()
+        ->and($unknown['sending']['notes'])->toHaveCount(1)
+        ->and($unknown['sending']['notes'][0])->toStartWith('No campaigns driver is called "postmark"');
 });
 
 it('shows the sending domain\'s standing: its last 24 hours, its daily cap and the provider\'s counts', function (string $driver): void {
@@ -202,7 +225,7 @@ it('shows the sending domain\'s standing: its last 24 hours, its daily cap and t
     sends($campaign, 50, ['claimed_at' => now()->subDays(2)], now()->subDays(2));
     Subscriber::factory()->create(['confirmation_sent_at' => now()->subHour()]);
 
-    fakeProvider()
+    fakeDriver()
         ->count(now()->utc()->toDateString(), ['sent' => 104, 'hard_bounces' => 2, 'complaints' => 1])
         ->count(now()->utc()->subDays(DomainSummary::DAYS)->toDateString(), ['sent' => 9999]);
 
@@ -224,7 +247,7 @@ it('shows the sending domain\'s standing: its last 24 hours, its daily cap and t
         // The day before the 30 isn't counted.
         ->and($domain['provider']['totals']['sent'])->toBe(104);
 
-    fakeProvider()->failReads(CampaignsException::providerUnreadable('Mailgun answered 503 when its logs, suppressions or metrics were read.'));
+    fakeDriver()->failReads(CampaignsException::providerUnreadable('Mailgun answered 503 when its logs, suppressions or metrics were read.'));
     $overview = structuredContent(agent(Rights::Read)->tool(OverviewTool::class)->assertOk());
 
     expect($overview['domain']['provider'])->toBeNull()
@@ -233,26 +256,36 @@ it('shows the sending domain\'s standing: its last 24 hours, its daily cap and t
 
     // With no exception given, as the docs show it, reads fail too, until
     // they're made to work again.
-    fakeProvider()->failReads();
+    fakeDriver()->failReads();
     $failing = structuredContent(agent(Rights::Read)->tool(OverviewTool::class)->assertOk());
-    fakeProvider()->readsWork();
+    fakeDriver()->readsWork();
 
     expect($failing['domain']['provider'])->toBeNull()
         ->and(structuredContent(agent(Rights::Read)->tool(OverviewTool::class)->assertOk())['domain']['provider'])->not->toBeNull();
 })->with('databases');
 
-it('asks Mailgun nothing for the domain\'s numbers without the key that reads them', function (): void {
+it('asks Mailgun nothing for the domain\'s numbers without the key that reads them, and says so', function (): void {
     Http::preventStrayRequests();
     sendFromExample();
-    config(['campaigns.provider' => 'mailgun', 'campaigns.mailgun.api_key' => null]);
+    config(['campaigns.driver' => 'mailgun', 'campaigns.drivers.mailgun.api_key' => null]);
 
     $content = structuredContent(agent(Rights::Read)->tool(OverviewTool::class)->assertOk());
 
     expect($content['domain']['provider'])->toBeNull()
         ->and($content['domain']['last_24_hours']['sends'])->toBe(0)
         ->and($content['sending']['notes'])->toHaveCount(2)
-        ->and($content['sending']['notes'][0])->toStartWith('campaigns.mailgun.api_key isn\'t set')
-        ->and($content['sending']['notes'][1])->toStartWith('No test addresses are set');
+        ->and($content['sending']['notes'][0])->toStartWith('No test addresses are set')
+        ->and($content['sending']['notes'][1])->toContain('CAMPAIGNS_MAILGUN_API_KEY');
 
     Http::assertNothingSent();
+});
+
+it('shows a count the provider doesn\'t keep as null, never 0', function (): void {
+    sendFromExample();
+    fakeDriver()->count(now()->utc()->toDateString(), ['sent' => 7, 'forwarded' => null, 'unsubscribes' => null]);
+
+    $provider = structuredContent(agent(Rights::Read)->tool(OverviewTool::class)->assertOk())['domain']['provider'];
+
+    expect($provider['days'][DomainSummary::DAYS - 1])->toBe(['date' => now()->utc()->toDateString(), 'sent' => 7, 'forwarded' => null, 'hard_bounces' => 0, 'complaints' => 0, 'unsubscribes' => null])
+        ->and($provider['totals'])->toBe(['sent' => 7, 'forwarded' => 0, 'hard_bounces' => 0, 'complaints' => 0, 'unsubscribes' => 0]);
 });

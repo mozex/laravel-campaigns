@@ -22,7 +22,7 @@ use Mozex\Campaigns\Commands\PumpCommand;
 use Mozex\Campaigns\Commands\ReconcileCommand;
 use Mozex\Campaigns\Commands\SyncListCommand;
 use Mozex\Campaigns\Commands\TokenCommand;
-use Mozex\Campaigns\Contracts\CampaignProvider;
+use Mozex\Campaigns\Contracts\CampaignDriver;
 use Mozex\Campaigns\Events\CampaignFirstComplaintEvent;
 use Mozex\Campaigns\Events\CampaignPausedEvent;
 use Mozex\Campaigns\Events\CampaignQueueStalledEvent;
@@ -43,8 +43,7 @@ use Mozex\Campaigns\Models\Template;
 use Mozex\Campaigns\Models\TestSend;
 use Mozex\Campaigns\Models\Upload;
 use Mozex\Campaigns\Models\WebhookToken;
-use Mozex\Campaigns\Sending\FakeProvider;
-use Mozex\Campaigns\Sending\MailgunProvider;
+use Mozex\Campaigns\Sending\Drivers\DriverManager;
 use Mozex\Campaigns\Support\Token;
 use Spatie\LaravelPackageTools\Commands\InstallCommand;
 use Spatie\LaravelPackageTools\Package;
@@ -162,22 +161,11 @@ class CampaignsServiceProvider extends PackageServiceProvider
         // request or queued job in a long-running worker.
         $this->app->scoped(Campaigns::class);
 
-        $this->app->singleton(CampaignProvider::class, function (Application $app): CampaignProvider {
-            $value = config('campaigns.provider');
-
-            $class = match ($value) {
-                'mailgun' => MailgunProvider::class,
-                'fake' => FakeProvider::class,
-                default => $value,
-            };
-
-            if (! is_string($class) || ! is_a($class, CampaignProvider::class, true)) {
-                throw CampaignsException::invalidProvider(is_string($value) ? $value : get_debug_type($value));
-            }
-
-            /** @var CampaignProvider */
-            return $app->make($class);
-        });
+        // A singleton, since it keeps the drivers it built and the ones apps
+        // register; the active driver resolved afresh each time, so a switch
+        // reaches what is resolved after it.
+        $this->app->singleton(DriverManager::class);
+        $this->app->bind(CampaignDriver::class, fn (Application $app): CampaignDriver => $app->make(DriverManager::class)->active());
 
         /** @var Repository $config */
         $config = $this->app->make('config');
@@ -191,28 +179,13 @@ class CampaignsServiceProvider extends PackageServiceProvider
             'provider' => null,
             ...(array) $config->get('auth.guards.campaigns', []),
         ]);
-        $this->boundMailgunClient($config);
+        DriverManager::boundMailer($config);
 
         // The language every email holds, read before any middleware runs:
         // App::setLocale() writes app.locale, so reading it later would give
         // the current visitor's language instead of the app's.
         if (! $config->get('campaigns.locale')) {
             $config->set('campaigns.locale', $config->get('app.locale'));
-        }
-    }
-
-    /**
-     * Symfony's HTTP client only times out a connection that goes quiet, so a
-     * slow Mailgun answer could outlast the job sending to it. A campaigns
-     * mailgun mailer the app gave no client options of its own gets a total
-     * limit below any send job's timeout.
-     */
-    protected function boundMailgunClient(Repository $config): void
-    {
-        $key = 'mail.mailers.'.$config->get('campaigns.mail.mailer');
-
-        if ($config->get($key.'.transport') === 'mailgun' && ! $config->has($key.'.client')) {
-            $config->set($key.'.client', ['timeout' => 10, 'max_duration' => 30]);
         }
     }
 

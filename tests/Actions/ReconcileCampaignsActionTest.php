@@ -14,7 +14,6 @@ use Mozex\Campaigns\Actions\PumpCampaignsAction;
 use Mozex\Campaigns\Actions\ReconcileCampaignsAction;
 use Mozex\Campaigns\Actions\RecordFeedbackAction;
 use Mozex\Campaigns\CampaignsException;
-use Mozex\Campaigns\Contracts\CampaignProvider;
 use Mozex\Campaigns\Enums\CampaignStatus;
 use Mozex\Campaigns\Enums\FeedbackResult;
 use Mozex\Campaigns\Enums\FeedbackType;
@@ -24,15 +23,17 @@ use Mozex\Campaigns\Jobs\SendMessageJob;
 use Mozex\Campaigns\Models\Campaign;
 use Mozex\Campaigns\Models\CampaignMessage;
 use Mozex\Campaigns\Models\ProviderEvent;
-use Mozex\Campaigns\Sending\FakeProvider;
+use Mozex\Campaigns\Sending\Drivers\DriverManager;
+use Mozex\Campaigns\Sending\Drivers\FakeDriver;
+use Mozex\Campaigns\Sending\Drivers\FakeSendOnlyDriver;
+use Mozex\Campaigns\Sending\Drivers\MailgunDriver;
 use Mozex\Campaigns\Sending\Feedback;
-use Mozex\Campaigns\Sending\MailgunProvider;
 use Mozex\Campaigns\Sending\ReconcileResult;
 
 /**
- * The fake provider, keeping what it was asked.
+ * The fake driver, keeping what it was asked.
  */
-class RecordingProvider extends FakeProvider
+class RecordingDriver extends FakeDriver
 {
     /** @var list<array{string, CarbonInterface}> */
     public array $lookedUp = [];
@@ -58,7 +59,7 @@ class RecordingProvider extends FakeProvider
 /**
  * Logs whose replay gives the events it holds, then fails.
  */
-class FailingPartWayProvider extends FakeProvider
+class FailingPartWayDriver extends FakeDriver
 {
     public bool $fails = true;
 
@@ -74,6 +75,14 @@ class FailingPartWayProvider extends FakeProvider
     }
 }
 
+/**
+ * The reconciler with a small per-driver read limit.
+ */
+class SmallReplayReconciler extends ReconcileCampaignsAction
+{
+    public const REPLAY_READ = 100;
+}
+
 beforeEach(function (): void {
     $this->travelTo(Carbon::parse('2026-03-02 12:00:00'));
 });
@@ -83,12 +92,12 @@ function reconcile(): ReconcileResult
     return app(ReconcileCampaignsAction::class)->execute();
 }
 
-function recordingProvider(): RecordingProvider
+function recordingDriver(): RecordingDriver
 {
-    $provider = new RecordingProvider;
-    app()->instance(CampaignProvider::class, $provider);
+    $driver = new RecordingDriver;
+    app(DriverManager::class)->swap('fake', $driver);
 
-    return $provider;
+    return $driver;
 }
 
 /**
@@ -102,7 +111,6 @@ function loggedEvent(CampaignMessage $message, FeedbackType $type, CarbonInterfa
         'providerEventId' => Str::random(22),
         'type' => $type,
         'occurredAt' => $at,
-        'recipient' => (string) $message->email,
         'messageUuid' => $message->uuid,
         ...$changes,
     ]);
@@ -114,7 +122,7 @@ function loggedEvent(CampaignMessage $message, FeedbackType $type, CarbonInterfa
 function unclearMessage(Campaign $campaign, int $index, MessageStatus $status, CarbonInterface $sendingAt): CampaignMessage
 {
     $message = $campaign->messages()->orderBy('position')->skip($index)->firstOrFail();
-    $message->forceFill(['status' => $status, 'claim_id' => (string) Str::uuid(), 'claimed_at' => $sendingAt, 'sending_at' => $sendingAt, 'failure_reason' => 'unclear', 'failure_code' => 504])->save();
+    $message->forceFill(['status' => $status, 'driver' => 'fake', 'claim_id' => (string) Str::uuid(), 'claimed_at' => $sendingAt, 'sending_at' => $sendingAt, 'failure_reason' => 'unclear', 'failure_code' => 504])->save();
 
     return $message;
 }
@@ -145,7 +153,7 @@ describe('queued messages whose job was lost', function (): void {
 
         expect($messages->pluck('status')->unique()->all())->toBe([MessageStatus::Pending])
             ->and($messages->whereNotNull('claim_id')->count() + $messages->whereNotNull('claimed_at')->count() + $messages->whereNotNull('token_hash')->count())->toBe(0)
-            ->and(fakeProvider()->sent())->toBe([])
+            ->and(fakeDriver()->sent())->toBe([])
             ->and(app(PumpCampaignsAction::class)->execute()->claimed)->toBe([$campaign->id => 3]);
     })->with('databases');
 });
@@ -171,7 +179,7 @@ describe('unclear sends', function (): void {
         useDatabase($driver);
         $campaign = sendingCampaign(1);
         $message = unclearMessage($campaign, 0, MessageStatus::Unknown, now()->subMinutes(20));
-        $provider = recordingProvider();
+        $provider = recordingDriver();
         $provider->log(
             loggedEvent($message, FeedbackType::Accepted, now()->subMinutes(20)),
             loggedEvent($message, FeedbackType::Delivered, now()->subMinutes(19)),
@@ -208,7 +216,7 @@ describe('unclear sends', function (): void {
         // Its job may still be running.
         unclearMessage($campaign, 6, MessageStatus::Sending, now()->subMinutes(14));
         ProviderEvent::factory()->for($awaitingItsEvent, 'message')->create(['created_at' => now()]);
-        $provider = recordingProvider();
+        $provider = recordingDriver();
 
         $result = reconcile();
 
@@ -237,10 +245,10 @@ describe('unclear sends', function (): void {
         Exceptions::fake();
         $campaign = sendingCampaign(1);
         $message = unclearMessage($campaign, 0, MessageStatus::Unknown, now()->subHours(2));
-        fakeProvider()->failReads(CampaignsException::missingMailgunApiKey());
+        fakeDriver()->failReads(new CampaignsException('The logs need a key that can read them.'));
 
         $this->artisan('campaigns:reconcile')
-            ->expectsOutputToContain('CAMPAIGNS_MAILGUN_API_KEY')
+            ->expectsOutputToContain('The logs need a key that can read them.')
             ->assertFailed();
 
         expect(reconcile()->problems)->toHaveCount(1)
@@ -253,14 +261,14 @@ describe('unclear sends', function (): void {
 
         Exceptions::assertReportedCount(2);
 
-        $provider = new class extends FakeProvider
+        $provider = new class extends FakeDriver
         {
             public function eventsForMessage(string $messageUuid, CarbonInterface $since): ?array
             {
                 throw new RuntimeException('A bug.');
             }
         };
-        app()->instance(CampaignProvider::class, $provider);
+        app(DriverManager::class)->swap('fake', $provider);
 
         expect(reconcile()->problems)->toBe(['Reconciling failed: RuntimeException.'])
             ->and(reconcile()->problems)->toHaveCount(1)
@@ -268,7 +276,7 @@ describe('unclear sends', function (): void {
 
         Exceptions::assertReportedCount(4);
 
-        app()->instance(CampaignProvider::class, new FakeProvider);
+        app(DriverManager::class)->swap('fake', new FakeDriver);
 
         $this->artisan('campaigns:reconcile')
             ->expectsOutputToContain('found 0 unclear messages there and failed 1 it never took')
@@ -279,7 +287,7 @@ describe('unclear sends', function (): void {
         Exceptions::fake();
         $campaign = sendingCampaign(1);
         unclearMessage($campaign, 0, MessageStatus::Unknown, now()->subHours(2));
-        fakeProvider()->failReads(CampaignsException::missingMailgunApiKey());
+        fakeDriver()->failReads(new CampaignsException('The logs need a key that can read them.'));
         config()->set('campaigns.cache_store', 'missing');
         ProviderEvent::factory()->create(['created_at' => now()->subMinutes(16)]);
         Queue::fake([ProcessFeedbackJob::class]);
@@ -289,7 +297,7 @@ describe('unclear sends', function (): void {
         expect($result->problems)->toHaveCount(1)
             ->and($result->requeued)->toBe(1);
 
-        Exceptions::assertReported(fn (CampaignsException $exception): bool => str_contains($exception->getMessage(), 'CAMPAIGNS_MAILGUN_API_KEY'));
+        Exceptions::assertReported(fn (CampaignsException $exception): bool => $exception->getMessage() === 'The logs need a key that can read them.');
     });
 
     it('leaves one the logs can\'t tell about, and goes on past one whose events fail to store', function (): void {
@@ -299,7 +307,7 @@ describe('unclear sends', function (): void {
         $broken = unclearMessage($campaign, 1, MessageStatus::Unknown, now()->subHours(2));
         $lost = unclearMessage($campaign, 2, MessageStatus::Unknown, now()->subHours(2)->addMinute());
 
-        $provider = new class($untold->uuid) extends FakeProvider
+        $provider = new class($untold->uuid) extends FakeDriver
         {
             public function __construct(public string $untold) {}
 
@@ -309,11 +317,11 @@ describe('unclear sends', function (): void {
             }
         };
         $provider->log(loggedEvent($broken, FeedbackType::Delivered, now()->subHours(2)));
-        app()->instance(CampaignProvider::class, $provider);
+        app(DriverManager::class)->swap('fake', $provider);
 
         app()->instance(RecordFeedbackAction::class, new class extends RecordFeedbackAction
         {
-            public function execute(Feedback $feedback): FeedbackResult
+            public function execute(Feedback $feedback, string $driver): FeedbackResult
             {
                 throw new RuntimeException('Storing broke.');
             }
@@ -338,7 +346,7 @@ describe('the replay', function (): void {
         $sentAt = now()->copy();
         $this->travel(2)->hours();
 
-        $provider = recordingProvider();
+        $provider = recordingDriver();
         $stored = loggedEvent($second, FeedbackType::Delivered, $sentAt->copy()->addMinute());
         ProviderEvent::factory()->for($second, 'message')->create(['provider_event_id' => $stored->providerEventId, 'processed_at' => now()]);
         $provider->log(
@@ -372,8 +380,12 @@ describe('the replay', function (): void {
     })->with('databases');
 
     it('reads each domain with a campaign that may still get events, from its earliest bookmark, and advances them all', function (): void {
-        $provider = recordingProvider();
-        $news = fn (array $attributes): Campaign => Campaign::factory()->create(['status' => CampaignStatus::Sending, 'started_at' => now()->subDays(2), ...$attributes]);
+        $provider = recordingDriver();
+        // Each with an email the fake driver sent, whose logs are read.
+        $news = fn (array $attributes): Campaign => CampaignMessage::factory()
+            ->for(Campaign::factory()->state(['status' => CampaignStatus::Sending, 'started_at' => now()->subDays(2), ...$attributes]))
+            ->create(['status' => MessageStatus::Sent, 'sent_at' => now()->subDays(2)])
+            ->campaign;
 
         $behind = $news(['events_read_until' => now()->subHours(3)]);
         $ahead = $news(['status' => CampaignStatus::Paused, 'events_read_until' => now()->subHour()]);
@@ -394,7 +406,7 @@ describe('the replay', function (): void {
 
         // A domain whose logs fail leaves the others to be read.
         $this->travel(1)->hours();
-        $failing = new class extends RecordingProvider
+        $failing = new class extends RecordingDriver
         {
             public function eventsBetween(string $domain, CarbonInterface $from, CarbonInterface $to): iterable
             {
@@ -405,7 +417,7 @@ describe('the replay', function (): void {
                 return parent::eventsBetween($domain, $from, $to);
             }
         };
-        app()->instance(CampaignProvider::class, $failing);
+        app(DriverManager::class)->swap('fake', $failing);
 
         expect(reconcile()->problems)->toBe(['Mailgun answered 404 when its logs or suppressions were read.'])
             ->and($finished->fresh()?->events_read_until?->toDateTimeString())->toBe(now()->subMinutes(30)->toDateTimeString())
@@ -422,7 +434,7 @@ describe('the replay', function (): void {
             Queue::fake([ProcessFeedbackJob::class]);
             $campaign = Campaign::factory()->create(['status' => CampaignStatus::Sending, 'started_at' => now()->subDays(1)]);
             sends($campaign, 1100, ['status' => MessageStatus::Sent->value, 'delivered_at' => null], now()->subHours(20));
-            $provider = recordingProvider();
+            $provider = recordingDriver();
 
             // In UTC, as Mailgun's times are read.
             $campaign->messages()->orderBy('id')->get()->each(fn (CampaignMessage $message, int $i) => $provider->log(
@@ -444,8 +456,8 @@ describe('the replay', function (): void {
         Queue::fake([ProcessFeedbackJob::class]);
         $campaign = Campaign::factory()->create(['status' => CampaignStatus::Sending, 'started_at' => now()->subDays(1)]);
         sends($campaign, 200, ['status' => MessageStatus::Sent->value, 'delivered_at' => null], now()->subHours(20));
-        $provider = new FailingPartWayProvider;
-        app()->instance(CampaignProvider::class, $provider);
+        $provider = new FailingPartWayDriver;
+        app(DriverManager::class)->swap('fake', $provider);
 
         $campaign->messages()->orderBy('id')->get()->each(fn (CampaignMessage $message, int $i) => $provider->log(
             loggedEvent($message, FeedbackType::Delivered, now()->subHours(19)->addSeconds($i)),
@@ -464,6 +476,140 @@ describe('the replay', function (): void {
     });
 });
 
+describe('drivers', function (): void {
+    it('reads nothing back through a driver without logs, and says nothing is wrong', function (): void {
+        $campaign = sendingCampaign(1);
+        $message = unclearMessage($campaign, 0, MessageStatus::Unknown, now()->subHours(2));
+        app(DriverManager::class)->swap('fake', new FakeSendOnlyDriver);
+
+        $result = reconcile();
+
+        expect($result->problems)->toBe([])
+            ->and($result->found + $result->lost + $result->replayed)->toBe(0)
+            ->and($message->fresh()->status)->toBe(MessageStatus::Unknown);
+
+        $this->artisan('campaigns:reconcile')->assertSuccessful();
+    });
+
+    it('looks each email up through the driver that sent it, with its own reach, and skips one no longer configured', function (): void {
+        $campaign = sendingCampaign(3);
+        [$byFake, $byMailgun, $byGone] = [
+            unclearMessage($campaign, 0, MessageStatus::Unknown, now()->subHours(2)),
+            unclearMessage($campaign, 1, MessageStatus::Unknown, now()->subHours(2)),
+            unclearMessage($campaign, 2, MessageStatus::Sending, now()->subDays(3)),
+        ];
+        $byMailgun->forceFill(['driver' => 'mailgun'])->save();
+        $byGone->forceFill(['driver' => 'gone'])->save();
+
+        $fake = recordingDriver()->keepLogsFor(1);
+        $mailgun = new RecordingDriver;
+        app(DriverManager::class)->swap('mailgun', $mailgun);
+        // No longer active, but its webhooks' key is still set.
+        config()->set('campaigns.drivers.mailgun.webhook_signing_key', 'webhook-signing-key');
+        $mailgun->log(loggedEvent($byMailgun, FeedbackType::Delivered, now()->subHours(2)));
+
+        $result = reconcile();
+
+        expect(array_column($fake->lookedUp, 0))->toBe([$byFake->uuid])
+            ->and(array_column($mailgun->lookedUp, 0))->toBe([$byMailgun->uuid])
+            ->and($result->found)->toBe(1)
+            ->and($result->lost)->toBe(1)
+            ->and($result->problems)->toBe([])
+            ->and($byFake->fresh()->status)->toBe(MessageStatus::Failed)
+            ->and($byMailgun->fresh()->status)->toBe(MessageStatus::Delivered)
+            ->and($byMailgun->events()->sole()->driver)->toBe('mailgun')
+            // Past the fake's one day, but no driver called "gone" is configured.
+            ->and($byGone->fresh()->status)->toBe(MessageStatus::Sending);
+
+        config()->set('campaigns.drivers.mailgun.webhook_signing_key', null);
+        reconcile();
+
+        expect($mailgun->lookedUp)->toHaveCount(1);
+    });
+
+    it('replays a domain through each driver its emails went through, its bookmark moving only as far as the one read least far', function (): void {
+        Queue::fake([ProcessFeedbackJob::class]);
+        $campaign = Campaign::factory()->create(['status' => CampaignStatus::Sending, 'started_at' => now()->subDay()]);
+        sends($campaign, 200, ['status' => MessageStatus::Sent->value, 'delivered_at' => null], now()->subHours(20));
+        sends($campaign, 1, ['driver' => 'mailgun', 'status' => MessageStatus::Sent->value, 'delivered_at' => null], now()->subHours(20));
+
+        // The fake's logs fail after its first batch; Mailgun's, no longer
+        // active but still configured, are read whole.
+        $fake = new FailingPartWayDriver;
+        $mailgun = new RecordingDriver;
+        app(DriverManager::class)->swap('fake', $fake)->swap('mailgun', $mailgun);
+        config()->set('campaigns.drivers.mailgun.webhook_signing_key', 'webhook-signing-key');
+
+        $messages = $campaign->messages()->orderBy('id')->get();
+        $messages->where('driver', 'fake')->values()->each(fn (CampaignMessage $message, int $i) => $fake->log(
+            loggedEvent($message, FeedbackType::Delivered, now()->subHours(19)->addSeconds($i)),
+        ));
+        /** @var CampaignMessage $byMailgun */
+        $byMailgun = $messages->firstWhere('driver', 'mailgun');
+        $mailgun->log(loggedEvent($byMailgun, FeedbackType::Delivered, now()->subHours(19)));
+
+        $result = reconcile();
+
+        expect($result->replayed)->toBe(101)
+            ->and($mailgun->replayed)->toHaveCount(1)
+            ->and(ProviderEvent::query()->where('driver', 'mailgun')->sole()->message_id)->toBe($byMailgun->id)
+            ->and(ProviderEvent::query()->where('driver', 'fake')->count())->toBe(100)
+            ->and($campaign->fresh()->events_read_until?->toDateTimeString())->toBe(now()->subHours(19)->addSeconds(99)->toDateTimeString());
+    });
+});
+
+describe('two drivers on one domain', function (): void {
+    beforeEach(function (): void {
+        Queue::fake([ProcessFeedbackJob::class]);
+        $this->campaign = Campaign::factory()->create(['status' => CampaignStatus::Sending, 'started_at' => now()->subDay()]);
+        sends($this->campaign, 1, ['status' => MessageStatus::Sent->value, 'delivered_at' => null], now()->subHours(20));
+        sends($this->campaign, 1, ['driver' => 'mailgun', 'status' => MessageStatus::Sent->value, 'delivered_at' => null], now()->subHours(20));
+        config()->set('campaigns.drivers.mailgun.webhook_signing_key', 'webhook-signing-key');
+
+        $this->fake = new RecordingDriver;
+        $this->fake->log(loggedEvent($this->campaign->messages()->where('driver', 'fake')->sole(), FeedbackType::Delivered, now()->subHours(19)));
+    });
+
+    it('reads the second when the first fails, holding the bookmark until both are read', function (): void {
+        $failing = new class extends RecordingDriver
+        {
+            public function eventsBetween(string $domain, CarbonInterface $from, CarbonInterface $to): iterable
+            {
+                throw CampaignsException::providerUnreadable('Mailgun answered 503 when its logs or suppressions were read.');
+            }
+        };
+        app(DriverManager::class)->swap('fake', $this->fake)->swap('mailgun', $failing);
+
+        $result = reconcile();
+
+        expect($result->replayed)->toBe(1)
+            ->and($result->problems)->toBe(['Mailgun answered 503 when its logs or suppressions were read.'])
+            ->and($this->fake->replayed)->toHaveCount(1)
+            ->and($this->campaign->fresh()->events_read_until)->toBeNull();
+    });
+
+    it('reads the second when the first reaches its own read limit, the bookmark moving to where the first stopped', function (): void {
+        app()->bind(ReconcileCampaignsAction::class, SmallReplayReconciler::class);
+        $mailgun = new RecordingDriver;
+        $byMailgun = $this->campaign->messages()->where('driver', 'mailgun')->sole();
+
+        foreach (range(0, 249) as $i) {
+            $mailgun->log(loggedEvent($byMailgun, FeedbackType::Opened, now()->subHours(19)->addSeconds($i)));
+        }
+
+        app(DriverManager::class)->swap('fake', $this->fake)->swap('mailgun', $mailgun);
+
+        $result = reconcile();
+
+        expect($result->replayed)->toBe(101)
+            ->and($result->problems)->toBe([])
+            ->and($this->fake->replayed)->toHaveCount(1)
+            ->and($this->campaign->fresh()->events_read_until?->toDateTimeString())->toBe(now()->subHours(19)->addSeconds(99)->toDateTimeString())
+            // From the bookmark, whose own event is stored already.
+            ->and(reconcile()->replayed)->toBe(99);
+    });
+});
+
 it('settles an unclear send and a missed delivery from Mailgun\'s Logs API as it answers', function (string $driver): void {
     useDatabase($driver);
     $campaign = sendingCampaign(2);
@@ -472,8 +618,8 @@ it('settles an unclear send and a missed delivery from Mailgun\'s Logs API as it
     $this->travel(2)->hours();
     $unclear = unclearMessage($campaign, 1, MessageStatus::Unknown, now()->subMinutes(20));
 
-    config()->set('campaigns.mailgun.api_key', 'key-reader');
-    app()->instance(CampaignProvider::class, app(MailgunProvider::class));
+    config()->set('campaigns.drivers.mailgun.api_key', 'key-reader');
+    app(DriverManager::class)->swap('fake', app(MailgunDriver::class));
     Http::preventStrayRequests();
     Http::fake(['api.mailgun.net/v1/analytics/logs' => fn (ClientRequest $request): PromiseInterface => Http::response(match ($request['filter']['AND'][0]['attribute']) {
         'user_variables' => mailgunLogs([mailgunLogItem('accepted', [

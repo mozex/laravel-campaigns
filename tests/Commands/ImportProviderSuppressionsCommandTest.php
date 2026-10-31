@@ -11,13 +11,15 @@ use Mozex\Campaigns\Enums\ConsentBasis;
 use Mozex\Campaigns\Enums\SuppressionType;
 use Mozex\Campaigns\Models\ConsentRecord;
 use Mozex\Campaigns\Models\Subscriber;
+use Mozex\Campaigns\Sending\Drivers\DriverManager;
+use Mozex\Campaigns\Sending\Drivers\FakeSendOnlyDriver;
 use Mozex\Campaigns\Sending\Suppression;
 
 beforeEach(function (): void {
     sendFromExample();
-    config()->set('campaigns.provider', 'fake');
+    config()->set('campaigns.driver', 'fake');
 
-    fakeProvider()->suppress(
+    fakeDriver()->suppress(
         new Suppression('bounced@example.org', SuppressionType::Bounce, Carbon::parse('2025-12-11 01:49:40'), '550 No such mailbox'),
         new Suppression('complained@example.org', SuppressionType::Complaint),
         new Suppression('stranger@example.org', SuppressionType::Bounce),
@@ -95,15 +97,32 @@ it('opts out the marketing domain\'s own unsubscribes, and tries one address fir
 
 it('stops when the provider can\'t be read, and refuses an address that isn\'t one before asking it', function (): void {
     suppressedSubscribers();
-    fakeProvider()->failReads(CampaignsException::missingMailgunApiKey());
+    fakeDriver()->failReads(new CampaignsException('The lists need a key that can read them.'));
 
     $this->artisan('campaigns:import-provider-suppressions', ['domain' => 'example.com', '--force' => true])
-        ->expectsOutputToContain('CAMPAIGNS_MAILGUN_API_KEY')
+        ->expectsOutputToContain('The lists need a key that can read them.')
         ->assertFailed();
 
     $this->artisan('campaigns:import-provider-suppressions', ['domain' => 'example.com', '--email' => 'not an address'])
         ->expectsOutputToContain(CampaignsException::invalidEmail()->getMessage())
-        ->doesntExpectOutputToContain('CAMPAIGNS_MAILGUN_API_KEY')
+        ->doesntExpectOutputToContain('The lists need a key that can read them.')
+        ->assertFailed();
+
+    expect(Subscriber::query()->whereNotNull('blocked_at')->count())->toBe(0);
+});
+
+it('refuses, naming the driver, when the active driver reads no suppression lists', function (): void {
+    suppressedSubscribers();
+    app(DriverManager::class)->swap('fake', new FakeSendOnlyDriver);
+
+    $this->artisan('campaigns:import-provider-suppressions', ['domain' => 'example.com', '--force' => true])
+        ->expectsOutputToContain('The campaigns driver "fake" reads no suppression lists, so there is nothing to import.')
+        ->assertFailed();
+
+    config()->set('campaigns.driver', 'postmark');
+
+    $this->artisan('campaigns:import-provider-suppressions', ['domain' => 'example.com', '--force' => true])
+        ->expectsOutputToContain('No campaigns driver is called "postmark"')
         ->assertFailed();
 
     expect(Subscriber::query()->whereNotNull('blocked_at')->count())->toBe(0);
