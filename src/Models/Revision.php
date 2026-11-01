@@ -35,6 +35,7 @@ use Mozex\Campaigns\Database\Factories\RevisionFactory;
  * @property ?Carbon $created_at
  * @property ?Carbon $updated_at
  * @property-read Collection<int, RevisionContent> $contents
+ * @property-read Collection<int, CampaignLink> $links
  */
 #[UseFactory(RevisionFactory::class)]
 class Revision extends Model
@@ -107,6 +108,12 @@ class Revision extends Model
     public function contents(): HasMany
     {
         return $this->hasMany(RevisionContent::class);
+    }
+
+    /** @return HasMany<CampaignLink, $this> */
+    public function links(): HasMany
+    {
+        return $this->hasMany(CampaignLink::class);
     }
 
     /**

@@ -62,7 +62,7 @@ it('shows a template\'s email in two sandboxed frames with made-up details, its 
         ->withContent('en', [
             'subject' => 'Hi {{first_name}}',
             'preheader' => 'Spring is here',
-            'html' => '<html><head><title>T</title></head><body><p>Hello {{first_name}}</p><img src="https://cdn.example.com/a.png" alt="A">"></iframe><script>alert(1)</script>{{footer}}</body></html>',
+            'html' => '<html><head><title>T</title></head><body><p>Hello {{first_name}}</p><img src="https://cdn.example.com/a.png" alt="A">"></iframe><script>alert(1)</script><a href="https://shop.example.com/offer">Offer</a>{{footer}}</body></html>',
             'text' => 'Hello {{name}} {{footer}}',
         ])
         ->create([
@@ -90,7 +90,11 @@ it('shows a template\'s email in two sandboxed frames with made-up details, its 
         ->assertSee('Hello Alexandra Example')
         ->assertSee('5 passed, 1 failed.')
         ->assertSee('An image has no alt text.')
-        ->assertDontSee('Small enough.');
+        ->assertDontSee('Small enough.')
+        // Previews are never tracked.
+        ->assertSee('href=&quot;https://shop.example.com/offer&quot;', false)
+        ->assertDontSee('/campaigns/o/', false)
+        ->assertDontSee('/campaigns/l/', false);
 
     $policy = (string) $page->headers->get('Content-Security-Policy');
     $document = previewDocument((string) $page->getContent());

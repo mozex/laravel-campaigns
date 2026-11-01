@@ -12,6 +12,9 @@ use Symfony\Component\Mime\Email;
  * message so the service's events lead back to it; recipients can see it,
  * so it is an opaque id and nothing more. The double opt-in email has no
  * unsubscribe address: it is no marketing, and the person is on no list yet.
+ * trackOpens and trackClicks say whether the package put its own open pixel
+ * and tracked links in the HTML; a driver turns its service's tracking off
+ * whatever they say.
  */
 readonly class OutgoingMessage
 {

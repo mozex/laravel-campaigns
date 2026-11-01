@@ -8,9 +8,11 @@ namespace Mozex\Campaigns\Content;
  * Adds a campaign's UTM tags to the links in its email that lead to the
  * app's own sites, as a campaign's revision is frozen. A link that already
  * carries any utm_ parameter is left as its author wrote it, and so is one
- * holding a placeholder, which becomes an address only per recipient. Like
- * ImageReferences, it reads each href decoded and changes the source string
- * at its offsets, never through the DOM.
+ * holding a placeholder, which becomes an address only per recipient. It
+ * reads the links LinkSources finds (VML buttons in Outlook's conditional
+ * comments among them, so a button and its fallback link carry the same
+ * tags) and changes the source string at their offsets, never through the
+ * DOM.
  */
 class UtmTags
 {
@@ -52,28 +54,11 @@ class UtmTags
 
         $changes = [];
 
-        // A quoted attribute may hold a ">", and an unquoted value runs to
-        // the next space or ">", "=" included, as browsers read it.
-        preg_match_all('/<(?:a|area)\b(?:[^>"\']|"[^"]*"|\'[^\']*\')*>/i', $html, $tags, PREG_OFFSET_CAPTURE);
-
-        foreach ($tags[0] as [$tag, $tagOffset]) {
-            // The attributes are read in order, each quoted value whole, so
-            // an "href=" inside another attribute's text is never taken for
-            // the link.
-            preg_match_all('/\s([^\s"\'>\/=]+)\s*=\s*("[^"]*"|\'[^\']*\'|[^\s"\'>]+)/', $tag, $attributes, PREG_SET_ORDER | PREG_OFFSET_CAPTURE);
-            $href = array_values(array_filter($attributes, fn (array $attribute): bool => strtolower($attribute[1][0]) === 'href'))[0] ?? null;
-
-            if ($href === null) {
-                continue;
-            }
-
-            [$raw, $offset] = $href[2];
-            $quoted = $raw[0] === '"' || $raw[0] === "'";
-            $value = $quoted ? substr($raw, 1, -1) : $raw;
-            $tagged = $this->url(html_entity_decode($value, ENT_QUOTES | ENT_HTML5, 'UTF-8'));
+        foreach (LinkSources::in($html) as $link) {
+            $tagged = $this->url($link->url);
 
             if ($tagged !== null) {
-                $changes[$tagOffset + $offset + ($quoted ? 1 : 0)] = [strlen($value), htmlspecialchars($tagged, ENT_QUOTES | ENT_HTML5, 'UTF-8', false)];
+                $changes[$link->offset] = [$link->length, htmlspecialchars($tagged, ENT_QUOTES | ENT_HTML5, 'UTF-8', false)];
             }
         }
 

@@ -18,6 +18,7 @@ use Mozex\Campaigns\Enums\MailboxProvider;
 use Mozex\Campaigns\Enums\MessageStatus;
 use Mozex\Campaigns\Events\CampaignStartedEvent;
 use Mozex\Campaigns\Models\Campaign;
+use Mozex\Campaigns\Models\CampaignLink;
 use Mozex\Campaigns\Models\CampaignMessage;
 use Mozex\Campaigns\Models\Revision;
 use Mozex\Campaigns\Models\Subscriber;
@@ -29,12 +30,14 @@ use Throwable;
 
 /**
  * Freezes a campaign a start claimed (status starting): its email, with UTM
- * tags added to links to the app's own sites, and its audience, one message
- * per recipient with the target lists it qualified through, its address and
- * locale at that moment, and its place in the send order. All of it is one
- * transaction with the move to sending or scheduled, so a recipient count
- * that differs from the one confirmed leaves nothing behind, and the
- * campaign goes back to being a draft with start_error saying why.
+ * tags added to links to the app's own sites and a row for each address its
+ * links lead to (CampaignLink, which click tracking redirects through), and
+ * its audience, one message per recipient with the target lists it qualified
+ * through, its address and locale at that moment, and its place in the send
+ * order. All of it is one transaction with the move to sending or
+ * scheduled, so a recipient count that differs from the one confirmed
+ * leaves nothing behind, and the campaign goes back to being a draft with
+ * start_error saying why.
  */
 class FreezeCampaignAction
 {
@@ -144,6 +147,7 @@ class FreezeCampaignAction
         }
 
         $revision = $this->revision($locked);
+        CampaignLink::writeFor($revision);
         $count = $this->messages($locked);
 
         if ($count !== $expected) {

@@ -30,6 +30,7 @@ use Mozex\Campaigns\Listeners\SendCampaignAlert;
 use Mozex\Campaigns\Models\ApiToken;
 use Mozex\Campaigns\Models\Asset;
 use Mozex\Campaigns\Models\Campaign;
+use Mozex\Campaigns\Models\CampaignLink;
 use Mozex\Campaigns\Models\CampaignList;
 use Mozex\Campaigns\Models\CampaignMessage;
 use Mozex\Campaigns\Models\ConsentRecord;
@@ -99,6 +100,7 @@ class CampaignsServiceProvider extends PackageServiceProvider
             'campaigns.template' => Template::class,
             'campaigns.revision' => Revision::class,
             'campaigns.revision_content' => RevisionContent::class,
+            'campaigns.link' => CampaignLink::class,
             'campaigns.asset' => Asset::class,
             'campaigns.upload' => Upload::class,
             'campaigns.saved_audience' => SavedAudience::class,

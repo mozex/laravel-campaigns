@@ -29,11 +29,12 @@ use Mozex\Campaigns\Sending\Drivers\DriverManager;
  * failures by kind, hard bounces, spam reports and unsubscribes (split by
  * how: a mail app's one-click, the page, the provider's own link); the
  * people who opened and clicked, with every human and machine open and click
- * the provider reported, and the clicks per link; the rates, spam reports
- * and unsubscribes per send as the stop-loss measures them, opens and clicks
- * per delivery, machines left out; the same numbers by list, language,
- * engagement tier (as it stood at the start) and mailbox provider; a
- * timeline by day in the app's timezone; and the queue as it stands now.
+ * the package's own pixel and links recorded, and the clicks per link; the
+ * rates, spam reports and unsubscribes per send as the stop-loss measures
+ * them, opens and clicks per delivery, machines left out; the same numbers
+ * by list, language, engagement tier (as it stood at the start) and mailbox
+ * provider; a timeline by day in the app's timezone; and the queue as it
+ * stands now.
  *
  * An email sent through a driver that reads nothing back (no webhooks, no
  * logs) never shows as delivered: it ends at sent. Its opens and clicks are
@@ -365,9 +366,9 @@ class CampaignReport
     }
 
     /**
-     * Every open and click the provider reported about the campaign's
-     * messages, a person's or a machine's, the clicks per link (the most
-     * clicked LINKS), and how many links were clicked in all.
+     * Every open and click recorded about the campaign's messages, a
+     * person's or a machine's, the clicks per link (the most clicked LINKS),
+     * and how many links were clicked in all.
      *
      * @return array{0: array{human: int, machine: int}, 1: array{human: int, machine: int}, 2: list<array{url: string, human: int, machine: int}>, 3: int}
      */

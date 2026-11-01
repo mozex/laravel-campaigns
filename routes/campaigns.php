@@ -5,10 +5,12 @@ declare(strict_types=1);
 use Illuminate\Support\Facades\Route;
 use Mozex\Campaigns\Http\Controllers\ConfirmationController;
 use Mozex\Campaigns\Http\Controllers\PreviewController;
+use Mozex\Campaigns\Http\Controllers\TrackingController;
 use Mozex\Campaigns\Http\Controllers\UnsubscribeController;
 use Mozex\Campaigns\Http\Controllers\WebhookController;
 use Mozex\Campaigns\Http\Controllers\WebVersionController;
 use Mozex\Campaigns\Http\Middleware\PageHeaders;
+use Mozex\Campaigns\Models\CampaignLink;
 use Mozex\Campaigns\Sending\Drivers\DriverManager;
 
 /*
@@ -19,8 +21,14 @@ use Mozex\Campaigns\Sending\Drivers\DriverManager;
 Route::prefix('campaigns')
     ->name('campaigns.')
     ->middleware(PageHeaders::class)
-    ->where(['token' => '[A-Za-z0-9]{16,128}'])
+    ->where(['token' => '[A-Za-z0-9]{16,128}', 'key' => '[A-Za-z0-9]{'.CampaignLink::KEY_LENGTH.'}'])
     ->group(function (): void {
+        // The open pixel and the tracked links: no per-visitor limit, since
+        // Gmail's and Apple's image proxies fetch for many people from a few
+        // addresses; each email records at most a few hits a minute instead.
+        Route::get('o/{token}', [TrackingController::class, 'open'])->name('open');
+        Route::get('l/{key}/{token}', [TrackingController::class, 'click'])->name('click');
+
         // Per visitor, through the alias, so an app that rebinds it decides
         // what a visitor is.
         Route::middleware('throttle:60,1')->group(function (): void {

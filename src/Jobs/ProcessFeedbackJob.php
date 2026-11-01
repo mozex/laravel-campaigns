@@ -27,11 +27,12 @@ class ProcessFeedbackJob implements ShouldQueue
     use Queueable;
 
     /**
-     * How long a click waits before it is applied, in seconds, so the other
-     * clicks of a link scanner's burst are stored by then and the first one
-     * is recognised too.
+     * How long an open or a click waits before it is applied, in seconds:
+     * the other clicks of a link scanner's burst are stored by then, so the
+     * first one is recognised too, and the email's delivery has had time to
+     * land, which the timing rules count from.
      */
-    public const CLICK_DELAY = 60;
+    public const ENGAGEMENT_DELAY = 60;
 
     /**
      * Safe to retry: nothing is applied twice.
@@ -51,15 +52,16 @@ class ProcessFeedbackJob implements ShouldQueue
     }
 
     /**
-     * Queues a stored event's job, a click's a little later. Not named
-     * queue(): Laravel's dispatcher calls a job's queue() method to push it.
+     * Queues a stored event's job, an open's or a click's a little later.
+     * Not named queue(): Laravel's dispatcher calls a job's queue() method
+     * to push it.
      */
     public static function dispatchFor(ProviderEvent $event): void
     {
         $pending = static::dispatch($event->id);
 
-        if ($event->type === FeedbackType::Clicked) {
-            $pending->delay(static::CLICK_DELAY);
+        if ($event->type === FeedbackType::Opened || $event->type === FeedbackType::Clicked) {
+            $pending->delay(static::ENGAGEMENT_DELAY);
         }
     }
 

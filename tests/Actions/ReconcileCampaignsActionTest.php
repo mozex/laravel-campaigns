@@ -171,7 +171,7 @@ it('queues again an event left unprocessed for 15 minutes, for a day at most, a 
 
     Queue::assertPushed(ProcessFeedbackJob::class, 2);
     Queue::assertPushed(ProcessFeedbackJob::class, fn (ProcessFeedbackJob $job): bool => $job->eventId === $waiting->id && $job->delay === null);
-    Queue::assertPushed(ProcessFeedbackJob::class, fn (ProcessFeedbackJob $job): bool => $job->eventId === $click->id && $job->delay === ProcessFeedbackJob::CLICK_DELAY);
+    Queue::assertPushed(ProcessFeedbackJob::class, fn (ProcessFeedbackJob $job): bool => $job->eventId === $click->id && $job->delay === ProcessFeedbackJob::ENGAGEMENT_DELAY);
 });
 
 describe('unclear sends', function (): void {

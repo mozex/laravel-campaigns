@@ -8,7 +8,8 @@ weight: 6
 - **Subscribers:** the address, and the name, language, timezone, country and custom fields your list sources or imports give. An address is stored lower-cased and compared byte for byte.
 - **Consent records:** every subscribe, opt-out, block, unblock and confirmation, with its source, basis and the notice version the person saw. A change the person made themselves (a sign-up form, the unsubscribe page) also keeps their IP address and browser, for answering a complaint. A change an agent made never does: those would be the agent's machine.
 - **Campaign messages:** one row per recipient with the address it went to, so a report and an old email's unsubscribe link keep working.
-- **Provider events:** what Mailgun reported (delivered, bounced, opened, clicked), without the address or the IP. A clicked link keeps no part that holds an address or a link token. Events go after `campaigns.event_retention_days` (180), once their campaign's report is kept.
+- **Provider events:** what the sending service reported (delivered, bounced, complained) and the opens and clicks the package's own pixel and links recorded, without the address, the IP or the browser: an open or a click keeps only whether a machine made it. A clicked link keeps no part that holds an address or a link token. Events go after `campaigns.event_retention_days` (180), once their campaign's report is kept.
+- **Tracked links:** one row per address a campaign's links lead to, kept for good so an old email's links keep working. They hold the email's addresses as written, never a recipient's.
 - **Tokens:** MCP tokens and the tokens in an email's links are stored as SHA-256 hashes; the raw value exists only in the email or the command output that carries it.
 
 ## Forgetting someone
@@ -33,9 +34,10 @@ Error trackers record request paths, bodies and outgoing requests. Some of the p
 | Where | Why |
 |---|---|
 | paths under `/campaigns/u/`, `/campaigns/c/` and `/campaigns/v/` | each holds a link token that unsubscribes, confirms or shows one person's email |
+| paths under `/campaigns/o/` and `/campaigns/l/` | each holds the token that records one person's opens and clicks |
 | the `signature` query of `/campaigns/preview/...` and of the links under the MCP path (`/mcp/campaigns/uploads/...`, `/mcp/campaigns/downloads/...`) | the signature is the link's only authorization |
 | the body of `PUT /mcp/campaigns/uploads/...` | an unsent email or a list of contacts |
-| the body of `POST /campaigns/webhooks/<driver>` (Mailgun's `event-data` field) | the recipient's address and IP, and a clicked link that may hold a token |
+| the body of `POST /campaigns/webhooks/<driver>` (Mailgun's `event-data` field) | the recipient's address and IP |
 | the arguments of MCP tool calls (`POST /mcp/campaigns`) | addresses an agent adds, blocks or looks up |
 | outgoing requests to `api.*.mailgun.net/v3/<domain>/bounces`, `/complaints` and `/unsubscribes`, path and query | one address's lookup puts the address in the path, and the lists' next pages carry one in the query |
 | the `Authorization` header | an MCP token or an OAuth bearer |

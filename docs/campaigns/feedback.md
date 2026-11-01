@@ -16,11 +16,11 @@ What happens to an email after Mailgun takes it comes back as events: by webhook
 | suppressed by Mailgun | Mailgun held the address from before and sent nothing: a bounce or complaint blocks it, an unsubscribe opts the person out |
 | spam report | the address is blocked (`complaint`) and the person opted out of everything |
 | Mailgun's own unsubscribe | the person is opted out of everything |
-| opened, clicked | the email's first open or click, and the person's engagement |
+| opened, clicked | the email's first open or click, and the person's engagement; these come from the package's own pixel and links, never the service |
 
 Events arrive late and out of order, so every change moves forward only: a delivery never undoes a bounce, and an email already failed stays failed.
 
-Opens and clicks count only a person's. Gmail's image proxy loads images only when someone opens the email, so it counts; Apple's privacy prefetch and link scanners open everything, so they don't. A click within 10 seconds of delivery (of sending, when no delivery was reported), or within 3 seconds of a click on another link in the same email, is taken for a scanner. Clicks on the package's own pages (the unsubscribe link) are never engagement.
+Opens and clicks count only a person's. Gmail's and Yahoo's image proxies load images only when someone opens the email, so they count; Apple's privacy prefetch and link scanners open everything, so they don't. An open within 5 seconds of delivery (of sending, when no delivery was reported) is a machine's, and so is a click within 10 seconds, or within 3 seconds of a click on another link in the same email; anything before the delivery is too. Clicks on the package's own pages (the unsubscribe link) are never engagement. [Opens and Clicks](./tracking.md) has the whole set of rules.
 
 ## Refused while sending
 

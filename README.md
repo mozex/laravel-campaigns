@@ -30,6 +30,7 @@ Laravel Campaigns lets an AI agent run your app's email marketing from inside th
   - [Audiences](https://mozex.dev/docs/laravel-campaigns/v1/campaigns/audiences)
   - [Sending and Pace](https://mozex.dev/docs/laravel-campaigns/v1/campaigns/sending)
   - [Feedback and the Stop-Loss](https://mozex.dev/docs/laravel-campaigns/v1/campaigns/feedback)
+  - [Opens and Clicks](https://mozex.dev/docs/laravel-campaigns/v1/campaigns/tracking)
 - Agents
   - [The MCP Server](https://mozex.dev/docs/laravel-campaigns/v1/agents/mcp-server)
   - [Giving Agents Your Data](https://mozex.dev/docs/laravel-campaigns/v1/agents/your-data)
@@ -60,6 +61,8 @@ Business sponsors get logo placement in package READMEs. [**See sponsorship tier
 **Sending that warms up.** Each campaign starts small (100 emails on day one by default), grows each day, and goes out a few emails a minute from your own queue, engaged readers first, mailbox providers in turn.
 
 **Feedback that acts.** Mailgun's webhooks and logs block hard bounces and spam reports and opt out unsubscribes. The SMTP driver sends through any server and reads back only what it refuses on the spot, and another service plugs in as a driver that has to do no more than send. A stop-loss pauses a campaign, or a whole sending domain, past its bounce, complaint or unsubscribe limits, and emails you.
+
+**Opens and clicks on every driver.** Your app serves each email's open pixel and the redirects behind its links, so tracking works the same whichever service sends. Apple's privacy prefetch, link scanners and anything that opens an email the second it arrives count as machines, never as a person reading.
 
 **The pages every email needs.** One-click unsubscribe for mail apps, an unsubscribe page, double opt-in confirmation and a web version, each link holding a token that's stored only as a hash.
 

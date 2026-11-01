@@ -98,6 +98,29 @@ class Renderer
     }
 
     /**
+     * Where an open pixel goes in a rendered email: right after the hidden
+     * preheader block, when the renderer put one where the body starts, else
+     * where the body starts. Near the top, so Gmail's clipping of a long
+     * email can't cut it off, and never before the preheader, which mail
+     * apps read from the first text of the body.
+     */
+    public static function pixelOffset(string $html): int
+    {
+        $start = static::bodyStart($html);
+        $block = (string) strstr(static::PREHEADER_BLOCK, '{{preheader}}', true);
+
+        if (substr($html, $start, strlen($block)) === $block) {
+            $close = strpos($html, '</div>', $start);
+
+            if ($close !== false) {
+                return $close + strlen('</div>');
+            }
+        }
+
+        return $start;
+    }
+
+    /**
      * Where the body starts as a browser's parser builds it, for the hidden
      * preheader: after <body>; else after </head>; else past whatever a head
      * may hold (its tags may stand without a head tag), from after <head>,

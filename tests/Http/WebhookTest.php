@@ -235,13 +235,13 @@ describe('storing', function (): void {
         TestSend::factory()->create(['driver' => 'fake', 'provider_message_id' => '20260205213049.8e3a7bf607f78309@sample.mailgun.com']);
         $testByProviderId = TestSend::factory()->create(['driver' => 'mailgun', 'provider_message_id' => '20260205213049.8e3a7bf607f78309@sample.mailgun.com']);
 
-        expect(postWebhook(mailgunWebhook(mailgunEvent('opened', ['id' => 'by-uuid', 'user-variables' => ['campaign-message' => strtoupper($byUuid->uuid)]]))))->toBe(200)
+        expect(postWebhook(mailgunWebhook(mailgunEvent('delivered', ['id' => 'by-uuid', 'user-variables' => ['campaign-message' => strtoupper($byUuid->uuid)]]))))->toBe(200)
             // No variables ([]), and a variable another sender set that is
             // no uuid at all: PostgreSQL would refuse it in a uuid column.
             ->and(postWebhook(mailgunWebhook(mailgunEvent('permanent-failure', ['id' => 'by-provider-id']))))->toBe(200)
             ->and(postWebhook(mailgunWebhook(mailgunEvent('permanent-failure', ['id' => 'not-a-uuid', 'user-variables' => ['campaign-message' => 'order-1234']]))))->toBe(200)
             ->and(postWebhook(mailgunWebhook(mailgunEvent('delivered', ['id' => 'test-by-uuid', 'user-variables' => ['campaign-test' => $testSend->uuid]]))))->toBe(200)
-            ->and(postWebhook(mailgunWebhook(mailgunEvent('clicked', ['id' => 'test-by-provider-id']))))->toBe(200);
+            ->and(postWebhook(mailgunWebhook(mailgunEvent('unsubscribed', ['id' => 'test-by-provider-id']))))->toBe(200);
 
         $events = ProviderEvent::query()->get()->keyBy('provider_event_id');
 
@@ -316,36 +316,21 @@ describe('what is kept', function (): void {
             ->and(str_contains($stored, '161.38.194.10'))->toBeFalse();
     })->with('databases');
 
-    it('keeps a click\'s link without a token or an address in it, and marks machines', function (string $driver): void {
+    it('drops Mailgun\'s opens and clicks, since the package tracks both itself, and keeps no IP, place or browser', function (string $driver): void {
         useDatabase($driver);
         $message = CampaignMessage::factory()->create();
-        $click = fn (string $id, string $url): array => eventFor($message, 'clicked', ['id' => $id, 'url' => $url, 'recipient' => '[REDACTED]']);
 
-        expect(postWebhook(mailgunWebhook($click('own-page', 'https://example.com/campaigns/u/'.Token::generate().'?utm_source=newsletter'))))->toBe(200)
-            ->and(postWebhook(mailgunWebhook($click('with-address', 'https://shop.example.com/offer?email=reader%40example.com&utm_medium=email'))))->toBe(200)
-            ->and(postWebhook(mailgunWebhook(eventFor($message, 'opened', ['id' => 'apple', 'client-info' => ['bot' => 'apple']]))))->toBe(200)
-            ->and(postWebhook(mailgunWebhook(eventFor($message, 'opened', ['id' => 'gmail', 'client-info' => ['bot' => 'gmail']]))))->toBe(200);
+        expect(postWebhook(mailgunWebhook(eventFor($message, 'opened', ['id' => 'opened']))))->toBe(200)
+            ->and(postWebhook(mailgunWebhook(eventFor($message, 'clicked', ['id' => 'clicked']))))->toBe(200)
+            ->and(postWebhook(mailgunWebhook(eventFor($message, 'unsubscribed', ['id' => 'unsubscribed']))))->toBe(200);
 
         $events = ProviderEvent::query()->get()->keyBy('provider_event_id');
         $stored = json_encode($events->pluck('payload'));
 
-        expect($events['own-page']->payload['url'])->toBe('https://example.com/campaigns/u/{token}?utm_source=newsletter')
-            ->and($events['with-address']->payload['url'])->toBe('https://shop.example.com/offer?email=[address]&utm_medium=email')
-            ->and($events['own-page']->payload['details']['client-info'])->toEqual([
-                'client-name' => 'Chrome Mobile',
-                'client-os' => 'Android',
-                'client-type' => 'mobile browser',
-                'device-type' => 'mobile',
-                'user-agent' => 'Mozilla/5.0 (Linux; Android 9; itel A27) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.6943.143 Mobile Safari/537.36',
-            ])
-            ->and($events['own-page']->payload['details']['delivered-at'])->toEqual(1770327049)
-            ->and($events['own-page']->is_bot)->toBeFalse()
-            ->and($events['apple']->is_bot)->toBeTrue()
-            ->and($events['apple']->payload['bot'])->toBe('apple')
-            // Gmail's proxy loads images when the person opens the email.
-            ->and($events['gmail']->is_bot)->toBeFalse()
-            ->and(str_contains($stored, '9.169.124.21'))->toBeFalse()
-            ->and(str_contains($stored, 'San Antonio'))->toBeFalse();
+        expect($events->keys()->all())->toBe(['unsubscribed'])
+            ->and(str_contains($stored, '38.142.208.162'))->toBeFalse()
+            ->and(str_contains((string) $stored, 'client-info'))->toBeFalse()
+            ->and(str_contains((string) $stored, 'Mozilla'))->toBeFalse();
     })->with('databases');
 });
 

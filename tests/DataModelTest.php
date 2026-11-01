@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Database\Schema\Builder;
 use Illuminate\Database\UniqueConstraintViolationException;
@@ -15,12 +16,12 @@ use Mozex\Campaigns\Enums\SubscriptionStatus;
 use Mozex\Campaigns\Models\ApiToken;
 use Mozex\Campaigns\Models\Asset;
 use Mozex\Campaigns\Models\Campaign;
+use Mozex\Campaigns\Models\CampaignLink;
 use Mozex\Campaigns\Models\CampaignList;
 use Mozex\Campaigns\Models\CampaignMessage;
 use Mozex\Campaigns\Models\ConsentRecord;
 use Mozex\Campaigns\Models\ProviderEvent;
 use Mozex\Campaigns\Models\Revision;
-use Mozex\Campaigns\Models\RevisionContent;
 use Mozex\Campaigns\Models\SavedAudience;
 use Mozex\Campaigns\Models\Subscriber;
 use Mozex\Campaigns\Models\Subscription;
@@ -175,11 +176,13 @@ it('keeps the consent records and messages of a deleted subscriber', function (s
 })->with('databases');
 
 it('gives every model a prefixed morph alias', function (): void {
-    $models = [
-        new ApiToken, new Campaign, new CampaignList, new CampaignMessage, new ConsentRecord,
-        new ProviderEvent, new Subscriber, new Subscription, new TestSend, new Template, new Revision,
-        new RevisionContent, new Asset, new Upload, new SavedAudience,
-    ];
+    // Every class in src/Models, so a model added later can't be missed.
+    $models = array_map(
+        fn (string $path): Model => new ('Mozex\\Campaigns\\Models\\'.basename($path, '.php')),
+        glob(__DIR__.'/../src/Models/*.php') ?: [],
+    );
+
+    expect($models)->not->toBeEmpty();
 
     Relation::requireMorphMap();
 
@@ -192,3 +195,43 @@ it('gives every model a prefixed morph alias', function (): void {
         Relation::requireMorphMap(false);
     }
 });
+
+it('keeps one link row per address of a revision, keys case-sensitive, and makes them race-safe', function (string $driver): void {
+    useDatabase($driver);
+    $revision = Revision::factory()->withContent('en', ['html' => '<a href="https://shop.test/a">A</a><a href="https://shop.test/a">Again</a><a href="https://shop.test/b">B</a>{{footer}}'])->create();
+    $other = Revision::factory()->withContent('en', ['html' => '<a href="https://shop.test/a">A</a>{{footer}}'])->create();
+    $long = 'https://shop.test/?q='.str_repeat('x', 8000);
+
+    $keys = CampaignLink::writeFor($revision);
+    $again = CampaignLink::writeFor($revision);
+    CampaignLink::writeFor($other);
+    // Two keys that differ only in case are two rows.
+    CampaignLink::factory()->create(['key' => str_repeat('a', 22)]);
+    CampaignLink::factory()->create(['key' => str_repeat('A', 22)]);
+    CampaignLink::factory()->create(['url' => $long, 'url_hash' => CampaignLink::hash($long)]);
+
+    expect($keys)->toHaveKeys(['https://shop.test/a', 'https://shop.test/b'])->toHaveCount(2)
+        ->and($again)->toBe($keys)
+        ->and(CampaignLink::query()->where('revision_id', $other->id)->sole()->key)->not->toBe($keys['https://shop.test/a'])
+        ->and(CampaignLink::query()->where('key', str_repeat('A', 22))->count())->toBe(1)
+        ->and(CampaignLink::query()->where('url_hash', CampaignLink::hash($long))->sole()->url)->toBe($long)
+        ->and($revision->links()->count())->toBe(2)
+        ->and(fn () => CampaignLink::factory()->create(['revision_id' => $revision->id, 'url' => 'https://shop.test/a', 'url_hash' => CampaignLink::hash('https://shop.test/a')]))
+        ->toThrow(UniqueConstraintViolationException::class);
+})->with('databases');
+
+it('writes a revision\'s link rows in chunks, hundreds of addresses across its languages', function (string $driver): void {
+    useDatabase($driver);
+    $links = fn (string $locale): string => implode('', array_map(fn (int $n): string => "<a href=\"https://shop.test/{$locale}/{$n}\">{$n}</a>", range(1, 130)));
+    $revision = Revision::factory()
+        ->withContent('en', ['html' => $links('en').'<a href="https://shop.test/shared">S</a>{{footer}}'])
+        ->withContent('fr', ['html' => $links('fr').'<a href="https://shop.test/shared">S</a>{{footer}}'])
+        ->create();
+
+    $keys = CampaignLink::writeFor($revision);
+
+    expect($keys)->toHaveCount(261)
+        ->and(CampaignLink::query()->where('revision_id', $revision->id)->count())->toBe(261)
+        ->and(array_unique(array_values($keys)))->toHaveCount(261)
+        ->and(CampaignLink::writeFor($revision))->toEqual($keys);
+})->with('databases');

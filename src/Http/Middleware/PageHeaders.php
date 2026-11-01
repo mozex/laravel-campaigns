@@ -21,7 +21,12 @@ class PageHeaders
 
         $response->headers->set('X-Robots-Tag', 'noindex, nofollow');
         $response->headers->set('Referrer-Policy', 'no-referrer');
-        $response->headers->set('Cache-Control', 'no-store, private');
+        // Unless the page set its own that already forbids storing (the open
+        // pixel's adds no-cache and max-age=0). Every response has a computed
+        // Cache-Control, so only its directives tell.
+        if (! $response->headers->hasCacheControlDirective('no-store')) {
+            $response->headers->set('Cache-Control', 'no-store, private');
+        }
         $response->headers->set('X-Frame-Options', 'DENY');
 
         return $response;

@@ -9,6 +9,7 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
 use Mozex\Campaigns\Enums\FeedbackResult;
 use Mozex\Campaigns\Jobs\ProcessFeedbackJob;
+use Mozex\Campaigns\Models\CampaignLink;
 use Mozex\Campaigns\Models\CampaignMessage;
 use Mozex\Campaigns\Models\ProviderEvent;
 use Mozex\Campaigns\Models\TestSend;
@@ -32,10 +33,11 @@ class RecordFeedbackAction
 {
     /**
      * Mail apps whose image loads are the person opening the email: Gmail
-     * fetches images through its proxy only when the email is opened. Every
-     * other machine (Apple's privacy prefetch, scanners) is a bot.
+     * and Yahoo Mail fetch images through their proxies only when the email
+     * is opened. Every other machine (Apple's privacy prefetch, scanners) is
+     * a bot.
      */
-    public const HUMAN_PROXIES = ['gmail'];
+    public const HUMAN_PROXIES = ['gmail', 'yahoo'];
 
     /**
      * @param  string  $driver  the name of the driver that reported it
@@ -201,12 +203,14 @@ class RecordFeedbackAction
 
     /**
      * A clicked address as it is kept: the token in a link to the package's
-     * own pages replaced, any part holding an address (raw or encoded)
-     * replaced, and the whole cut to 2,000 characters.
+     * own pages and its tracking replaced (a tracked link's key too), any
+     * part holding an address (raw or encoded) replaced, and the whole cut
+     * to 2,000 characters.
      */
     public static function storedUrl(string $url): string
     {
-        $url = (string) preg_replace('#/campaigns/([ucv])/[A-Za-z0-9]{16,128}#', '/campaigns/$1/{token}', $url);
+        $url = (string) preg_replace('#/campaigns/l/[A-Za-z0-9]{'.CampaignLink::KEY_LENGTH.'}/[A-Za-z0-9]{16,128}#', '/campaigns/l/{key}/{token}', $url);
+        $url = (string) preg_replace('#/campaigns/([ucvo])/[A-Za-z0-9]{16,128}#', '/campaigns/$1/{token}', $url);
         $url = (string) preg_replace('#([/?&=\#])[^/?&=\#]*(?:@|%40)[^/?&=\#]*#i', '$1[address]', $url);
 
         return mb_strimwidth($url, 0, 2000, '...');

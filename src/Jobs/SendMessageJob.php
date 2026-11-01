@@ -37,9 +37,10 @@ use Throwable;
  * and the claim's: it takes the message from queued to sending by a
  * conditional update on both, and sends nothing unless that changed the row,
  * so a duplicate job, or one left from an older claim, does nothing. The
- * links' token is made here and only its hash stored, in that same update,
- * so the raw token never sits in the queue; so is the active driver's name,
- * whose service the message's events are then read from.
+ * links' token and the tracking's are made here and only their hashes
+ * stored, in that same update, so a raw token never sits in the queue; so
+ * is the active driver's name, whose service the message's events are then
+ * read from.
  */
 class SendMessageJob implements ShouldQueue
 {
@@ -86,13 +87,14 @@ class SendMessageJob implements ShouldQueue
     public function handle(DriverManager $drivers, MessageComposer $composer, PauseCampaignAction $pause, RecordFeedbackAction $record, EnforceStopLossAction $stopLoss): void
     {
         $token = Token::generate();
+        $trackingToken = Token::generate();
         $name = $drivers->getDefaultDriver();
 
         // Built before the message is taken: a driver that can't be built
         // fails the job with the message still queued, so it waits again.
         $driver = $drivers->active();
 
-        if (! $this->take($token, $name)) {
+        if (! $this->take($token, $trackingToken, $name)) {
             return;
         }
 
@@ -103,16 +105,16 @@ class SendMessageJob implements ShouldQueue
         }
 
         if (! $this->mayStillBeSent($message)) {
-            $this->finish(MessageStatus::Skipped, ['token_hash' => null]);
+            $this->finish(MessageStatus::Skipped, ['token_hash' => null, 'tracking_token_hash' => null]);
 
             return;
         }
 
         try {
-            $outgoing = $composer->outgoing($message, $token);
+            $outgoing = $composer->outgoing($message, $token, $trackingToken);
         } catch (CampaignsException) {
             // Its address was forgotten, or its campaign has no email to send.
-            $this->finish(MessageStatus::Skipped, ['token_hash' => null]);
+            $this->finish(MessageStatus::Skipped, ['token_hash' => null, 'tracking_token_hash' => null]);
 
             return;
         }
@@ -145,7 +147,7 @@ class SendMessageJob implements ShouldQueue
      * cancelled, sending switched off, the claim stale) goes back to pending,
      * with nothing sent.
      */
-    protected function take(string $token, string $driver): bool
+    protected function take(string $token, string $trackingToken, string $driver): bool
     {
         $now = now();
 
@@ -156,6 +158,7 @@ class SendMessageJob implements ShouldQueue
                 'status' => MessageStatus::Sending,
                 'sending_at' => $now,
                 'token_hash' => Token::hash($token),
+                'tracking_token_hash' => Token::hash($trackingToken),
                 'driver' => $driver,
                 'updated_at' => $now,
             ]) === 1;

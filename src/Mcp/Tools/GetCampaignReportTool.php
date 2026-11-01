@@ -24,7 +24,7 @@ use Mozex\Campaigns\Reports\ReportSummary;
 
 #[Name('get_campaign_report')]
 #[Title('Get a campaign\'s report')]
-#[Description('A campaign\'s numbers, in counts only: its messages by status; its sends (emails the provider took), deliveries, failures by kind, hard bounces, spam reports and unsubscribes (by how they came); the people who opened and clicked, with every open and click by people and by machines (Apple\'s privacy opens and link scanners), and the most clicked links; rates (bounces, spam reports and unsubscribes per send, as the stop-loss measures them; opens and clicks per delivery, machines left out, or per sent email for a driver that reads nothing back, as their basis says); the same by list, language, engagement tier (as it stood at the start) and mailbox provider; a timeline by day in the app\'s timezone; and the queue now. It is worked out when read, so it keeps moving after the campaign completes (late bounces, opens, the reconciler), and is kept once events are pruned. The '.ReportSummary::LINKS.' most clicked links, the '.ReportSummary::BREAKDOWN.' largest lists and languages and the latest '.ReportSummary::DAYS.' days are shown, each with its total.')]
+#[Description('A campaign\'s numbers, in counts only: its messages by status; its sends (emails the provider took), deliveries, failures by kind, hard bounces, spam reports and unsubscribes (by how they came); the people who opened and clicked, with every open and click by people and by machines (Apple\'s privacy opens, link scanners, and anything that opened or clicked as the email arrived), and the most clicked links; rates (bounces, spam reports and unsubscribes per send, as the stop-loss measures them; opens and clicks per delivery, machines left out, or per sent email for a driver that reads nothing back, as their basis says); the same by list, language, engagement tier (as it stood at the start) and mailbox provider; a timeline by day in the app\'s timezone; and the queue now. It is worked out when read, so it keeps moving after the campaign completes (late bounces, opens, the reconciler), and is kept once events are pruned. The '.ReportSummary::LINKS.' most clicked links, the '.ReportSummary::BREAKDOWN.' largest lists and languages and the latest '.ReportSummary::DAYS.' days are shown, each with its total.')]
 #[IsReadOnly]
 #[IsIdempotent]
 #[IsOpenWorld(false)]
@@ -99,7 +99,7 @@ class GetCampaignReportTool extends CampaignsTool
                 'provider' => $schema->integer()->required()->description('The provider\'s own unsubscribe link.'),
                 'other' => $schema->integer()->required(),
             ]),
-            'opens' => $schema->object($people())->description('people opened at least once; human and machine count every open the provider reported.'),
+            'opens' => $schema->object($people())->description('people opened at least once; human and machine count every load of the email\'s open pixel.'),
             'clicks' => $schema->object($people()),
             'rates' => $schema->object([
                 'delivery' => $schema->number()->nullable()->required(),

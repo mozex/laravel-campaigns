@@ -57,7 +57,7 @@ A revision that breaks any of these is refused, with every problem listed in one
 - an unsubscribe link in the HTML and the text (`{{unsubscribe_url}}`, `{{preferences_url}}` or `{{footer}}`);
 - every image on https, inside Outlook's conditional comments (`<!--[if mso]>`) too: `src`, `srcset` and `lowsrc` on `img`, `srcset` on `<picture>`'s `source`, `src` on an image button and on VML (`v:image`, `v:fill`, `v:imagedata`), `poster` on `video`, `href` on SVG's `image`, `background` on any element, and CSS `url()`, `image-set()` and `@import` in style attributes and style elements;
 - elements nested at most 200 deep, since the HTML parser behind these rules stops reading at 256 and would miss the rest;
-- at most 90 KB of HTML once filled with sample values, since Gmail clips at 102 KB and click tracking lengthens links, and at most 90 KB of text.
+- at most 90 KB of HTML once filled with sample values, its links wrapped for click tracking and its open pixel added, since Gmail clips at 102 KB, and at most 90 KB of text.
 
 ## Pre-send checks
 
@@ -67,7 +67,7 @@ A revision that breaks any of these is refused, with every problem listed in one
 |---|---|
 | `locales` | languages a campaign's audience speaks that the email lacks |
 | `unsubscribe`, `privacy_link` | the links every email needs |
-| `size` | the HTML's size, counting what click tracking adds |
+| `size` | the HTML's size with its open pixel and, when the campaign tracks clicks, its tracked links |
 | `images` | alt text and https |
 | `links` | every link fetched from the server (up to 100 addresses or two minutes), the package's own token pages left out |
 | `spam_score` | a SpamAssassin score from Postmark's free checker, when `campaigns.checks.spam_score` is on |

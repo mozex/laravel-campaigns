@@ -63,7 +63,8 @@ Call `get_overview` first. It tells you:
 - At most 20 languages. The default language must be there. Elements may nest at most 200 deep.
 - Placeholders are a fixed set in double braces; `get_overview` lists them with this app's values. Anything else in double braces is refused, since it would reach every inbox as written. A subject or preheader holds only `{{first_name}}`, `{{name}}` and `{{email}}`. `{{first_name|there}}` gives a fallback. `{{footer}}` puts in who the email went to, the unsubscribe and privacy links and the postal address, in the email's language where the app has the package's strings in it, else in the app's language. `{{preheader}}` places the preheader; without it, the preheader goes in a hidden block at the start of the body. `{{web_version_url}}` is the email as a web page.
 - Every email needs an unsubscribe link in its HTML and its text (`{{footer}}`, `{{unsubscribe_url}}` or `{{preferences_url}}`).
-- At most 90 KB of HTML once filled in, since Gmail clips longer emails.
+- At most 90 KB of HTML once filled in, its links wrapped for click tracking and its open pixel added, since Gmail clips longer emails.
+- Links are tracked unless the campaign's `track_clicks` is off: each `http` or `https` link goes out wrapped in a redirect through the app, and, unless `track_opens` is off, an open pixel goes in after the preheader. A link whose address holds a placeholder, whose text is the address itself, or that carries `data-campaigns-no-track` goes out as written.
 - A plain text you write travels in the zip; one you leave out is generated from the HTML each time.
 - For mail apps everywhere (Outlook included): tables 600 pixels wide, inline styles, no scripts or forms, alt text on every image, and links that work without tracking.
 

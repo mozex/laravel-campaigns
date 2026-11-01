@@ -29,6 +29,7 @@ use Mozex\Campaigns\Enums\MessageStatus;
  * @property MessageStatus $status
  * @property ?string $claim_id
  * @property ?string $token_hash
+ * @property ?string $tracking_token_hash
  * @property ?string $driver
  * @property ?string $provider_message_id
  * @property ?Carbon $claimed_at
@@ -56,8 +57,9 @@ class CampaignMessage extends Model
 
     /**
      * What a message going back to pending clears (its claim, the claim's
-     * time, when its job took it and its links' token), so the pace counts it
-     * as never sent and its next claim starts afresh. The send job and the
+     * time, when its job took it and its links' tokens), so the pace counts
+     * it as never sent, its next claim starts afresh, and a hit on a pixel of
+     * an email that never went out records nothing. The send job and the
      * reconciler both write it.
      */
     public const UNCLAIMED = [
@@ -65,6 +67,7 @@ class CampaignMessage extends Model
         'claimed_at' => null,
         'sending_at' => null,
         'token_hash' => null,
+        'tracking_token_hash' => null,
     ];
 
     protected $table = 'campaign_messages';
@@ -79,6 +82,7 @@ class CampaignMessage extends Model
         'status',
         'claim_id',
         'token_hash',
+        'tracking_token_hash',
         'driver',
         'provider_message_id',
         'claimed_at',
@@ -97,6 +101,7 @@ class CampaignMessage extends Model
 
     protected $hidden = [
         'token_hash',
+        'tracking_token_hash',
     ];
 
     /** @return list<string> */

@@ -70,4 +70,4 @@ docker run -d --name mailpit -p 1025:1025 -p 8025:8025 axllent/mailpit
 
 Mailpit shows the emails at `http://127.0.0.1:8025`. Laravel Herd Pro's mail service works the same way: point the mailer at the port its settings show (2525 by default) and give it a `username`, such as your app's name, which Herd files the emails under.
 
-Serve the app over https and point `CAMPAIGNS_URL` (or `APP_URL`) at that address, `https://your-app.test` with `herd secure`, say. An email's images must be on https, and its unsubscribe and web version links start with `CAMPAIGNS_URL`, so they open in your browser.
+Serve the app over https and point `CAMPAIGNS_URL` (or `APP_URL`) at that address, `https://your-app.test` with `herd secure`, say. An email's images must be on https, and its unsubscribe and web version links start with `CAMPAIGNS_URL`, so they open in your browser. So do its [open pixel and tracked links](../campaigns/tracking.md): open an email in Mailpit and its open is recorded, click a link and the click is, each applied about a minute later.

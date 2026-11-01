@@ -29,6 +29,7 @@ use Mozex\Campaigns\Events\CampaignPausedEvent;
 use Mozex\Campaigns\Events\CampaignStartedEvent;
 use Mozex\Campaigns\Jobs\FreezeCampaignJob;
 use Mozex\Campaigns\Models\Campaign;
+use Mozex\Campaigns\Models\CampaignLink;
 use Mozex\Campaigns\Models\CampaignList;
 use Mozex\Campaigns\Models\CampaignMessage;
 use Mozex\Campaigns\Models\Revision;
@@ -119,17 +120,37 @@ describe('starting a campaign', function (): void {
             )
             ->and($frozen->contentFor('en')->text)->toContain('https://www.example.com/sale?a=1&b=2&'.str_replace('&amp;', '&', $tags).'#top')
             ->and($frozen->contentFor('en')->text_generated)->toBeTrue()
-            ->and($frozen->contentFor('fr')->text)->toBe('Promo: https://example.com/fr?'.str_replace('&amp;', '&', $tags).".\n{{unsubscribe_url}}");
+            ->and($frozen->contentFor('fr')->text)->toBe('Promo: https://example.com/fr?'.str_replace('&amp;', '&', $tags).".\n{{unsubscribe_url}}")
+            // A row per address its tracked links lead to, tags included, in
+            // every language; the placeholder's link is never wrapped.
+            ->and(CampaignLink::query()->where('revision_id', $frozen->id)->pluck('url')->sort()->values()->all())->toBe([
+                'https://example.com/?utm_source=mine',
+                'https://example.com/fr?'.str_replace('&amp;', '&', $tags),
+                'https://other.org/',
+                'https://shop.example.com/?'.str_replace('&amp;', '&', $tags),
+                'https://www.example.com/sale?a=1&b=2&'.str_replace('&amp;', '&', $tags).'#top',
+            ])
+            ->and(CampaignLink::query()->where('revision_id', '!=', $frozen->id)->count())->toBe(0);
     })->with('databases');
 
-    it('sends the current revision itself when there is nothing to tag', function (): void {
-        $campaign = readersCampaign(settings: ['utm' => false]);
+    it('sends the current revision itself when there is nothing to tag, keeping the link rows a test email made of it', function (string $driver): void {
+        useDatabase($driver);
+        $campaign = readersCampaign([campaignEmail(html: '<a href="https://example.com/a">A</a><a href="https://example.com/b">B</a>{{footer}}')], ['utm' => false]);
         subscriberOn([readers()]);
+        $current = $campaign->currentRevision()->sole();
+        // A test email composed first made the row for one address.
+        CampaignLink::factory()->create(['revision_id' => $current->id, 'url' => 'https://example.com/a', 'url_hash' => CampaignLink::hash('https://example.com/a'), 'key' => str_repeat('a', 22)]);
 
         app(StartCampaignAction::class)->execute($campaign, 1);
 
-        expect($campaign->fresh()->frozen_revision_id)->toBe($campaign->currentRevision()->sole()->id);
-    });
+        expect($campaign->fresh())
+            ->status->toBe(CampaignStatus::Sending)
+            ->frozen_revision_id->toBe($current->id)
+            ->and(CampaignLink::query()->where('revision_id', $current->id)->orderBy('url')->pluck('key', 'url')->all())
+            ->toHaveKeys(['https://example.com/a', 'https://example.com/b'])
+            ->toHaveCount(2)
+            ->and(CampaignLink::query()->where('url', 'https://example.com/a')->value('key'))->toBe(str_repeat('a', 22));
+    })->with('databases');
 
     it('goes back to a draft, leaving nothing, when the audience changed', function (string $driver): void {
         useDatabase($driver);
@@ -146,7 +167,8 @@ describe('starting a campaign', function (): void {
             ->frozen_revision_id->toBeNull()
             ->recipient_count->toBeNull()
             ->and(CampaignMessage::query()->count())->toBe(0)
-            ->and(Revision::query()->where('revisable_id', $campaign->id)->count())->toBe(1);
+            ->and(Revision::query()->where('revisable_id', $campaign->id)->count())->toBe(1)
+            ->and(CampaignLink::query()->count())->toBe(0);
 
         Event::assertNotDispatched(CampaignStartedEvent::class);
 
@@ -178,8 +200,9 @@ describe('starting a campaign', function (): void {
         'a year and more ahead' => [fn () => null, 3, 'at most a year ahead'],
         'no target lists' => [fn (Campaign $campaign) => $campaign->forceFill(['target_lists' => null])->save(), 1, 'no target lists'],
         'a From off the domain' => [fn (Campaign $campaign) => $campaign->forceFill(['from_email' => 'news@example.com'])->save(), 1, 'must be on the sending domain'],
+        // Links kept out of click tracking, so the tags lengthen the email.
         'tags that push it past 90 KB' => [fn (Campaign $campaign) => app(AddRevisionAction::class)->execute($campaign, [
-            campaignEmail(html: str_repeat('<a href="https://example.com/">x</a>', 2400).'{{footer}}'),
+            campaignEmail(html: str_repeat('<a href="https://example.com/" data-campaigns-no-track>x</a>', 2400).'{{footer}}'),
         ]), 1, 'over the 90 KB limit'],
     ]);
 

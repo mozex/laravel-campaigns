@@ -7,7 +7,7 @@ Mailgun delivers the email through the `mailgun` driver, the default (`CAMPAIGNS
 
 ## The sending domain
 
-Add your marketing domain (`news.example.com`) in Mailgun and publish the DNS records Mailgun asks for: SPF, DKIM, and the tracking CNAME, without which opens and clicks can't be tracked. The package decides tracking per email (`o:tracking-opens` and `o:tracking-clicks` on every message), so the domain's own tracking setting never decides for it. Opens are never tracked for subscribers in the countries listed in `campaigns.no_open_tracking_countries` (France by default, whose data protection authority asks for consent to a tracking pixel).
+Add your marketing domain (`news.example.com`) in Mailgun and publish the DNS records Mailgun asks for: SPF and DKIM. Mailgun's tracking CNAME isn't needed: the package tracks opens and clicks itself ([Opens and Clicks](../campaigns/tracking.md)) and turns Mailgun's tracking off on every message (`o:tracking-opens: no` and `o:tracking-clicks: no`), so the domain's own tracking setting never decides for it.
 
 ## Webhooks
 
@@ -17,7 +17,7 @@ Point Mailgun's webhooks for the sending domain at:
 https://your-app.example.com/campaigns/webhooks/mailgun
 ```
 
-Subscribe the `delivered`, `permanent_fail`, `temporary_fail`, `complained`, `unsubscribed`, `opened` and `clicked` events. `accepted` may be added too; every other event of an email already proves Mailgun took it. Then give the package the account's HTTP webhook signing key, from Mailgun's API Security settings. It's neither the API key nor a sending key:
+Subscribe the `delivered`, `permanent_fail`, `temporary_fail`, `complained` and `unsubscribed` events. `accepted` may be added too; every other event of an email already proves Mailgun took it. Mailgun's `opened` and `clicked` events are dropped, since it tracks nothing the package sends. Then give the package the account's HTTP webhook signing key, from Mailgun's API Security settings. It's neither the API key nor a sending key:
 
 ```dotenv
 MAILGUN_WEBHOOK_SIGNING_KEY=your-webhook-signing-key

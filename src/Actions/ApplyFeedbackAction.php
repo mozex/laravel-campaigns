@@ -6,7 +6,6 @@ namespace Mozex\Campaigns\Actions;
 
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Support\Carbon;
 use Mozex\Campaigns\Enums\BlockReason;
 use Mozex\Campaigns\Enums\DeliveryFailure;
 use Mozex\Campaigns\Enums\FeedbackType;
@@ -44,10 +43,17 @@ class ApplyFeedbackAction
     public const SOFT_BOUNCE_LIMIT = 3;
 
     /**
-     * A click this close to the email's delivery, in seconds, is a link
-     * scanner checking the email as it arrives.
+     * A click this close to the email's delivery, in seconds, or any time
+     * before it, is a link scanner checking the email as it arrives.
      */
     public const SCANNER_SECONDS = 10;
+
+    /**
+     * An open this close to the email's delivery, in seconds, or any time
+     * before it, is a machine's, whatever its user agent: a prefetch, or a
+     * scanner loading its images, since no person opens an email that fast.
+     */
+    public const PREFETCH_SECONDS = 5;
 
     /**
      * A click this close to a click on another link of the same email, in
@@ -105,12 +111,17 @@ class ApplyFeedbackAction
      */
     protected function wentOut(CampaignMessage $message, ProviderEvent $event, CarbonInterface $at): void
     {
+        // It went when its job sent it, when that is known: the timing rules
+        // count from it, and an open's time would make the person's own
+        // click seconds later look like a scanner's.
+        $sentAt = $message->sending_at !== null && $message->sending_at->lessThanOrEqualTo($at) ? $message->sending_at : $at;
+
         $moved = CampaignMessage::query()
             ->whereKey($message->id)
             ->whereIn('status', [MessageStatus::Pending, MessageStatus::Queued, MessageStatus::Sending, MessageStatus::Unknown])
             ->update([
                 'status' => MessageStatus::Sent,
-                'sent_at' => $at,
+                'sent_at' => $sentAt,
                 'failure_reason' => null,
                 'failure_code' => null,
                 'updated_at' => now(),
@@ -133,7 +144,7 @@ class ApplyFeedbackAction
             Subscriber::query()
                 ->whereKey($message->subscriber_id)
                 ->whereNull('first_mailed_at')
-                ->update(['first_mailed_at' => $at, 'updated_at' => now()]);
+                ->update(['first_mailed_at' => $sentAt, 'updated_at' => now()]);
         }
     }
 
@@ -275,10 +286,15 @@ class ApplyFeedbackAction
 
     /**
      * A person's open: the email's first, and the person's latest. Machines
-     * (Apple's privacy prefetch, scanners) count for nothing.
+     * (Apple's privacy prefetch, scanners, and anything that opened it as it
+     * arrived, Gmail's proxy included) count for nothing.
      */
     protected function opened(CampaignMessage $message, ProviderEvent $event, CarbonInterface $at): AppliedFeedback
     {
+        if (! $event->is_bot && $this->withinSecondsOfArrival($message, $event, static::PREFETCH_SECONDS)) {
+            $event->forceFill(['is_bot' => true])->save();
+        }
+
         if (! $event->is_bot) {
             $this->engaged($message, 'opened_at', 'last_opened_at', $at);
         }
@@ -317,21 +333,14 @@ class ApplyFeedbackAction
     }
 
     /**
-     * A click right as the email arrived, or beside a click on another of its
-     * links: a scanner checking the email, not a person reading it. Clicks
-     * wait a minute before they are applied, so a burst's later clicks are
-     * stored by the time its first is checked. Without a delivery (a driver
-     * that reads nothing back never reports one), the email arrived when it
-     * was sent.
+     * A click right as the email arrived (or before), or beside a click on
+     * another of its links: a scanner checking the email, not a person
+     * reading it. Clicks wait a minute before they are applied, so a burst's
+     * later clicks are stored by the time its first is checked.
      */
     protected function isScanner(CampaignMessage $message, ProviderEvent $event): bool
     {
-        $reportedDeliveredAt = $event->payload['details']['delivered-at'] ?? null;
-        $deliveredAt = is_int($reportedDeliveredAt) || is_float($reportedDeliveredAt)
-            ? Carbon::createFromTimestampUTC($reportedDeliveredAt)
-            : $message->delivered_at ?? $message->sent_at;
-
-        if ($deliveredAt !== null && abs($event->occurred_at->diffInSeconds($deliveredAt)) <= static::SCANNER_SECONDS) {
+        if ($this->withinSecondsOfArrival($message, $event, static::SCANNER_SECONDS)) {
             return true;
         }
 
@@ -347,6 +356,19 @@ class ApplyFeedbackAction
             ])
             ->get(['id', 'payload'])
             ->contains(fn (ProviderEvent $sibling): bool => ($sibling->payload['url'] ?? null) !== $url);
+    }
+
+    /**
+     * Whether the event came at most $seconds after the email arrived, or
+     * before it did. Without a delivery (a driver that reads nothing back
+     * never reports one), the email arrived when it was sent; an email that
+     * was neither (its send unclear) has nothing to count from.
+     */
+    protected function withinSecondsOfArrival(CampaignMessage $message, ProviderEvent $event, int $seconds): bool
+    {
+        $arrived = $message->delivered_at ?? $message->sent_at;
+
+        return $arrived !== null && $arrived->diffInSeconds($event->occurred_at) <= $seconds;
     }
 
     /**

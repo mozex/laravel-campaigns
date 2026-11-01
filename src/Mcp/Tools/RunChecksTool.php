@@ -20,7 +20,7 @@ use Mozex\Campaigns\Models\Campaign;
 
 #[Name('run_checks')]
 #[Title('Check an email before it is sent')]
-#[Description('Queues the pre-send checks of a template\'s or a campaign\'s current email and returns at once: every link and image fetched from the server, the size once click tracking lengthens the links, images without alt text or not on https, the unsubscribe and privacy links, a version for every language the campaign\'s recipients read, and a spam score where the app turns it on. They take a minute or two; read them with get_check_results. They report and never block a start. Running them again replaces a run still waiting.')]
+#[Description('Queues the pre-send checks of a template\'s or a campaign\'s current email and returns at once: every link and image fetched from the server, the size with its open pixel and tracked links, images without alt text or not on https, the unsubscribe and privacy links, a version for every language the campaign\'s recipients read, and a spam score where the app turns it on. They take a minute or two; read them with get_check_results. They report and never block a start. Running them again replaces a run still waiting.')]
 #[IsOpenWorld]
 #[IsDestructive(false)]
 class RunChecksTool extends CampaignsTool
@@ -48,8 +48,8 @@ class RunChecksTool extends CampaignsTool
         $owner = static::owner($input);
         $revision = static::revision($owner);
 
-        // A campaign's checks know its recipients' languages and its click
-        // tracking; a template's know neither, and count tracked links.
+        // A campaign's checks know its recipients' languages and whether it
+        // tracks clicks; a template's know neither, and count tracked links.
         if ($owner instanceof Campaign) {
             $queueCampaignChecks->execute($owner);
         } else {

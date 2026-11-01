@@ -70,8 +70,12 @@ it('sends a claimed message once, and nothing for a duplicate or another claim',
     $message = CampaignMessage::query()->sole();
     [$sent] = fakeDriver()->sent();
     $token = Str::after($sent->unsubscribeUrl, '/campaigns/u/');
+    $tracking = preg_match('#/campaigns/o/([A-Za-z0-9]+)"#', $sent->html, $pixel) === 1 ? $pixel[1] : null;
 
     expect(fakeDriver()->sent())->toHaveCount(1)
+        // The pixel's token is its own, never the pages' one.
+        ->and($tracking)->not->toBeNull()->not->toBe($token)
+        ->and($message->tracking_token_hash)->toBe(Token::hash((string) $tracking))
         ->and($sent)
         ->uuid->toBe($message->uuid)
         ->to->toBe('news-1@example.org')
@@ -104,7 +108,8 @@ it('skips a message whose person can no longer get it', function (Closure $chang
     expect(fakeDriver()->sent())->toBe([])
         ->and(CampaignMessage::query()->sole())
         ->status->toBe(MessageStatus::Skipped)
-        ->token_hash->toBeNull();
+        ->token_hash->toBeNull()
+        ->tracking_token_hash->toBeNull();
 })->with([
     'opted out' => [fn (Subscriber $subscriber) => $subscriber->update(['opted_out_at' => now()])],
     'blocked' => [fn (Subscriber $subscriber) => $subscriber->update(['blocked_at' => now(), 'blocked_reason' => BlockReason::Complaint])],
@@ -133,6 +138,7 @@ it('puts a message back when the provider took nothing, and halves the campaign\
         ->claimed_at->toBeNull()
         ->sending_at->toBeNull()
         ->token_hash->toBeNull()
+        ->tracking_token_hash->toBeNull()
         ->failure_reason->toBeNull()
         ->and($campaign->fresh()->rate_halved_until)->toEqual(now()->addMinutes(10));
 

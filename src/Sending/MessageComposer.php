@@ -8,6 +8,8 @@ use Mozex\Campaigns\CampaignsException;
 use Mozex\Campaigns\Content\Personalization;
 use Mozex\Campaigns\Content\RenderedEmail;
 use Mozex\Campaigns\Content\Renderer;
+use Mozex\Campaigns\Content\Tracking;
+use Mozex\Campaigns\Models\CampaignLink;
 use Mozex\Campaigns\Models\CampaignMessage;
 use Mozex\Campaigns\Models\Revision;
 use Mozex\Campaigns\Models\RevisionContent;
@@ -26,15 +28,31 @@ class MessageComposer
     public function __construct(protected Renderer $renderer) {}
 
     /**
+     * The email to send, tracked as its campaign says (a template's test
+     * always is), a test email like its campaign's own so it shows what they
+     * get: its links wrapped and its open pixel, under the tracking token,
+     * never the pages' one. A recipient where an open pixel needs consent the
+     * app doesn't ask for gets wrapped links but no pixel.
+     *
      * @throws CampaignsException when the email can't be built: its address
      *                            was forgotten, or it has no revision
      */
-    public function outgoing(CampaignMessage|TestSend $email, string $token): OutgoingMessage
+    public function outgoing(CampaignMessage|TestSend $email, string $token, string $trackingToken): OutgoingMessage
     {
-        [$content, $person, $subscriber] = $this->parts($email, $token);
+        [$content, $person, $subscriber, $revision] = $this->parts($email, $token);
         $rendered = $this->renderer->render($content, $person);
         $campaign = $email->campaign;
         $isTest = $email instanceof TestSend;
+        $trackOpens = ($campaign === null || $campaign->track_opens) && ! $this->opensUntracked($subscriber);
+        $trackClicks = $campaign === null || $campaign->track_clicks;
+
+        // A campaign's rows were made as it started; a test's revision gets
+        // them the first time one of its emails is composed.
+        $keys = match (true) {
+            ! $trackClicks => [],
+            $isTest => CampaignLink::writeFor($revision),
+            default => CampaignLink::keysFor($revision),
+        };
 
         return new OutgoingMessage(
             uuid: $email->uuid,
@@ -43,26 +61,28 @@ class MessageComposer
             fromName: $campaign === null ? Sender::name() : $campaign->from_name,
             replyTo: $campaign === null ? Sender::replyTo() : $campaign->reply_to,
             subject: $rendered->subject,
-            html: $rendered->html,
+            html: Tracking::apply($rendered->html, $keys, $trackingToken, $trackOpens, $trackClicks),
             text: $rendered->text,
             unsubscribeUrl: $person->unsubscribeUrl,
             tag: $isTest || $campaign === null ? TestSend::TAG : $campaign->tag,
-            trackOpens: ($campaign === null || $campaign->track_opens) && ! $this->opensUntracked($subscriber),
-            trackClicks: $campaign === null || $campaign->track_clicks,
+            trackOpens: $trackOpens,
+            trackClicks: $trackClicks,
             isTest: $isTest,
         );
     }
 
     /**
-     * The email as its recipient got it, for the web version.
+     * The email as its recipient got it, for the web version, without its
+     * tracking: a pixel there would count an open each time it is viewed.
      *
      * @throws CampaignsException
      */
     public function rendered(CampaignMessage|TestSend $email, string $token): RenderedEmail
     {
         [$content, $person] = $this->parts($email, $token);
+        $rendered = $this->renderer->render($content, $person);
 
-        return $this->renderer->render($content, $person);
+        return new RenderedEmail($rendered->subject, $rendered->preheader, Tracking::none($rendered->html), $rendered->text);
     }
 
     /**
@@ -104,7 +124,7 @@ class MessageComposer
     }
 
     /**
-     * @return array{0: RevisionContent, 1: Personalization, 2: ?Subscriber}
+     * @return array{0: RevisionContent, 1: Personalization, 2: ?Subscriber, 3: Revision}
      *
      * @throws CampaignsException
      */
@@ -136,7 +156,7 @@ class MessageComposer
             firstName: $sample ? Personalization::SAMPLE_FIRST_NAME : $subscriber?->first_name,
             name: $sample ? Personalization::SAMPLE_NAME : $subscriber?->name,
             locale: $content->locale,
-        ), $subscriber];
+        ), $subscriber, $revision];
     }
 
     protected function revision(CampaignMessage|TestSend $email): Revision

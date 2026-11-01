@@ -51,8 +51,9 @@ function messageTo(Subscriber $subscriber, array $attributes = []): CampaignMess
 /**
  * An event about an email in the package's terms, as any driver reports it:
  * each kind carries the time, code and message id of Mailgun's documented
- * sample of it (the timing rules count from them), and nothing of Mailgun's
- * own fields. The Mailgun driver's reading of its webhooks is tested apart.
+ * sample of it, and nothing of Mailgun's own fields; an open or a click, the
+ * package's own, comes now, as its pixel or link is hit. The Mailgun driver's
+ * reading of its webhooks is tested apart.
  *
  * @param  array<string, mixed>  $fields  Feedback's arguments to replace
  */
@@ -67,8 +68,8 @@ function feedbackAbout(CampaignMessage|TestSend $email, string $kind, array $fie
         'deferred' => ['type' => FeedbackType::Failed, 'occurredAt' => $at(1770919267.4288595), 'severity' => 'temporary', 'reason' => 'generic', 'failure' => DeliveryFailure::Deferred, 'code' => 421],
         'complained' => ['type' => FeedbackType::Complained, 'occurredAt' => $at(1770920772.2684145)],
         'unsubscribed' => ['type' => FeedbackType::Unsubscribed, 'occurredAt' => $at(1770327090.4656289)],
-        'opened' => ['type' => FeedbackType::Opened, 'occurredAt' => $at(1770327074.5549328), 'payload' => ['delivered-at' => 1770327049.0]],
-        'clicked' => ['type' => FeedbackType::Clicked, 'occurredAt' => $at(1770327118.6648676), 'url' => 'https://sample.mailgun.com', 'payload' => ['delivered-at' => 1770327049.0]],
+        'opened' => ['type' => FeedbackType::Opened, 'occurredAt' => now()],
+        'clicked' => ['type' => FeedbackType::Clicked, 'occurredAt' => now(), 'url' => 'https://example.com/offer'],
     };
 
     return new Feedback(...[
@@ -362,14 +363,21 @@ describe('opens and clicks', function (): void {
     it('counts a person\'s click, never a scanner\'s or one on the package\'s own pages', function (string $driver): void {
         useDatabase($driver);
         $subscriber = Subscriber::factory()->create();
-        $message = messageTo($subscriber);
         $deliveredAt = now()->subSeconds(3600)->getTimestamp();
+        // Sent a minute before it was delivered: the scanner rule counts from
+        // the delivery.
+        $message = messageTo($subscriber, [
+            'status' => MessageStatus::Delivered,
+            'sent_at' => Carbon::createFromTimestampUTC($deliveredAt - 60),
+            'delivered_at' => Carbon::createFromTimestampUTC($deliveredAt),
+        ]);
         $click = fn (int $at, string $url): ProviderEvent => reported($message, 'clicked', [
             'occurredAt' => Carbon::createFromTimestampUTC($deliveredAt + $at),
-            'payload' => ['delivered-at' => $deliveredAt],
             'url' => $url,
         ]);
 
+        // Before the delivery landed: a gateway scanning the email on its way.
+        $beforeArrival = $click(-30, 'https://example.com/offer');
         $onArrival = $click(5, 'https://example.com/offer');
         // A scanner opening every link at once: stored before either is applied.
         $burstFirst = $click(60, 'https://example.com/offer');
@@ -379,11 +387,11 @@ describe('opens and clicks', function (): void {
         // The same link twice in a moment is a double click, not a scanner.
         $doubleClick = $click(401, 'https://example.com/offer');
 
-        $clicks = collect([$onArrival, $burstFirst, $burstSecond, $ownPage, $person, $doubleClick]);
+        $clicks = collect([$beforeArrival, $onArrival, $burstFirst, $burstSecond, $ownPage, $person, $doubleClick]);
         $clicks->each(fn (ProviderEvent $event) => process($event));
 
         expect($clicks->map(fn (ProviderEvent $event): bool => (bool) $event->fresh()?->is_bot)->all())
-            ->toBe([true, true, true, false, false, false])
+            ->toBe([true, true, true, true, false, false, false])
             ->and($ownPage->fresh()?->payload['url'] ?? null)->toBe('https://example.com/campaigns/u/{token}')
             ->and(iso($message->fresh()?->clicked_at))->toBe(iso(Carbon::createFromTimestampUTC($deliveredAt + 400)))
             ->and(iso($subscriber->fresh()?->last_clicked_at))->toBe(iso(Carbon::createFromTimestampUTC($deliveredAt + 401)));
@@ -393,7 +401,6 @@ describe('opens and clicks', function (): void {
         $message = messageTo(Subscriber::factory()->create(), ['sent_at' => now()->subHour()]);
         $click = fn (int $after): ProviderEvent => says($message, 'clicked', [
             'occurredAt' => now()->subHour()->addSeconds($after),
-            'payload' => [],
             'url' => 'https://example.com/offer',
         ]);
 
@@ -405,15 +412,48 @@ describe('opens and clicks', function (): void {
             ->and(iso($message->fresh()?->clicked_at))->toBe(iso(now()->subHour()->addSeconds(300)));
     });
 
-    it('applies a click a minute later, so a scanner\'s burst is stored by then, and an open at once', function (): void {
+    it('applies an open and a click a minute later, so a scanner\'s burst and the delivery are stored by then, and other events at once', function (): void {
         $message = messageTo(Subscriber::factory()->create());
 
         $click = reported($message, 'clicked');
         $open = reported($message, 'opened');
+        $delivered = reported($message, 'delivered');
 
-        Queue::assertPushed(ProcessFeedbackJob::class, fn (ProcessFeedbackJob $job): bool => $job->eventId === $click->id && $job->delay === ProcessFeedbackJob::CLICK_DELAY);
-        Queue::assertPushed(ProcessFeedbackJob::class, fn (ProcessFeedbackJob $job): bool => $job->eventId === $open->id && $job->delay === null);
+        Queue::assertPushed(ProcessFeedbackJob::class, fn (ProcessFeedbackJob $job): bool => $job->eventId === $click->id && $job->delay === ProcessFeedbackJob::ENGAGEMENT_DELAY);
+        Queue::assertPushed(ProcessFeedbackJob::class, fn (ProcessFeedbackJob $job): bool => $job->eventId === $open->id && $job->delay === ProcessFeedbackJob::ENGAGEMENT_DELAY);
+        Queue::assertPushed(ProcessFeedbackJob::class, fn (ProcessFeedbackJob $job): bool => $job->eventId === $delivered->id && $job->delay === null);
     });
+
+    it('counts an open as the email arrived as a machine\'s, whatever its agent, Gmail\'s proxy included', function (string $driver): void {
+        useDatabase($driver);
+        $subscriber = Subscriber::factory()->create();
+        $sent = messageTo($subscriber, ['sent_at' => secondsAgo(600)]);
+        $delivered = messageTo(Subscriber::factory()->create(), [
+            'status' => MessageStatus::Delivered,
+            'sent_at' => secondsAgo(700),
+            'delivered_at' => secondsAgo(600),
+        ]);
+        $open = fn (CampaignMessage $message, int $after, ?string $bot = null): ProviderEvent => says($message, 'opened', [
+            'occurredAt' => secondsAgo(600 - $after),
+            'bot' => $bot,
+        ]);
+
+        $events = [
+            // Counted from the send, a driver that reads nothing back
+            // reporting no delivery.
+            $open($sent, 3, 'gmail'),
+            $open($sent, 5),
+            $open($sent, -2),
+            $open($sent, 6, 'gmail'),
+            // Counted from the delivery, a minute and more after the send.
+            $open($delivered, 4),
+            $open($delivered, 30),
+        ];
+
+        expect(array_map(fn (ProviderEvent $event): bool => (bool) $event->fresh()?->is_bot, $events))->toBe([true, true, true, false, true, false])
+            ->and(iso($subscriber->fresh()?->last_opened_at))->toBe(iso(secondsAgo(594)))
+            ->and(iso($sent->fresh()?->opened_at))->toBe(iso(secondsAgo(594)));
+    })->with('databases');
 
     it('records nothing about a person who left from the mail they were sent', function (): void {
         // Kept for its opt-out, under the address the person last held,
@@ -424,7 +464,7 @@ describe('opens and clicks', function (): void {
 
         says($unclear, 'accepted');
         says($message, 'opened');
-        says($message, 'clicked', ['payload' => []]);
+        says($message, 'clicked');
         says($message, 'complained');
         says($message, 'hard bounce');
 
@@ -444,6 +484,24 @@ describe('opens and clicks', function (): void {
 });
 
 describe('what proves a message went out', function (): void {
+    it('dates an unclear send from when its job sent it, so a person\'s open and click right after count', function (): void {
+        $message = messageTo(Subscriber::factory()->create(), [
+            'status' => MessageStatus::Unknown,
+            'sending_at' => secondsAgo(600),
+            'sent_at' => null,
+        ]);
+
+        $open = says($message, 'opened', ['occurredAt' => secondsAgo(60)]);
+        $click = says($message, 'clicked', ['occurredAt' => secondsAgo(54)]);
+
+        expect($message->fresh())
+            ->status->toBe(MessageStatus::Sent)
+            ->and(iso($message->fresh()?->sent_at))->toBe(iso(secondsAgo(600)))
+            ->and(iso($message->subscriber?->fresh()?->first_mailed_at))->toBe(iso(secondsAgo(600)))
+            ->and($open->fresh()?->is_bot)->toBeFalse()
+            ->and($click->fresh()?->is_bot)->toBeFalse();
+    });
+
     it('marks sent a message its send job never did, so it never goes again, and the address mailed', function (string $driver): void {
         useDatabase($driver);
         // An unclear answer, one put back as "taken nothing", and one claimed

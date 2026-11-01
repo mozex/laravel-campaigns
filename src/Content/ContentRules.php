@@ -14,10 +14,10 @@ use Mozex\Campaigns\CampaignsException;
  * ({{unsubscribe_url}}, or {{footer}}, which carries it); every image on
  * https; elements nested at most Html::MAX_DEPTH deep, so every rule reads
  * the whole email; and at most 90 KB of HTML once filled in for a
- * recipient, since Gmail clips an email past 102 KB and click tracking
- * lengthens every link; and at most MAX_LOCALES languages, so an agent's
- * answer about one email or a page of them stays short. Every problem is
- * reported at once.
+ * recipient and tracked (its links wrapped and its open pixel added, as
+ * Tracking measures them), since Gmail clips an email past 102 KB; and at
+ * most MAX_LOCALES languages, so an agent's answer about one email or a page
+ * of them stays short. Every problem is reported at once.
  */
 class ContentRules
 {
@@ -41,7 +41,7 @@ class ContentRules
 
     protected static function tooLong(string $locale, int $bytes, string $measured): string
     {
-        return "{$locale}: the HTML is ".round($bytes / 1024)." KB {$measured}, over the 90 KB limit (Gmail clips an email past 102 KB, and click tracking lengthens every link).";
+        return "{$locale}: the HTML is ".round($bytes / 1024)." KB {$measured}, over the 90 KB limit (Gmail clips an email past 102 KB).";
     }
 
     /**
@@ -205,8 +205,8 @@ class ContentRules
 
         if ($asWritten !== null) {
             $problems[] = $asWritten;
-        } elseif (($size = strlen($this->renderer->render($prepared, Personalization::sample($locale))->html)) > static::MAX_HTML_BYTES) {
-            $problems[] = static::tooLong($locale, $size, 'once filled in');
+        } elseif (($size = Tracking::trackedLength($content->html, $this->renderer->render($prepared, Personalization::sample($locale))->html)) > static::MAX_HTML_BYTES) {
+            $problems[] = static::tooLong($locale, $size, 'once filled in, with its tracked links and open pixel');
         }
 
         return $prepared;

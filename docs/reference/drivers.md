@@ -57,6 +57,8 @@ Decide by transport facts (no connection, no answer), the service's status and i
 
 The receipt holds the service's own id for the email, which the package stores and matches events against when an event carries no uuid. Send `OutgoingMessage::metadata()` with the email, so the service can echo the uuid back in its events.
 
+Turn the service's own open and click tracking off on every email, and drop any open or click event it still reports: the package has already wrapped the email's links and added its open pixel ([Opens and Clicks](../campaigns/tracking.md)), and a second count would follow other machine rules. `OutgoingMessage::$trackOpens` and `$trackClicks` say whether the package tracked this email; they ask nothing of the driver.
+
 ## Webhooks
 
 A service posts to `/campaigns/webhooks/<name>`. The route answers for a driver that is active, or registered with `Campaigns::extend()`, or whose block holds its webhook credential (Mailgun's `webhook_signing_key`), so the old driver's late events still land after a switch; the fake answers only while it is active. A driver that isn't configured gets a 404 without being built, and one that doesn't receive webhooks a 404 too.

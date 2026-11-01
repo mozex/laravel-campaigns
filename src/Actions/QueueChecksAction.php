@@ -21,7 +21,7 @@ class QueueChecksAction
 {
     /**
      * @param  ?list<string>  $locales  the languages the recipients speak, when known
-     * @param  bool  $clickTracking  whether the provider will rewrite the links (a campaign's setting; on for a template)
+     * @param  bool  $clickTracking  whether the links will be wrapped for click tracking (a campaign's setting; on for a template)
      *
      * @throws CampaignsException for a locale that isn't one
      */

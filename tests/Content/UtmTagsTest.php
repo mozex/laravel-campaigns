@@ -56,3 +56,14 @@ it('never cuts an address short', function (): void {
         ->and($tags->html('<a download title="see href=https://example.com/x" HREF = "https://example.com/y">Y</a>'))
         ->toBe('<a download title="see href=https://example.com/x" HREF = "https://example.com/y?utm_source=news">Y</a>');
 });
+
+it('tags an Outlook button and its fallback link alike, and nothing in a plain comment', function (): void {
+    $tags = new UtmTags(['source' => 'news'], ['example.com']);
+    $html = '<!--[if mso]><v:roundrect href="https://example.com/buy"><center>Buy</center></v:roundrect><![endif]-->'
+        .'<!--[if !mso]><!--><a href="https://example.com/buy">Buy</a><!--<![endif]--><!-- <a href="https://example.com/old">Old</a> -->';
+
+    expect($tags->html($html))->toBe(
+        '<!--[if mso]><v:roundrect href="https://example.com/buy?utm_source=news"><center>Buy</center></v:roundrect><![endif]-->'
+        .'<!--[if !mso]><!--><a href="https://example.com/buy?utm_source=news">Buy</a><!--<![endif]--><!-- <a href="https://example.com/old">Old</a> -->'
+    );
+});

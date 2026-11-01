@@ -165,6 +165,22 @@ return new class extends Migration
             $table->unique(['revision_id', 'locale']);
         });
 
+        // One row per address a revision's links lead to, for click tracking:
+        // a click's path carries only the random key, so the redirect leads
+        // only where the email's own links led, never where a crafted address
+        // says. Never pruned: delivered mail keeps pointing at them after its
+        // events are gone. The key compares bytes, as it is case-sensitive.
+        Schema::create('campaign_links', function (Blueprint $table) use ($binary): void {
+            $table->id();
+            $table->foreignId('revision_id')->index()->constrained('campaign_revisions')->cascadeOnDelete();
+            $table->char('key', 22)->collation($binary)->unique();
+            $table->text('url');
+            $table->char('url_hash', 64);
+            $table->timestamp('created_at')->useCurrent();
+
+            $table->unique(['revision_id', 'url_hash']);
+        });
+
         // The images every template and campaign shares. Delivered mail keeps
         // loading them, so they are never deleted. A file's path is named
         // after its content, so the same image uploaded again is one asset.
@@ -292,6 +308,10 @@ return new class extends Migration
             $table->string('status', 32);
             $table->uuid('claim_id')->nullable();
             $table->string('token_hash', 64)->nullable()->unique();
+            // The open pixel's and the tracked links' token, apart from the
+            // pages' one, which opens the person's unsubscribe page and would
+            // go along with every link a reader forwards.
+            $table->string('tracking_token_hash', 64)->nullable()->unique();
             // The driver that sent it, written when its send job takes it,
             // so a switch of drivers still reads each message's events from
             // the service that has them.
@@ -330,7 +350,8 @@ return new class extends Migration
         // A test email of a campaign's or a template's revision, apart from
         // the campaign's messages. The revision is the one that went out, so
         // its web version shows what was sent after the draft moves on. The
-        // token is made by the job that sends it, so it is null until then.
+        // tokens (the pages' and the tracking's) are made by the job that
+        // sends it, so they are null until then.
         Schema::create('campaign_test_sends', function (Blueprint $table): void {
             $table->id();
             $table->uuid('uuid')->unique();
@@ -339,6 +360,7 @@ return new class extends Migration
             $table->string('email', 254);
             $table->string('locale', 35)->nullable();
             $table->string('token_hash', 64)->nullable()->unique();
+            $table->string('tracking_token_hash', 64)->nullable()->unique();
             $table->string('driver', 50)->nullable();
             $table->string('provider_message_id', 255)->nullable()->index();
             $table->timestamp('sent_at')->nullable();

@@ -11,11 +11,14 @@ use Mozex\Campaigns\CampaignsException;
 use Mozex\Campaigns\Checks\PreSendChecks;
 use Mozex\Campaigns\Content\EmailContent;
 use Mozex\Campaigns\Content\Personalization;
+use Mozex\Campaigns\Content\Renderer;
 use Mozex\Campaigns\Jobs\RunChecksJob;
 use Mozex\Campaigns\Models\Campaign;
 use Mozex\Campaigns\Models\Revision;
 use Mozex\Campaigns\Models\Template;
 use Mozex\Campaigns\Sending\OutgoingMessage;
+use Mozex\Campaigns\Support\Links;
+use Mozex\Campaigns\Support\Token;
 
 beforeEach(function (): void {
     Http::preventStrayRequests();
@@ -221,16 +224,23 @@ it('skips the spam score when it is off or the checker fails, and names a missin
     Http::assertSentCount(2);
 });
 
-it('counts click tracking\'s longer links in the size', function (): void {
+it('counts the tracked links and the open pixel in the size, each at its exact length', function (): void {
     config()->set('campaigns.checks.spam_score', false);
     Http::fake(['https://example.com/*' => Http::response(), 'https://app.example.com/*' => Http::response()]);
 
-    $revision = revisionWith(str_repeat('<a href="https://example.com/a">Link</a>', 240).'{{footer}}');
+    $revision = revisionWith(str_repeat('<a href="https://example.com/a">Link</a>', 200).'<a href="{{privacy_url}}">Privacy</a>{{footer}}');
+    $rendered = app(Renderer::class)->render($revision->contents()->sole(), Personalization::sample('en'))->html;
+    $pixel = strlen('<img src="'.Links::open(Token::generate()).'" width="1" height="1" alt="" style="display:block;border:0">');
+    $wrapped = strlen(Links::click(str_repeat('x', 22), Token::generate())) - strlen('https://example.com/a');
 
-    expect(check(runChecks($revision), 'size', 'en'))
-        ->status->toBe('failed')
-        ->message->toContain('once click tracking lengthens its links, over the 90 KB limit')
-        ->and(check(runChecks($revision, clickTracking: false), 'size', 'en')['status'])->toBe('passed');
+    $tracked = check(runChecks($revision), 'size', 'en');
+    $untracked = check(runChecks($revision, clickTracking: false), 'size', 'en');
+
+    // The privacy link held a placeholder, so it is never wrapped.
+    expect($tracked['bytes'])->toBe(strlen($rendered) + $pixel + 200 * $wrapped)
+        ->and($tracked['message'])->toContain('with its open pixel and tracked links, within the 90 KB limit')
+        ->and($untracked['bytes'])->toBe(strlen($rendered) + $pixel)
+        ->and($untracked['message'])->toContain('with its open pixel, within');
 });
 
 it('keeps only the latest run\'s results, and says when a run failed', function (): void {

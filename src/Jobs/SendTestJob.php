@@ -18,11 +18,12 @@ use Mozex\Campaigns\Support\Token;
 use Throwable;
 
 /**
- * Sends one test email. It carries only the test's id: the links' token is
- * made here, its hash stored with the active driver's name by a conditional
- * update that only one run can make, so a duplicate job sends nothing and
- * the raw token never sits in the queue. A send that fails is recorded on
- * the test (failed_at, failure) for the agent that asked to read.
+ * Sends one test email. It carries only the test's id: the links' token and
+ * the tracking's are made here, their hashes stored with the active driver's
+ * name by a conditional update that only one run can make, so a duplicate
+ * job sends nothing and a raw token never sits in the queue. A send that
+ * fails is recorded on the test (failed_at, failure) for the agent that
+ * asked to read.
  */
 class SendTestJob implements ShouldQueue
 {
@@ -76,19 +77,25 @@ class SendTestJob implements ShouldQueue
         }
 
         $token = Token::generate();
+        $trackingToken = Token::generate();
 
         $claimed = TestSend::query()
             ->whereKey($test->id)
             ->whereNull('token_hash')
             ->whereNull('failed_at')
-            ->update(['token_hash' => Token::hash($token), 'driver' => $drivers->getDefaultDriver(), 'updated_at' => now()]);
+            ->update([
+                'token_hash' => Token::hash($token),
+                'tracking_token_hash' => Token::hash($trackingToken),
+                'driver' => $drivers->getDefaultDriver(),
+                'updated_at' => now(),
+            ]);
 
         if ($claimed === 0) {
             return;
         }
 
         try {
-            $receipt = $driver->send($composer->outgoing($test, $token));
+            $receipt = $driver->send($composer->outgoing($test, $token, $trackingToken));
         } catch (SendFailed|CampaignsException $exception) {
             $this->markFailed($test, $exception->getMessage());
 

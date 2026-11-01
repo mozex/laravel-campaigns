@@ -47,7 +47,9 @@ use Throwable;
  * webhook_signing_key; its logs, suppression lists and metrics are read with
  * that block's api_key, since the mailer's sending key can only send. Its
  * config is read on every call, never kept, so a change reaches a driver
- * already built.
+ * already built. Mailgun's own open and click tracking is off on every
+ * message, and its opened and clicked events are dropped: the package
+ * tracks both itself, the same for every driver, so nothing counts twice.
  */
 class MailgunDriver implements CampaignDriver, ReadsEvents, ReadsMetrics, ReadsSuppressions, ReceivesWebhooks
 {
@@ -82,14 +84,13 @@ class MailgunDriver implements CampaignDriver, ReadsEvents, ReadsMetrics, ReadsS
     /**
      * Mailgun's event names the package acts on. Both failure webhooks
      * (temporary and permanent) arrive as "failed", their severity telling
-     * them apart.
+     * them apart. Never opened or clicked: Mailgun tracks nothing the
+     * package sends.
      */
     protected const EVENT_TYPES = [
         'accepted' => FeedbackType::Accepted,
         'delivered' => FeedbackType::Delivered,
         'failed' => FeedbackType::Failed,
-        'opened' => FeedbackType::Opened,
-        'clicked' => FeedbackType::Clicked,
         'unsubscribed' => FeedbackType::Unsubscribed,
         'complained' => FeedbackType::Complained,
     ];
@@ -136,11 +137,12 @@ class MailgunDriver implements CampaignDriver, ReadsEvents, ReadsMetrics, ReadsS
     {
         $mailer = $this->mailer();
 
-        $email = (new CampaignEmail($message))->withSymfonyMessage(function (Email $email) use ($message): void {
-            // Both flags on every message, so the domain's own tracking
-            // setting never decides for a campaign.
-            $email->getHeaders()->addTextHeader('o:tracking-opens', $message->trackOpens ? 'yes' : 'no');
-            $email->getHeaders()->addTextHeader('o:tracking-clicks', $message->trackClicks ? 'yes' : 'no');
+        $email = (new CampaignEmail($message))->withSymfonyMessage(function (Email $email): void {
+            // Both off on every message, whatever the domain's own tracking
+            // setting says: the package wraps the links and adds the pixel
+            // itself (the message's trackOpens and trackClicks say whether).
+            $email->getHeaders()->addTextHeader('o:tracking-opens', 'no');
+            $email->getHeaders()->addTextHeader('o:tracking-clicks', 'no');
         });
 
         try {
@@ -711,8 +713,6 @@ class MailgunDriver implements CampaignDriver, ReadsEvents, ReadsMetrics, ReadsS
             return null;
         }
 
-        $deliveredAt = $this->time($event['delivered-at'] ?? null, $event['delivered-at'] ?? null);
-
         $variables = $event['user-variables'] ?? [];
 
         if (is_string($variables)) {
@@ -721,7 +721,6 @@ class MailgunDriver implements CampaignDriver, ReadsEvents, ReadsMetrics, ReadsS
 
         $variables = is_array($variables) ? $variables : [];
         $status = is_array($event['delivery-status'] ?? null) ? $event['delivery-status'] : [];
-        $client = is_array($event['client-info'] ?? null) ? $event['client-info'] : [];
         $flags = is_array($event['flags'] ?? null) ? $event['flags'] : [];
 
         // Without the angle brackets, as the package stores the id it got
@@ -743,8 +742,6 @@ class MailgunDriver implements CampaignDriver, ReadsEvents, ReadsMetrics, ReadsS
             reason: $reason,
             failure: $type === FeedbackType::Failed ? $this->deliveryFailure($severity, $reason, $code, $bounceType) : null,
             code: $code,
-            bot: $this->string($client['bot'] ?? null),
-            url: $this->string($event['url'] ?? null, 4000),
             replayKey: $replayKey,
             payload: array_filter([
                 'delivery-status' => array_filter([
@@ -753,15 +750,6 @@ class MailgunDriver implements CampaignDriver, ReadsEvents, ReadsMetrics, ReadsS
                     'enhanced-code' => $this->string($status['enhanced-code'] ?? null),
                     'message' => is_string($status['message'] ?? null) ? SendFailed::scrub($status['message'], 255) : null,
                 ], fn (mixed $value): bool => $value !== null && $value !== ''),
-                'client-info' => array_filter([
-                    'client-name' => $this->string($client['client-name'] ?? null),
-                    'client-os' => $this->string($client['client-os'] ?? null),
-                    'client-type' => $this->string($client['client-type'] ?? null),
-                    'device-type' => $this->string($client['device-type'] ?? null),
-                    'user-agent' => $this->string($client['user-agent'] ?? null),
-                ], fn (?string $value): bool => $value !== null),
-                // A number, as webhooks give it; the logs give a time.
-                'delivered-at' => $deliveredAt === null ? null : (float) $deliveredAt->format('U.u'),
                 'recipient-provider' => $this->string($event['recipient-provider'] ?? null),
                 'is-test-mode' => is_bool($flags['is-test-mode'] ?? null) ? $flags['is-test-mode'] : null,
                 'is-routed' => is_bool($flags['is-routed'] ?? null) ? $flags['is-routed'] : null,

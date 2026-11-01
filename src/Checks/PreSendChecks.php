@@ -12,11 +12,13 @@ use InvalidArgumentException;
 use Mozex\Campaigns\CampaignsException;
 use Mozex\Campaigns\Content\ContentRules;
 use Mozex\Campaigns\Content\Html;
+use Mozex\Campaigns\Content\LinkSources;
 use Mozex\Campaigns\Content\Locales;
 use Mozex\Campaigns\Content\Personalization;
 use Mozex\Campaigns\Content\Placeholders;
 use Mozex\Campaigns\Content\RenderedEmail;
 use Mozex\Campaigns\Content\Renderer;
+use Mozex\Campaigns\Content\Tracking;
 use Mozex\Campaigns\Enums\CheckStatus;
 use Mozex\Campaigns\Fetching\Fetcher;
 use Mozex\Campaigns\Models\Campaign;
@@ -24,13 +26,14 @@ use Mozex\Campaigns\Models\Revision;
 use Mozex\Campaigns\Models\RevisionContent;
 use Mozex\Campaigns\Models\TestSend;
 use Mozex\Campaigns\Sending\OutgoingMessage;
+use Mozex\Campaigns\Support\Links;
 use Mozex\Campaigns\Support\Sender;
 
 /**
  * What is checked on an email before it is sent, each locale filled in
  * with sample values: every target language present; an unsubscribe link
  * in the HTML and the text; a link to the privacy policy; the HTML's size
- * once click tracking lengthens its links; images without alt text or not
+ * with its tracked links and open pixel; images without alt text or not
  * on https; every link and image fetched from the server through the
  * public-address guard; and, where switched on, a spam score from
  * Postmark's free SpamAssassin checker. The results report; none of them
@@ -42,12 +45,6 @@ class PreSendChecks
      * Every check a run writes, by its name in the results.
      */
     public const CHECKS = ['locales', 'unsubscribe', 'privacy_link', 'size', 'images', 'links', 'spam_score'];
-
-    /**
-     * A conservative length for a click-tracking address, which replaces
-     * every link in the HTML.
-     */
-    public const TRACKED_LINK_BYTES = 400;
 
     public const MAX_LINKS = 100;
 
@@ -74,7 +71,7 @@ class PreSendChecks
 
     /**
      * @param  ?list<string>  $locales  the languages the recipients speak, when known
-     * @param  bool  $clickTracking  whether the provider will rewrite the links
+     * @param  bool  $clickTracking  whether the links will be wrapped for click tracking (a campaign's setting; on for a template)
      * @return list<array<string, mixed>> one result per check (and per locale where it applies)
      */
     public function run(Revision $revision, ?array $locales = null, bool $clickTracking = true): array
@@ -91,7 +88,7 @@ class PreSendChecks
 
             $results[] = $this->unsubscribe($content);
             $results[] = $this->privacyLink($content);
-            $results[] = $this->size($content->locale, $email, $clickTracking);
+            $results[] = $this->size($content, $email, $clickTracking);
             $results[] = $this->images($content->locale, $email);
         }
 
@@ -171,19 +168,13 @@ class PreSendChecks
     /**
      * @return array<string, mixed>
      */
-    protected function size(string $locale, RenderedEmail $email, bool $clickTracking): array
+    protected function size(RevisionContent $content, RenderedEmail $email, bool $clickTracking): array
     {
-        $bytes = strlen($email->html);
-        $growth = 0;
-
-        if ($clickTracking) {
-            foreach ($this->anchors($email->html) as $href) {
-                $growth += max(0, static::TRACKED_LINK_BYTES - strlen($href));
-            }
-        }
-
-        $total = $bytes + $growth;
-        $size = round($total / 1024).' KB'.($clickTracking ? ' once click tracking lengthens its links' : '');
+        $locale = $content->locale;
+        // The pixel counted whatever the campaign says: a recipient in most
+        // countries gets it.
+        $total = Tracking::trackedLength($content->html, $email->html, opens: true, clicks: $clickTracking);
+        $size = round($total / 1024).' KB with its open pixel'.($clickTracking ? ' and tracked links' : '');
 
         return $total > ContentRules::MAX_HTML_BYTES
             ? $this->result('size', $locale, CheckStatus::Failed, "The HTML is about {$size}, over the 90 KB limit: Gmail clips an email past 102 KB.", ['bytes' => $total])
@@ -229,12 +220,11 @@ class PreSendChecks
      */
     protected function links(array $rendered, float $deadline): array
     {
-        $own = rtrim((string) (config('campaigns.url') ?: config('app.url')), '/').'/campaigns/';
         $addresses = [];
 
         foreach ($rendered as $locale => $email) {
             foreach ([...$this->anchors($email->html), ...Html::imageUrls($email->html)] as $url) {
-                if (preg_match('#^https?://#i', $url) === 1 && ! str_starts_with($url, $own)) {
+                if (preg_match('#^https?://#i', $url) === 1 && ! Links::isPackagePage($url)) {
                     $addresses[$url][] = (string) $locale;
                 }
             }
@@ -367,7 +357,9 @@ class PreSendChecks
     }
 
     /**
-     * The http and https addresses the HTML's links point at.
+     * The http and https addresses the HTML's links point at, as
+     * LinkSources reads them (Outlook's VML buttons included), which is
+     * what UTM tagging and click tracking read too.
      *
      * @return list<string>
      */
@@ -375,12 +367,9 @@ class PreSendChecks
     {
         $hrefs = [];
 
-        foreach (Html::parse($html)->getElementsByTagName('a') as $anchor) {
-            /** @var DOMElement $anchor */
-            $href = trim($anchor->getAttribute('href'));
-
-            if (preg_match('#^https?://#i', $href) === 1) {
-                $hrefs[] = $href;
+        foreach (LinkSources::in($html) as $link) {
+            if (preg_match('#^https?://#i', $link->url) === 1) {
+                $hrefs[] = $link->url;
             }
         }
 

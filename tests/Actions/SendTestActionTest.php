@@ -161,3 +161,20 @@ it('opens the real unsubscribe page from a test\'s link and changes only the tes
     expect(Token::hash($token))->toBe($test->fresh()->token_hash)
         ->and($test->fresh()->unsubscribed_at)->not->toBeNull();
 });
+
+it('tracks a test email like its campaign\'s, under a token of its own', function (): void {
+    $campaign = Campaign::factory()->create();
+    Revision::factory()->of($campaign)->withContent('en', ['html' => '<a href="https://shop.test/offer">Offer</a>{{footer}}'])->create();
+    $untracked = Campaign::factory()->create(['track_opens' => false, 'track_clicks' => false]);
+    Revision::factory()->of($untracked)->withContent('en', ['html' => '<a href="https://shop.test/offer">Offer</a>{{footer}}'])->create();
+
+    [$test] = app(SendTestAction::class)->execute($campaign, ['owner@example.com']);
+    app(SendTestAction::class)->execute($untracked, ['owner@example.com']);
+    [$tracked, $plain] = fakeDriver()->sent();
+    preg_match('#/campaigns/o/([A-Za-z0-9]+)"#', $tracked->html, $pixel);
+
+    expect(Token::hash($pixel[1]))->toBe($test->fresh()->tracking_token_hash)
+        ->and($pixel[1])->not->toBe(basename($tracked->unsubscribeUrl))
+        ->and($tracked->html)->toContain('/campaigns/l/')
+        ->and($plain->html)->not->toContain('/campaigns/o/')->not->toContain('/campaigns/l/');
+});

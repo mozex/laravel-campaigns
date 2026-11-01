@@ -90,7 +90,7 @@ function postedFields(array $options): array
     return $fields;
 }
 
-it('posts the message as Mailgun\'s API fields, with every tracking flag set, and keeps the bare id', function (): void {
+it('posts the message as Mailgun\'s API fields, with Mailgun\'s tracking off however the package tracks it, and keeps the bare id', function (): void {
     $requests = [];
 
     mailgunMailer(function (string $method, string $url, array $options) use (&$requests): MockResponse {
@@ -121,11 +121,12 @@ it('posts the message as Mailgun\'s API fields, with every tracking flag set, an
         ->and($fields['v:campaign-message'])->toBe(['0a1b2c3d-0000-4000-8000-000000000001'])
         ->and($fields)->not->toHaveKey('v:campaign-test')
         ->and($fields['o:tracking-opens'])->toBe(['no'])
-        ->and($fields['o:tracking-clicks'])->toBe(['yes'])
+        ->and($fields['o:tracking-clicks'])->toBe(['no'])
         ->and(array_filter(array_keys($fields), fn (string $name): bool => str_starts_with($name, 'h:o:') || str_starts_with($name, 'h:X-Mailgun')))->toBe([])
         ->and($requests[1][2]['v:campaign-test'])->toBe(['0a1b2c3d-0000-4000-8000-000000000001'])
         ->and($requests[1][2])->not->toHaveKey('v:campaign-message')
-        ->and($requests[1][2]['o:tracking-opens'])->toBe(['yes']);
+        ->and($requests[1][2]['o:tracking-opens'])->toBe(['no'])
+        ->and($requests[1][2]['o:tracking-clicks'])->toBe(['no']);
 });
 
 it('tells what Mailgun\'s answer means for the message, without its addresses', function (int $status, string $body, SendFailure $failure): void {
@@ -212,7 +213,7 @@ it('sends through the log and array mailers locally, as the campaign says whatev
         ->and($receipt->providerMessageId)->not->toContain('<')
         ->and($logged->providerMessageId)->not->toBe('')
         ->and($sent[0]->getHeaders()->get('List-Unsubscribe')?->getBodyAsString())->toBe('<https://app.example.com/campaigns/u/abc>')
-        ->and($sent[0]->getHeaders()->get('o:tracking-opens')?->getBodyAsString())->toBe('yes')
+        ->and($sent[0]->getHeaders()->get('o:tracking-opens')?->getBodyAsString())->toBe('no')
         ->and($sent[0]->getTextBody())->toBe('Hello')
         ->and(array_map(fn (Address $address): string => $address->getAddress(), $sent[0]->getReplyTo()))->toBe(['help@example.com'])
         ->and($sent[0]->getHeaders()->has('Return-Path'))->toBeFalse()
@@ -334,7 +335,7 @@ describe('reading Mailgun\'s logs and suppressions', function (): void {
             ->and($posted[0]->data())->toBe([
                 'start' => now()->subHour()->utc()->toRfc2822String(),
                 'end' => now()->utc()->toRfc2822String(),
-                'events' => ['accepted', 'delivered', 'failed', 'opened', 'clicked', 'unsubscribed', 'complained'],
+                'events' => ['accepted', 'delivered', 'failed', 'unsubscribed', 'complained'],
                 'filter' => ['AND' => [['attribute' => 'user_variables', 'comparator' => 'contains', 'values' => [['label' => $uuid, 'value' => $uuid]]]]],
                 'pagination' => ['sort' => 'timestamp:asc', 'limit' => 100],
             ])
@@ -363,7 +364,7 @@ describe('reading Mailgun\'s logs and suppressions', function (): void {
         Http::fake(function (ClientRequest $request) use (&$posted): PromiseInterface {
             $posted[] = $request->data();
 
-            return Http::response(count($posted) === 1 ? mailgunLogs([mailgunLogItem('opened')], 'next') : mailgunLogs([], 'next'));
+            return Http::response(count($posted) === 1 ? mailgunLogs([mailgunLogItem('delivered')], 'next') : mailgunLogs([], 'next'));
         });
 
         $provider = app(MailgunDriver::class);
@@ -377,7 +378,7 @@ describe('reading Mailgun\'s logs and suppressions', function (): void {
             ->and($posted[0]['end'])->toBe(now()->subMinutes(30)->utc()->toRfc2822String())
             ->and($posted[0]['filter'])->toBe(['AND' => [['attribute' => 'domain', 'comparator' => '=', 'values' => [['label' => 'news.example.com', 'value' => 'news.example.com']]]]])
             // Every type the package reads but accepted, which the others prove.
-            ->and($posted[0]['events'])->toBe(['delivered', 'failed', 'opened', 'clicked', 'unsubscribed', 'complained'])
+            ->and($posted[0]['events'])->toBe(['delivered', 'failed', 'unsubscribed', 'complained'])
             ->and($provider->logDays())->toBe(5);
 
         config()->set('campaigns.drivers.mailgun.log_days', 30);
@@ -387,24 +388,25 @@ describe('reading Mailgun\'s logs and suppressions', function (): void {
             ->and($provider->logDays())->toBe(30);
     });
 
-    it('reads a log item as the webhook\'s event: its ISO time, its variables as a string, its delivery time kept as a number', function (): void {
+    it('reads a log item as the webhook\'s event: its ISO time, its variables as a string, and drops an open or a click', function (): void {
         $docs = json_decode((string) file_get_contents(__DIR__.'/../../Fixtures/Mailgun/logs.json'), true);
 
         Http::fake(['*' => Http::response(mailgunLogs([
             $docs['items'][0],
-            mailgunLogItem('clicked', ['user-variables' => ['campaign-message' => 'abc'], 'delivered-at' => 1770146431.5]),
+            mailgunLogItem('clicked', ['user-variables' => ['campaign-message' => 'abc']]),
+            mailgunLogItem('opened', ['user-variables' => ['campaign-message' => 'abc']]),
+            mailgunLogItem('delivered', ['user-variables' => ['campaign-message' => 'abc']]),
         ]))]);
 
-        [$failure, $clicked] = iterator_to_array(app(MailgunDriver::class)->eventsBetween('news.example.com', now()->subHour(), now()), false);
+        [$failure, $delivered] = iterator_to_array(app(MailgunDriver::class)->eventsBetween('news.example.com', now()->subHour(), now()), false);
 
         expect($failure->providerEventId)->toBe('JDhSWf9mT5OFxCkZfpDU5d')
             ->and($failure->type)->toBe(FeedbackType::Failed)
             ->and($failure->occurredAt->toIso8601ZuluString('millisecond'))->toBe('2024-07-08T16:30:18.530Z')
             ->and($failure->code)->toBe(680)
             ->and($failure->messageUuid)->toBeNull()
-            ->and($clicked->type)->toBe(FeedbackType::Clicked)
-            ->and($clicked->messageUuid)->toBe('abc')
-            ->and($clicked->payload['delivered-at'])->toBe(1770146431.5);
+            ->and($delivered->type)->toBe(FeedbackType::Delivered)
+            ->and($delivered->messageUuid)->toBe('abc');
     });
 
     it('reads every suppression list to its end, scrubbing addresses from the reasons, and never follows a page off Mailgun\'s API', function (): void {

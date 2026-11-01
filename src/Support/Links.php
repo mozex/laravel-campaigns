@@ -43,6 +43,32 @@ class Links
     }
 
     /**
+     * The open pixel of the email whose tracking token this is.
+     */
+    public static function open(string $trackingToken): string
+    {
+        return static::to('campaigns.open', $trackingToken);
+    }
+
+    /**
+     * A tracked link: the redirect to the address $key names, for the email
+     * whose tracking token this is.
+     */
+    public static function click(string $key, string $trackingToken): string
+    {
+        return static::base().route('campaigns.click', ['key' => $key, 'token' => $trackingToken], false);
+    }
+
+    /**
+     * Whether an address is one of the package's own pages, which a tracked
+     * link never wraps and a check never fetches.
+     */
+    public static function isPackagePage(string $url): bool
+    {
+        return str_starts_with($url, static::base().'/campaigns/');
+    }
+
+    /**
      * The MCP server's address, or null while it is switched off.
      */
     public static function mcpServer(): ?string

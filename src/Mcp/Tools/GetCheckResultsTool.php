@@ -56,7 +56,7 @@ class GetCheckResultsTool extends CampaignsTool
                 'message' => $schema->string()->required(),
                 'items' => $schema->integer()->required()->description('How many problems it lists.'),
                 'score' => $schema->number()->nullable()->required()->description('The spam score.'),
-                'bytes' => $schema->integer()->nullable()->required()->description('The size, with tracked links.'),
+                'bytes' => $schema->integer()->nullable()->required()->description('The size, with the open pixel and, when the campaign tracks clicks, its tracked links.'),
             ]))->description('Without check: every check.'),
             'items' => $schema->array()->items($schema->object([
                 'locale' => $schema->string(),

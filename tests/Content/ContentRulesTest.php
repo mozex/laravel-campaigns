@@ -181,6 +181,16 @@ it('measures the 90 KB limit on the email as a recipient gets it', function (): 
         ->and(contentProblems([validContent(html: '<p>'.str_repeat('x', 80 * 1024).'</p>{{footer}}')]))->toBe('');
 });
 
+it('counts the tracked links and the open pixel in the 90 KB limit', function (): void {
+    // Under the limit filled in, over it once each of its many links is
+    // wrapped in a tracked one; the same links marked to stay untracked pass.
+    $links = fn (string $mark): string => str_repeat('<a href="https://shop.test/a"'.$mark.'>a</a>', 1100);
+
+    expect(strlen($links('')))->toBeLessThan(80 * 1024)
+        ->and(contentProblems([validContent(html: $links('').'{{footer}}')]))->toContain('KB once filled in, with its tracked links and open pixel, over the 90 KB limit')
+        ->and(contentProblems([validContent(html: $links(' data-campaigns-no-track').'{{footer}}')]))->toBe('');
+});
+
 it('refuses HTML over the limit as written without rendering it', function (): void {
     $this->mock(Renderer::class)->shouldNotReceive('render');
 
