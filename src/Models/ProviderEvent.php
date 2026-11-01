@@ -13,8 +13,9 @@ use Mozex\Campaigns\Database\Factories\ProviderEventFactory;
 use Mozex\Campaigns\Enums\FeedbackType;
 
 /**
- * Something the sending provider reported about an email (delivered, failed,
- * opened, clicked, a spam report), stored once by the provider's event id.
+ * Something a driver's service reported about an email (delivered, failed,
+ * a spam report), or an open or a click the package's own pixel and links
+ * recorded (driver "campaigns"), stored once by its event id and driver.
  *
  * @property int $id
  * @property string $provider_event_id
