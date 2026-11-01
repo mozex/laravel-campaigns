@@ -315,6 +315,22 @@ function mailgunEvent(string $name, array $changes = []): array
 }
 
 /**
+ * One of Amazon SES's documented event records, from tests/Fixtures/Ses, in
+ * the envelope EventBridge posts it in (its detail), dated now, with the
+ * given fields replaced (nested arrays merge).
+ *
+ * @param  array<string, mixed>  $changes
+ * @return array<string, mixed>
+ */
+function sesEvent(string $name, array $changes = []): array
+{
+    /** @var array<string, mixed> $event */
+    $event = json_decode((string) file_get_contents(__DIR__."/Fixtures/Ses/{$name}.json"), true, flags: JSON_THROW_ON_ERROR);
+
+    return array_replace_recursive($event, ['time' => now()->utc()->format('Y-m-d\TH:i:s\Z')], $changes);
+}
+
+/**
  * One of Mailgun's documented webhook payloads as its Logs API gives the same
  * event (POST /v1/analytics/logs): an ISO "@timestamp" for the Unix
  * "timestamp", user-variables as a JSON string, delivered-at as a time.

@@ -1,12 +1,13 @@
 {
     "name": "mozex/laravel-campaigns",
-    "description": "Email campaigns that AI agents run inside your Laravel app over MCP, with lists synced from your users and paced sending through Mailgun on your own queue",
+    "description": "Email campaigns that AI agents run inside your Laravel app over MCP, with lists synced from your users and paced sending through Mailgun, Amazon SES or SMTP on your own queue",
     "keywords": [
         "laravel",
         "email-marketing",
         "email-campaigns",
         "newsletter",
         "mailgun",
+        "amazon-ses",
         "mcp",
         "ai-agents",
         "unsubscribe",
@@ -38,6 +39,7 @@
         "symfony/mime": "^7.4|^8.0"
     },
     "require-dev": {
+        "aws/aws-sdk-php": "^3.402.5",
         "larastan/larastan": "^3.0",
         "laravel/pint": "^1.14",
         "orchestra/testbench": "^10.0|^11.0",
@@ -49,6 +51,7 @@
         "phpstan/phpstan-phpunit": "^2.0"
     },
     "suggest": {
+        "aws/aws-sdk-php": "Sends through Amazon SES with the ses driver (^3.393.3)",
         "ext-intl": "Fetches links and images on host names written in other scripts",
         "laravel/passport": "Signs people in over OAuth, for chat apps such as claude.ai and ChatGPT"
     },

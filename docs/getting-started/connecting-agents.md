@@ -1,6 +1,6 @@
 ---
 title: Connecting Agents
-weight: 4
+weight: 5
 ---
 
 Agents reach the package through an MCP server it adds to your app, at `/mcp/campaigns` (`CAMPAIGNS_MCP_PATH` moves it; `CAMPAIGNS_MCP_ENABLED=false` switches it off). It answers only to a token the package issued or to a person your app signs in and allows.
@@ -91,10 +91,10 @@ RateLimiter::for('campaigns-mcp', fn (Request $request): Limit => Limit::perMinu
 
 ## Proxies, firewalls and request size
 
-Agents and Mailgun call your app from servers, not browsers. If a CDN or firewall in front of the app runs a browser or bot check, turn it off for these paths, and keep them out of any cache:
+Agents, Mailgun and Amazon SES's EventBridge call your app from servers, not browsers. If a CDN or firewall in front of the app runs a browser or bot check, turn it off for these paths, and keep them out of any cache:
 
 - the MCP path and everything under it (`/mcp/campaigns`, its upload and download links);
-- `/campaigns/` (the unsubscribe, confirmation, web version and preview pages, and the Mailgun webhook);
+- `/campaigns/` (the unsubscribe, confirmation, web version and preview pages, and the drivers' webhooks);
 - for OAuth, `/oauth/` and `/.well-known/oauth-`.
 
 Files go up to `/mcp/campaigns/uploads/...` with curl, 25 MB at most by default (`campaigns.uploads.max_size`). Laravel holds every request's body to PHP's `post_max_size`, so raise that to match, and keep both under what your web server and proxy accept in one request. The upload tool tells agents the smaller of the limits.

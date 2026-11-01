@@ -40,7 +40,7 @@ The default driver is Mailgun's (`CAMPAIGNS_DRIVER=mailgun`). Add its mailer to 
 
 `secret` is a sending key for that domain; use `api.eu.mailgun.net` as the endpoint for a domain in Mailgun's EU region. When the mailer leaves out `client` options, the driver gives it a 10-second idle timeout and 30 seconds in all, so a stuck request ends before the job sending it does. [Mailgun](./mailgun.md) covers the webhooks and the reading key, and [Drivers](../reference/drivers.md) how to add a driver for another service.
 
-To send through any SMTP server instead, see [SMTP](./smtp.md). On your own machine, set `CAMPAIGNS_DRIVER=fake`, which keeps what it's given and sends nothing, or use the SMTP driver with a mail catcher to read each email as it arrives.
+To send through Amazon SES instead, see [Amazon SES](./ses.md), and for any SMTP server, [SMTP](./smtp.md). On your own machine, set `CAMPAIGNS_DRIVER=fake`, which keeps what it's given and sends nothing, or use the SMTP driver with a mail catcher to read each email as it arrives.
 
 ## Set the sender
 

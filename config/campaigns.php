@@ -35,8 +35,9 @@ return [
      * to "reply_to", an inbox someone reads (it may be on another domain).
      * Default mailer: "campaigns", which you define in config/mail.php with
      * the transport your driver sends through (for Mailgun, the mailgun
-     * transport with 'scheme' => 'api'; for SMTP, the smtp transport; the log
-     * mailer locally). A driver gives a mailer with no time limits of its own
+     * transport with 'scheme' => 'api'; for SMTP, the smtp transport; for
+     * Amazon SES, the ses-v2 transport with 'retries' => 0; the log mailer
+     * locally). A driver gives a mailer with no time limits of its own
      * limits shorter than the job that sends, so a stuck request ends before
      * the job does.
      */
@@ -54,6 +55,7 @@ return [
      * The driver that sends campaign email, and the package's own emails:
      * "mailgun", "smtp" (any SMTP server, a relay or a local mail catcher; it
      * reads nothing back, so no bounce or spam report reaches the package),
+     * "ses" (Amazon SES, which needs the aws/aws-sdk-php package),
      * "fake" (keeps what it is given and sends nothing, for tests and local
      * runs; refused in production), or the name of one you register with
      * Campaigns::extend() in a service provider. Switching
@@ -83,6 +85,13 @@ return [
      *
      * The smtp driver has no settings of its own: the server, its port and
      * the login are the campaigns mailer's (the smtp transport).
+     *
+     * Amazon SES's events reach /campaigns/webhooks/ses through an
+     * EventBridge API destination whose connection sends webhook_secret in
+     * the X-Campaigns-Webhook-Key header: a long random value you make. vdm
+     * says whether Virtual Deliverability Manager is on for the account,
+     * which SES's daily counts need. The keys, region, configuration set and
+     * 'retries' => 0 are the campaigns mailer's (the ses-v2 transport).
      */
     'drivers' => [
         'mailgun' => [
@@ -92,6 +101,10 @@ return [
             'log_days' => 5,
         ],
         'smtp' => [],
+        'ses' => [
+            'webhook_secret' => env('CAMPAIGNS_SES_WEBHOOK_SECRET'),
+            'vdm' => env('CAMPAIGNS_SES_VDM', false),
+        ],
         'fake' => [],
     ],
 

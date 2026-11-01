@@ -3,7 +3,7 @@ title: Drivers
 weight: 5
 ---
 
-A driver is the package's code for one sending service. `campaigns.driver` (`CAMPAIGNS_DRIVER`) names the one that sends: `mailgun` (the default), `smtp` (any SMTP server, see [SMTP](../getting-started/smtp.md)), `fake` (sends nothing, for tests and local runs), or one you register. Every email the package sends goes through it: campaign emails, test emails and the double opt-in confirmation. Only the alert mail goes through the app's default mailer.
+A driver is the package's code for one sending service. `campaigns.driver` (`CAMPAIGNS_DRIVER`) names the one that sends: `mailgun` (the default), `ses` (Amazon SES, see [Amazon SES](../getting-started/ses.md)), `smtp` (any SMTP server, see [SMTP](../getting-started/smtp.md)), `fake` (sends nothing, for tests and local runs), or one you register. Every email the package sends goes through it: campaign emails, test emails and the double opt-in confirmation. Only the alert mail goes through the app's default mailer.
 
 ## The contract
 
@@ -24,7 +24,7 @@ What else a service offers, a driver says by implementing the abilities in `Moze
 
 A driver with neither `ReceivesWebhooks` nor `ReadsEvents` reads nothing back: its emails end at `sent`, never `delivered`, the report divides opens and clicks by sent emails, and the stop-loss sees only what's refused while sending ([Feedback](../campaigns/feedback.md#drivers-that-read-nothing-back)). `get_overview`, `start_campaign` and `resume_campaign` warn about it.
 
-The Mailgun driver has all four abilities, the SMTP driver none. The fake has all four too; `FakeSendOnlyDriver` (send only) and `FakeWebhookDriver` (webhooks and suppression lists) share its `FakesDriver` trait, for testing what the package does with fewer.
+The Mailgun driver has all four abilities. The Amazon SES driver takes webhooks and reads its suppression list and daily counts, but has no logs. The SMTP driver has none. The fake has all four too; `FakeSendOnlyDriver` (send only) and `FakeWebhookDriver` (webhooks and suppression lists) share its `FakesDriver` trait, for testing what the package does with fewer.
 
 ## Registering a driver
 
@@ -42,7 +42,7 @@ public function boot(): void
 
 The creator gets the driver's own block, `campaigns.drivers.postmark` in `config/campaigns.php`, and the app. Use that `$app` argument rather than `$this`: Laravel binds the closure to the driver manager, so `$this` inside it isn't your service provider. Then set `CAMPAIGNS_DRIVER=postmark`. A name is lower-case letters, digits, `-` and `_`, starting with a letter and at most 50 characters, since it's a path segment of the driver's webhook address. `campaigns` is reserved: the package records its own opens and clicks under it. A name a built-in driver has replaces that driver.
 
-A driver that sends through a Laravel mailer uses `campaigns.mail.mailer` and refuses a transport it can't drive. A send must end before the send job's 60-second timeout. When the app gave the mailer no time limits, the package sets some for the built-in drivers while it registers: 10 seconds idle and 30 in all for Mailgun's, 10 seconds for each read of an SMTP server's reply. A driver of your own needs limits of its own.
+A driver that sends through a Laravel mailer uses `campaigns.mail.mailer` and refuses a transport it can't drive. A send must end before the send job's 60-second timeout. When the app gave the mailer no time limits, the package sets some for the built-in drivers while it registers: 10 seconds idle and 30 in all for Mailgun's, a 10-second connect timeout and 30 seconds in all for Amazon SES's, 10 seconds for each read of an SMTP server's reply. A driver of your own needs limits of its own.
 
 ## Sending
 
@@ -61,7 +61,7 @@ Turn the service's own open and click tracking off on every email, and drop any 
 
 ## Webhooks
 
-A service posts to `/campaigns/webhooks/<name>`. The route answers for a driver that is active, or registered with `Campaigns::extend()`, or whose block holds its webhook credential (Mailgun's `webhook_signing_key`), so the old driver's late events still land after a switch; the fake answers only while it is active. A driver that isn't configured gets a 404 without being built, and one that doesn't receive webhooks a 404 too.
+A service posts to `/campaigns/webhooks/<name>`. The route answers for a driver that is active, or registered with `Campaigns::extend()`, or whose block holds its webhook credential (Mailgun's `webhook_signing_key`, Amazon SES's `webhook_secret`), so the old driver's late events still land after a switch; the fake answers only while it is active. A driver that isn't configured gets a 404 without being built, and so does one whose SDK isn't installed or that doesn't receive webhooks.
 
 `verifyWebhook()` returns false for a request that isn't the service's (406), and throws a `CampaignsException` when the driver isn't set up to verify one (500, reported at most once an hour, so the service retries while you fix the config). Refuse a request dated more than 24 hours from now in either direction: the package keeps the one-time values it has seen for 48 hours.
 

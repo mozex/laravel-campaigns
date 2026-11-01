@@ -3,6 +3,6 @@
     "url": "https://context7.com/mozex/laravel-campaigns",
     "public_key": "pk_2dXAZIEpHP6qQeGGTuyQt",
     "projectTitle": "Laravel Campaigns",
-    "description": "Email campaigns that AI agents run inside your Laravel app over MCP, with lists synced from your users and paced sending through Mailgun on your own queue",
+    "description": "Email campaigns that AI agents run inside your Laravel app over MCP, with lists synced from your users and paced sending through Mailgun, Amazon SES or SMTP on your own queue",
     "folders": []
 }

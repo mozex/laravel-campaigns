@@ -8,7 +8,7 @@
 [![License](https://img.shields.io/github/license/mozex/laravel-campaigns.svg?style=flat-square)](https://packagist.org/packages/mozex/laravel-campaigns)
 [![Total Downloads](https://img.shields.io/packagist/dt/mozex/laravel-campaigns.svg?style=flat-square)](https://packagist.org/packages/mozex/laravel-campaigns)
 
-Laravel Campaigns lets an AI agent run your app's email marketing from inside the app. Your lists stay in step with your own users, every subscribe and unsubscribe is recorded with its basis and source, and campaigns go out through Mailgun, any SMTP server, or a driver you write for another service, from your own queue, one message at a time, at a pace you set per campaign. Addresses that hard-bounce, report spam or unsubscribe stop getting mail on their own. Agents work through an MCP server the package adds to your app, so Claude Code, Codex or a chat app can draft, preview, test, start and watch a campaign without database access.
+Laravel Campaigns lets an AI agent run your app's email marketing from inside the app. Your lists stay in step with your own users, every subscribe and unsubscribe is recorded with its basis and source, and campaigns go out through Mailgun, Amazon SES, any SMTP server, or a driver you write for another service, from your own queue, one message at a time, at a pace you set per campaign. Addresses that hard-bounce, report spam or unsubscribe stop getting mail on their own. Agents work through an MCP server the package adds to your app, so Claude Code, Codex or a chat app can draft, preview, test, start and watch a campaign without database access.
 
 > **[Read the full documentation at mozex.dev](https://mozex.dev/docs/laravel-campaigns/v1)**: searchable docs, version requirements, detailed changelog, and more.
 
@@ -19,6 +19,7 @@ Laravel Campaigns lets an AI agent run your app's email marketing from inside th
   - [Installation](https://mozex.dev/docs/laravel-campaigns/v1/getting-started/installation)
   - [Mailgun](https://mozex.dev/docs/laravel-campaigns/v1/getting-started/mailgun)
   - [SMTP](https://mozex.dev/docs/laravel-campaigns/v1/getting-started/smtp)
+  - [Amazon SES](https://mozex.dev/docs/laravel-campaigns/v1/getting-started/ses)
   - [Connecting Agents](https://mozex.dev/docs/laravel-campaigns/v1/getting-started/connecting-agents)
 - Lists and Subscribers
   - [Dynamic Lists](https://mozex.dev/docs/laravel-campaigns/v1/lists-and-subscribers/dynamic-lists)
@@ -60,7 +61,7 @@ Business sponsors get logo placement in package READMEs. [**See sponsorship tier
 
 **Sending that warms up.** Each campaign starts small (100 emails on day one by default), grows each day, and goes out a few emails a minute from your own queue, engaged readers first, mailbox providers in turn.
 
-**Feedback that acts.** Mailgun's webhooks and logs block hard bounces and spam reports and opt out unsubscribes. The SMTP driver sends through any server and reads back only what it refuses on the spot, and another service plugs in as a driver that has to do no more than send. A stop-loss pauses a campaign, or a whole sending domain, past its bounce, complaint or unsubscribe limits, and emails you.
+**Feedback that acts.** Mailgun's webhooks and logs block hard bounces and spam reports and opt out unsubscribes, and Amazon SES's events through EventBridge block bounces and spam reports. The SMTP driver sends through any server and reads back only what it refuses on the spot, and another service plugs in as a driver that has to do no more than send. A stop-loss pauses a campaign, or a whole sending domain, past its bounce, complaint or unsubscribe limits, and emails you.
 
 **Opens and clicks on every driver.** Your app serves each email's open pixel and the redirects behind its links, so tracking works the same whichever service sends. Apple's privacy prefetch, link scanners and anything that opens an email the second it arrives count as machines, never as a person reading.
 

@@ -37,9 +37,11 @@ Error trackers record request paths, bodies and outgoing requests. Some of the p
 | paths under `/campaigns/o/` and `/campaigns/l/` | each holds the token that records one person's opens and clicks |
 | the `signature` query of `/campaigns/preview/...` and of the links under the MCP path (`/mcp/campaigns/uploads/...`, `/mcp/campaigns/downloads/...`) | the signature is the link's only authorization |
 | the body of `PUT /mcp/campaigns/uploads/...` | an unsent email or a list of contacts |
-| the body of `POST /campaigns/webhooks/<driver>` (Mailgun's `event-data` field) | the recipient's address and IP |
+| the body of `POST /campaigns/webhooks/<driver>` (Mailgun's `event-data` field, Amazon SES's `detail`) | the recipient's address and IP |
+| the `X-Campaigns-Webhook-Key` header of `POST /campaigns/webhooks/ses` | the secret that proves an event is Amazon SES's |
 | the arguments of MCP tool calls (`POST /mcp/campaigns`) | addresses an agent adds, blocks or looks up |
 | outgoing requests to `api.*.mailgun.net/v3/<domain>/bounces`, `/complaints` and `/unsubscribes`, path and query | one address's lookup puts the address in the path, and the lists' next pages carry one in the query |
+| outgoing requests to `email.<region>.amazonaws.com/v2/email/suppression/addresses/...`, path and query | Amazon SES's lookup of one address puts the address in the path |
 | the `Authorization` header | an MCP token or an OAuth bearer |
 
 The package keeps addresses out of its own exception messages and reports, and never chains an HTTP client's exception whose message quotes a request URL. A database error is passed on with its SQLSTATE and without the SQL, whose values hold addresses and visitors' IP addresses. A deadlock while a list syncs or an import runs inside your own transaction reaches your app as a `DeadlockException` of its own with code 40001 and nothing chained, so Laravel still retries the transaction.

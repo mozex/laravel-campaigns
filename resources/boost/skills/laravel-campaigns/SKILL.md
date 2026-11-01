@@ -1,6 +1,6 @@
 ---
 name: laravel-campaigns
-description: Wire mozex/laravel-campaigns into a Laravel app and extend it - dynamic lists from app models (ListSource, HasCampaignSubscriber, campaigns:sync-list), recording consent on sign-up forms (withCampaignConsent, ConsentContext), newsletter and double opt-in sign-ups, imports from another email service (ImportContactsAction), named audiences and agent resources, the campaigns mailer, Mailgun webhooks and sending drivers for other services (Campaigns::extend), MCP tokens, OAuth guards and gate abilities, events, error-tracker redaction, and testing with the fake driver. Use whenever the user works on email marketing, newsletters, unsubscribes, marketing consent, mailing lists or campaigns in an app that has this package, even when they don't name it.
+description: Wire mozex/laravel-campaigns into a Laravel app and extend it - dynamic lists from app models (ListSource, HasCampaignSubscriber, campaigns:sync-list), recording consent on sign-up forms (withCampaignConsent, ConsentContext), newsletter and double opt-in sign-ups, imports from another email service (ImportContactsAction), named audiences and agent resources, the campaigns mailer, Mailgun webhooks, Amazon SES through EventBridge and sending drivers for other services (Campaigns::extend), MCP tokens, OAuth guards and gate abilities, events, error-tracker redaction, and testing with the fake driver. Use whenever the user works on email marketing, newsletters, unsubscribes, marketing consent, mailing lists or campaigns in an app that has this package, even when they don't name it.
 ---
 
 # Laravel Campaigns
@@ -13,7 +13,7 @@ This app has `mozex/laravel-campaigns` installed. AI agents run its email market
 - A newsletter form, a double opt-in list, or an unsubscribe needs handling in app code.
 - Contacts, opt-outs or bounces come over from another email service.
 - Agents need app data: an audience by the app's own records ("people who bought X") or read-only data (products, a brand guide).
-- Setting up the mailer, Mailgun's webhooks, a driver for another sending service, the queue worker, the scheduler, MCP tokens or OAuth sign-in.
+- Setting up the mailer, Mailgun's webhooks, Amazon SES's events, a driver for another sending service, the queue worker, the scheduler, MCP tokens or OAuth sign-in.
 - Writing tests for any of it.
 
 ## Rules that keep consent provable
@@ -106,6 +106,7 @@ An import never clears an opt-out or block, never changes an existing subscripti
 ## Setup checklist
 
 - A `campaigns` mailer in `config/mail.php`: `'transport' => 'mailgun', 'scheme' => 'api'` with the marketing domain's `domain`, `secret` and `endpoint`, for the default `mailgun` driver. For `CAMPAIGNS_DRIVER=smtp`, the mailer is Laravel's `smtp` transport (a relay, or a mail catcher such as Mailpit locally); that driver reads back only what the server refuses on the spot, so no bounce, spam report or service unsubscribe reaches the package and `get_overview` warns about it. Locally, `CAMPAIGNS_DRIVER=fake`, or `smtp` into a mail catcher.
+- For `CAMPAIGNS_DRIVER=ses`: `composer require aws/aws-sdk-php` (3.393.3 or later, which can turn SES's own tracking off per email), the mailer on Laravel's `ses-v2` transport with `'retries' => 0` (any other count is refused, since the SDK's retries can send an email twice) and the configuration set in `options.ConfigurationSetName`, whose event destination is Amazon EventBridge without opens and clicks; an EventBridge rule on `source: aws.ses`, the six sending `detail-type`s and the set's `ses:configuration-set` tag, targeting an API destination at `/campaigns/webhooks/ses`, its connection's API key header `X-Campaigns-Webhook-Key` holding `CAMPAIGNS_SES_WEBHOOK_SECRET`. SES keeps no logs, so an event that never arrived is lost; its suppression list is the account's; its daily counts need VDM (`CAMPAIGNS_SES_VDM=true`).
 - `CAMPAIGNS_FROM_ADDRESS` on the marketing domain, `CAMPAIGNS_POSTAL_ADDRESS`, `CAMPAIGNS_PRIVACY_URL`, `CAMPAIGNS_ALERT_ADDRESS`, `CAMPAIGNS_TEST_ADDRESSES`.
 - Mailgun webhooks to `/campaigns/webhooks/mailgun` with `MAILGUN_WEBHOOK_SIGNING_KEY` (keep it set for a few days after switching drivers, so late events land); an account key in `CAMPAIGNS_MAILGUN_API_KEY` for logs, metrics and suppressions; `php artisan campaigns:import-provider-suppressions <domain>` before the first campaign.
 - A worker for the `campaigns` queue with `--timeout` above 300 seconds and the connection's `retry_after` above that; the scheduler running; `CAMPAIGNS_CACHE_STORE` on a store deploys don't flush.
@@ -119,7 +120,7 @@ A driver implements `Mozex\Campaigns\Contracts\CampaignDriver` (`send(OutgoingMe
 
 ## Error trackers
 
-Redact: paths under `/campaigns/u/`, `/campaigns/c/`, `/campaigns/v/`, `/campaigns/o/` and `/campaigns/l/` (link and tracking tokens); the `signature` query of `/campaigns/preview/` and of the upload and download links under the MCP path; the body of the upload `PUT`; the body of `POST /campaigns/webhooks/<driver>` (Mailgun's `event-data` field); MCP tool call arguments; outgoing requests to `api.*.mailgun.net/v3/<domain>/bounces`, `/complaints` and `/unsubscribes` (path and query); the `Authorization` header.
+Redact: paths under `/campaigns/u/`, `/campaigns/c/`, `/campaigns/v/`, `/campaigns/o/` and `/campaigns/l/` (link and tracking tokens); the `signature` query of `/campaigns/preview/` and of the upload and download links under the MCP path; the body of the upload `PUT`; the body of `POST /campaigns/webhooks/<driver>` (Mailgun's `event-data` field, Amazon SES's `detail`) and its `X-Campaigns-Webhook-Key` header; MCP tool call arguments; outgoing requests to `api.*.mailgun.net/v3/<domain>/bounces`, `/complaints` and `/unsubscribes` and to `email.<region>.amazonaws.com/v2/email/suppression/addresses/` (path and query); the `Authorization` header.
 
 ## Events
 

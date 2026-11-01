@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Mozex\Campaigns\Sending\Drivers;
 
+use Aws\SesV2\SesV2Client;
 use Closure;
 use Illuminate\Config\Repository;
 use Illuminate\Contracts\Foundation\Application;
@@ -52,7 +53,16 @@ class DriverManager extends Manager
     protected const BUILT_IN = [
         'mailgun' => 'webhook_signing_key',
         'smtp' => null,
+        'ses' => 'webhook_secret',
         'fake' => null,
+    ];
+
+    /**
+     * The class a built-in driver needs from a package the app may not have
+     * installed, by the driver's name.
+     */
+    protected const REQUIRES = [
+        'ses' => SesV2Client::class,
     ];
 
     /**
@@ -117,7 +127,7 @@ class DriverManager extends Manager
 
     public function isConfigured(string $name): bool
     {
-        if (! $this->known($name)) {
+        if (! $this->known($name) || ! $this->installed($name)) {
             return false;
         }
 
@@ -137,6 +147,23 @@ class DriverManager extends Manager
     public function known(string $name): bool
     {
         return array_key_exists($name, static::BUILT_IN) || isset($this->customCreators[$name]) || isset($this->drivers[$name]);
+    }
+
+    /**
+     * Whether the package a built-in driver needs is installed: a driver
+     * whose package is missing counts as not configured, so its webhooks
+     * answer 404 without it being built. A driver an app registered or a
+     * test swapped in brings its own.
+     */
+    public function installed(string $name): bool
+    {
+        if (isset($this->customCreators[$name]) || isset($this->drivers[$name])) {
+            return true;
+        }
+
+        $class = static::REQUIRES[$name] ?? null;
+
+        return $class === null || class_exists($class);
     }
 
     /**
@@ -186,7 +213,9 @@ class DriverManager extends Manager
      * transport it uses, when the app set none, so a stuck request ends before
      * the job sending it. Called while the package registers, before any
      * mailer is built, so none has to be built again. Laravel's own smtp
-     * mailer comes with a null timeout, which counts as none.
+     * mailer comes with a null timeout, which counts as none. An ses-v2
+     * mailer's settings are merged over services.ses one key deep, so its
+     * own http block would replace one the app set there.
      */
     public static function boundMailer(Repository $config): void
     {
@@ -199,6 +228,10 @@ class DriverManager extends Manager
 
         if ($transport === 'smtp' && $config->get($key.'.timeout') === null) {
             $config->set($key.'.timeout', SmtpDriver::TIMEOUT);
+        }
+
+        if ($transport === 'ses-v2' && ! $config->has($key.'.http') && ! $config->has('services.ses.http')) {
+            $config->set($key.'.http', SesDriver::HTTP_LIMITS);
         }
     }
 
@@ -259,6 +292,18 @@ class DriverManager extends Manager
     protected function createSmtpDriver(): SmtpDriver
     {
         return new SmtpDriver;
+    }
+
+    /**
+     * @throws CampaignsException when the AWS SDK isn't installed
+     */
+    protected function createSesDriver(): SesDriver
+    {
+        if (! $this->installed('ses')) {
+            throw new CampaignsException('The ses driver needs the AWS SDK for PHP: composer require aws/aws-sdk-php.');
+        }
+
+        return new SesDriver;
     }
 
     protected function createFakeDriver(): FakeDriver

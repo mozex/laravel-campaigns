@@ -3,7 +3,7 @@ title: Feedback and the Stop-Loss
 weight: 4
 ---
 
-What happens to an email after Mailgun takes it comes back as events: by webhook within seconds, and from Mailgun's logs through the reconciler for anything a webhook missed. Each event is stored once, by Mailgun's event id, and applied once.
+What happens to an email after Mailgun takes it comes back as events: by webhook within seconds, and from Mailgun's logs through the reconciler for anything a webhook missed. Each event is stored once, by Mailgun's event id, and applied once. Amazon SES's events come only by webhook, since SES keeps no logs the package can read ([Amazon SES](../getting-started/ses.md) lists what each one does).
 
 ## What each event does
 
@@ -32,7 +32,7 @@ A driver with neither webhooks nor logs, such as the [SMTP driver](../getting-st
 
 ## The stop-loss
 
-The package pauses a campaign on its own when its numbers say something is wrong, measured per send (an email Mailgun took), from the campaign's own messages:
+The package pauses a campaign on its own when its numbers say something is wrong, measured per send (an email the service took), from the campaign's own messages:
 
 | Key | Default | Pauses at |
 |---|---|---|
