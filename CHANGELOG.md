@@ -15,7 +15,7 @@ All notable changes to `laravel-campaigns` will be documented in this file.
 * Opens and clicks tracked by your app on every driver, with privacy prefetches and link scanners counted as machines, and a report that counts the people who clicked each link
 * One-click unsubscribe, an unsubscribe and preferences page, double opt-in confirmation and a web version, each link's token stored only as a hash
 
-Versions before 1.0.0 aren't on Packagist. To install one, add `https://github.com/mozex/laravel-campaigns` to your app's `composer.json` as a `vcs` repository, give Composer a GitHub token that can read it, and require `mozex/laravel-campaigns` at `^0.1`. A `0.1.x` fix arrives with `composer update mozex/laravel-campaigns`. A version that adds a migration or changes how something works is the next minor (`0.2.0`), which `^0.1` won't install: raise the constraint by hand, then publish and run its migrations as its notes say.
+Install it with `composer require mozex/laravel-campaigns`. Until 1.0.0, a fix comes as a `0.1.x` patch, which `composer update mozex/laravel-campaigns` installs. A version that adds a migration or changes how something works is the next minor (`0.2.0`), outside the `^0.1.0` constraint Composer writes: raise it by hand, then publish and run its migrations as its notes say.
 
 Setup starts with the [installation guide](https://github.com/mozex/laravel-campaigns/blob/0.1.0/docs/getting-started/installation.md).
 
