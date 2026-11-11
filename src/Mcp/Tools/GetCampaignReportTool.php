@@ -24,7 +24,7 @@ use Mozex\Campaigns\Reports\ReportSummary;
 
 #[Name('get_campaign_report')]
 #[Title('Get a campaign\'s report')]
-#[Description('A campaign\'s numbers, in counts only: its messages by status; its sends (emails the provider took), deliveries, failures by kind, hard bounces, spam reports and unsubscribes (by how they came); the people who opened and clicked, with every open and click by people and by machines (Apple\'s privacy opens, link scanners, and anything that opened or clicked as the email arrived), and the most clicked links; rates (bounces, spam reports and unsubscribes per send, as the stop-loss measures them; opens and clicks per delivery, machines left out, or per sent email for a driver that reads nothing back, as their basis says); the same by list, language, engagement tier (as it stood at the start) and mailbox provider; a timeline by day in the app\'s timezone; and the queue now. It is worked out when read, so it keeps moving after the campaign completes (late bounces, opens, the reconciler), and is kept once events are pruned. The '.ReportSummary::LINKS.' most clicked links, the '.ReportSummary::BREAKDOWN.' largest lists and languages and the latest '.ReportSummary::DAYS.' days are shown, each with its total.')]
+#[Description('A campaign\'s numbers, in counts only: its messages by status; its sends (emails the provider took), deliveries, failures by kind, hard bounces, spam reports and unsubscribes (by how they came); the people who opened and clicked, with every open and click by people and by machines (Apple\'s privacy opens, link scanners, and anything that opened or clicked as the email arrived), and per link the people who clicked it beside its raw clicks; rates (bounces, spam reports and unsubscribes per send, as the stop-loss measures them; opens and clicks per delivery, machines left out, or per sent email for a driver that reads nothing back, as their basis says); the same by list, language, engagement tier (as it stood at the start) and mailbox provider; a timeline by day in the app\'s timezone; and the queue now. It is worked out when read, so it keeps moving after the campaign completes (late bounces, opens, the reconciler), and is kept once events are pruned. The '.ReportSummary::LINKS.' links the most people clicked, the '.ReportSummary::BREAKDOWN.' largest lists and languages and the latest '.ReportSummary::DAYS.' days are shown, each with its total.')]
 #[IsReadOnly]
 #[IsIdempotent]
 #[IsOpenWorld(false)]
@@ -100,7 +100,7 @@ class GetCampaignReportTool extends CampaignsTool
                 'other' => $schema->integer()->required(),
             ]),
             'opens' => $schema->object($people())->description('people opened at least once; human and machine count every load of the email\'s open pixel.'),
-            'clicks' => $schema->object($people()),
+            'clicks' => $schema->object($people())->description('people clicked at least once; human and machine count every click, repeat clicks included, and a mail app fetching a clicked link again (Gmail can) counts as a person\'s.'),
             'rates' => $schema->object([
                 'delivery' => $schema->number()->nullable()->required(),
                 'hard_bounce' => $schema->number()->nullable()->required(),
@@ -112,9 +112,10 @@ class GetCampaignReportTool extends CampaignsTool
             ])->description('Percent, to three places; null with nothing to divide.'),
             'links' => $schema->array()->items($schema->object([
                 'url' => $schema->string()->required(),
-                'human' => $schema->integer()->required(),
+                'people' => $schema->integer()->required()->description('Emails with a person\'s click on the link: the number to compare links by.'),
+                'human' => $schema->integer()->required()->description('Every click counted as a person\'s, repeat clicks included, and a mail app fetching a clicked link again (Gmail can).'),
                 'machine' => $schema->integer()->required(),
-            ]))->description('The most clicked by people first; each address cut to '.ReportSummary::URL_LENGTH.' characters.'),
+            ]))->description('The links the most people clicked first; each address cut to '.ReportSummary::URL_LENGTH.' characters.'),
             'links_total' => $schema->integer(),
             'by_list' => $schema->object()->description('By target list key, the largest first.'),
             'lists_total' => $schema->integer(),

@@ -54,7 +54,7 @@ Then, when the hit is applied a minute later, its timing is checked against when
 
 A hit isn't classified by its IP address: Apple's prefetch leaves through networks shared with iCloud Private Relay, which carries real people's clicks too. Neither the IP nor the user agent is stored, only the class. An email records at most 30 hits a minute; past that the request is still answered. No sender catches every scanner, so expect some machine clicks to count.
 
-The report counts every open and click, by people and by machines, and divides the open and click rates by delivered emails (sent ones, for a driver that reports no delivery), people only.
+The report counts every open and click, by people and by machines, and divides the open and click rates by delivered emails (sent ones, for a driver that reports no delivery), people only. Each link in it also counts `people`, the emails with a person's click on that link, which is the number to compare links by: Gmail can fetch a clicked link again a couple of seconds later with a browser's user agent, and then a Gmail reader's click counts twice in `human`, the link's and the campaign's.
 
 ## Your CDN and firewall
 

@@ -9,9 +9,9 @@ use Mozex\Campaigns\Support\ShownText;
 /**
  * A campaign's report (CampaignReport::for()) as an agent's answer shows
  * it: the parts that grow with the campaign are cut, each with its total,
- * so the answer stays under CampaignsTool::RESULT_LIMIT: the most clicked
- * links, the largest lists and languages, and the latest days. The report
- * kept on the campaign stays whole.
+ * so the answer stays under CampaignsTool::RESULT_LIMIT: the links the most
+ * people clicked, the largest lists and languages, and the latest days. The
+ * report kept on the campaign stays whole.
  */
 class ReportSummary
 {
@@ -42,8 +42,8 @@ class ReportSummary
                 ...(array) $link,
                 'url' => (string) ShownText::of((string) (((array) $link)['url'] ?? ''), static::URL_LENGTH),
             ], array_slice($links, 0, static::LINKS)),
-            // The report keeps its most clicked links and their total; one
-            // kept before it counted them has only its list.
+            // The report keeps the links the most people clicked and their
+            // total; one kept before it counted them has only its list.
             'links_total' => is_int($report['links_total'] ?? null) ? $report['links_total'] : count($links),
             ...static::largest($report, 'by_list', 'lists_total'),
             ...static::largest($report, 'by_locale', 'locales_total'),

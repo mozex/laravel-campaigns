@@ -29,12 +29,12 @@ use Mozex\Campaigns\Sending\Drivers\DriverManager;
  * failures by kind, hard bounces, spam reports and unsubscribes (split by
  * how: a mail app's one-click, the page, the provider's own link); the
  * people who opened and clicked, with every human and machine open and click
- * the package's own pixel and links recorded, and the clicks per link; the
- * rates, spam reports and unsubscribes per send as the stop-loss measures
- * them, opens and clicks per delivery, machines left out; the same numbers
- * by list, language, engagement tier (as it stood at the start) and mailbox
- * provider; a timeline by day in the app's timezone; and the queue as it
- * stands now.
+ * the package's own pixel and links recorded, and per link the people who
+ * clicked it as well as its raw clicks; the rates, spam reports and
+ * unsubscribes per send as the stop-loss measures them, opens and clicks
+ * per delivery, machines left out; the same numbers by list, language,
+ * engagement tier (as it stood at the start) and mailbox provider; a
+ * timeline by day in the app's timezone; and the queue as it stands now.
  *
  * An email sent through a driver that reads nothing back (no webhooks, no
  * logs) never shows as delivered: it ends at sent. Its opens and clicks are
@@ -52,7 +52,7 @@ use Mozex\Campaigns\Sending\Drivers\DriverManager;
 class CampaignReport
 {
     /**
-     * The most links listed, the most clicked by people first.
+     * The most links listed, those the most people clicked first.
      */
     public const LINKS = 100;
 
@@ -367,10 +367,19 @@ class CampaignReport
 
     /**
      * Every open and click recorded about the campaign's messages, a
-     * person's or a machine's, the clicks per link (the most clicked LINKS),
-     * and how many links were clicked in all.
+     * person's or a machine's; per link (the LINKS the most people clicked),
+     * the people who clicked it and its raw clicks; and how many links were
+     * clicked in all.
      *
-     * @return array{0: array{human: int, machine: int}, 1: array{human: int, machine: int}, 2: list<array{url: string, human: int, machine: int}>, 3: int}
+     * A link's people are the emails with at least one person's click on
+     * it. Raw clicks also count a person clicking again and a mail app
+     * fetching a clicked link a second time: Gmail can, from Google's
+     * network, with a browser's user agent, so its fetch is stored as a
+     * person's click. The people are what to compare links by. The events
+     * are read as plain rows, since hydrating each one outlasts a request at
+     * hundreds of thousands.
+     *
+     * @return array{0: array{human: int, machine: int}, 1: array{human: int, machine: int}, 2: list<array{url: string, people: int, human: int, machine: int}>, 3: int}
      */
     protected static function events(Campaign $campaign): array
     {
@@ -393,25 +402,62 @@ class CampaignReport
         $clicks = ['human' => 0, 'machine' => 0];
         $links = [];
 
-        $events = ProviderEvent::query()
-            ->where('type', FeedbackType::Clicked)
-            ->whereIn('message_id', $messages)
-            ->select(['id', 'is_bot', 'payload'])
-            ->lazyById(static::CHUNK);
+        // A block of emails at a time, so what is held is the links and one
+        // block's pairs of link and email, never every pair the campaign has.
+        $blocks = CampaignMessage::query()
+            ->where('campaign_id', $campaign->id)
+            ->toBase()
+            ->select('id')
+            ->lazyById(static::CHUNK, 'id')
+            ->pluck('id')
+            ->chunk(static::CHUNK);
 
-        foreach ($events as $event) {
-            $who = $event->is_bot ? 'machine' : 'human';
-            $url = $event->payload['url'] ?? null;
-            $url = is_string($url) && $url !== '' ? $url : 'unknown';
+        foreach ($blocks as $block) {
+            // The emails of this block a person clicked each link from; an
+            // email is in one block only, so the blocks' counts add up.
+            $people = [];
 
-            $clicks[$who]++;
-            $links[$url] ??= ['url' => $url, 'human' => 0, 'machine' => 0];
-            $links[$url][$who]++;
+            $events = ProviderEvent::query()
+                ->where('type', FeedbackType::Clicked)
+                ->whereIn('message_id', $block->values()->all())
+                ->toBase()
+                ->select(['id', 'message_id', 'is_bot', 'payload'])
+                ->lazyById(static::CHUNK, 'id');
+
+            foreach ($events as $event) {
+                $human = ! $event->is_bot;
+                $who = $human ? 'human' : 'machine';
+                $url = static::clickedUrl($event->payload);
+
+                $clicks[$who]++;
+                $links[$url] ??= ['url' => $url, 'people' => 0, 'human' => 0, 'machine' => 0];
+                $links[$url][$who]++;
+
+                if ($human) {
+                    $people[$url][(int) $event->message_id] = true;
+                }
+            }
+
+            foreach ($people as $url => $emails) {
+                $links[$url]['people'] += count($emails);
+            }
         }
 
-        usort($links, fn (array $a, array $b): int => [$b['human'], $b['machine'], $a['url']] <=> [$a['human'], $a['machine'], $b['url']]);
+        usort($links, fn (array $a, array $b): int => [$b['people'], $b['human'], $b['machine'], $a['url']] <=> [$a['people'], $a['human'], $a['machine'], $b['url']]);
 
         return [$opens, $clicks, array_slice($links, 0, static::LINKS), count($links)];
+    }
+
+    /**
+     * The address a click's plain row stores in its JSON payload, or
+     * "unknown".
+     */
+    protected static function clickedUrl(mixed $stored): string
+    {
+        $payload = is_string($stored) ? json_decode($stored, true) : $stored;
+        $url = is_array($payload) ? ($payload['url'] ?? null) : null;
+
+        return is_string($url) && $url !== '' ? $url : 'unknown';
     }
 
     /**

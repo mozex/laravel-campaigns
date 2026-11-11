@@ -139,8 +139,8 @@ it('counts a campaign\'s messages and events, every breakdown and day included',
         ->clicks->toBe(['people' => 1, 'human' => 1, 'machine' => 2])
         ->rates->toBe(['delivery' => 60.0, 'hard_bounce' => 20.0, 'complaint' => 20.0, 'unsubscribe' => 40.0, 'open' => 33.333, 'click' => 33.333, 'basis' => 'delivered'])
         ->links->toBe([
-            ['url' => 'https://example.com/sale', 'human' => 1, 'machine' => 1],
-            ['url' => 'https://example.com/terms', 'human' => 0, 'machine' => 1],
+            ['url' => 'https://example.com/sale', 'people' => 1, 'human' => 1, 'machine' => 1],
+            ['url' => 'https://example.com/terms', 'people' => 0, 'human' => 0, 'machine' => 1],
         ])
         ->by_list->toBe([
             '#999' => $row(1),
@@ -213,8 +213,8 @@ it('freezes a finished campaign\'s report once, which then stays as it was', fun
         ->clicks->toEqual(['people' => 1, 'human' => 1, 'machine' => 2])
         ->unsubscribes->toEqual(['total' => 2, 'one_click' => 1, 'page' => 1, 'provider' => 0, 'other' => 0])
         ->links->toEqual([
-            ['url' => 'https://example.com/sale', 'human' => 1, 'machine' => 1],
-            ['url' => 'https://example.com/terms', 'human' => 0, 'machine' => 1],
+            ['url' => 'https://example.com/sale', 'people' => 1, 'human' => 1, 'machine' => 1],
+            ['url' => 'https://example.com/terms', 'people' => 0, 'human' => 0, 'machine' => 1],
         ])
         ->and($report)->toEqual([...$frozen, 'queue' => CampaignReport::queue($campaign)])
         ->and(CampaignReport::build($campaign->fresh()))->delivered->toBe(2);
@@ -288,4 +288,87 @@ it('divides opens and clicks by the emails sent through a driver that reads noth
         ->and($sendOnly['delivered'])->toBe(0)
         ->and($mixed['rates'])->toBe(['delivery' => 100.0, 'hard_bounce' => 20.0, 'complaint' => 0.0, 'unsubscribe' => 0.0, 'open' => 75.0, 'click' => 25.0, 'basis' => 'delivered_or_sent'])
         ->and($unconfigured['rates'])->toBe($mixed['rates']);
+});
+
+/**
+ * A click on the message's link, a person's or a machine's.
+ */
+function clickOn(CampaignMessage $message, string $url, bool $bot = false): void
+{
+    ProviderEvent::factory()->for($message, 'message')->create(['type' => FeedbackType::Clicked, 'is_bot' => $bot, 'payload' => ['url' => $url]]);
+}
+
+it('counts the people who clicked each link apart from its raw clicks', function (string $driver): void {
+    // The clicks are read as plain rows, their JSON as each database hands
+    // it back.
+    useDatabase($driver);
+    $campaign = Campaign::factory()->create();
+    $first = reportMessage($campaign, ['status' => MessageStatus::Delivered, 'sent_at' => now()->subHour(), 'clicked_at' => now()]);
+    $second = reportMessage($campaign, ['status' => MessageStatus::Delivered, 'sent_at' => now()->subHour(), 'clicked_at' => now()]);
+    $scanned = reportMessage($campaign, ['status' => MessageStatus::Delivered, 'sent_at' => now()->subHour()]);
+
+    // A person's click and a mail app's fetch of it again a moment later,
+    // both stored as a person's.
+    clickOn($first, 'https://example.com/sale');
+    clickOn($first, 'https://example.com/sale');
+    clickOn($second, 'https://example.com/sale');
+    // A scanner opening every link counts as a machine only.
+    clickOn($scanned, 'https://example.com/sale', bot: true);
+    clickOn($scanned, 'https://example.com/terms', bot: true);
+
+    expect(CampaignReport::build($campaign))
+        ->clicks->toBe(['people' => 2, 'human' => 3, 'machine' => 2])
+        ->links->toBe([
+            ['url' => 'https://example.com/sale', 'people' => 2, 'human' => 3, 'machine' => 1],
+            ['url' => 'https://example.com/terms', 'people' => 0, 'human' => 0, 'machine' => 1],
+        ]);
+})->with('databases');
+
+it('ranks links by the people who clicked them before their raw clicks', function (): void {
+    $campaign = Campaign::factory()->create();
+    $one = reportMessage($campaign, ['status' => MessageStatus::Delivered, 'sent_at' => now()->subHour()]);
+    $two = reportMessage($campaign, ['status' => MessageStatus::Delivered, 'sent_at' => now()->subHour()]);
+
+    // One reader clicking a link three times, two readers another once each.
+    clickOn($one, 'https://example.com/again');
+    clickOn($one, 'https://example.com/again');
+    clickOn($one, 'https://example.com/again');
+    clickOn($one, 'https://example.com/shared');
+    clickOn($two, 'https://example.com/shared');
+
+    expect(CampaignReport::build($campaign)['links'])->toBe([
+        ['url' => 'https://example.com/shared', 'people' => 2, 'human' => 2, 'machine' => 0],
+        ['url' => 'https://example.com/again', 'people' => 1, 'human' => 3, 'machine' => 0],
+    ]);
+});
+
+it('ranks links with as many people by their raw clicks, human then machine, then by address', function (): void {
+    $campaign = Campaign::factory()->create();
+    $one = reportMessage($campaign, ['status' => MessageStatus::Delivered, 'sent_at' => now()->subHour()]);
+    $two = reportMessage($campaign, ['status' => MessageStatus::Delivered, 'sent_at' => now()->subHour()]);
+
+    // One person each; the later addresses have more clicks.
+    clickOn($one, 'https://example.com/a');
+    clickOn($two, 'https://example.com/b');
+    clickOn($two, 'https://example.com/b');
+    clickOn($one, 'https://example.com/c');
+    clickOn($one, 'https://example.com/d');
+    clickOn($two, 'https://example.com/d', bot: true);
+    clickOn($one, 'https://example.com/e');
+
+    expect(array_column(CampaignReport::build($campaign)['links'], 'url'))
+        ->toBe(['https://example.com/b', 'https://example.com/d', 'https://example.com/a', 'https://example.com/c', 'https://example.com/e']);
+});
+
+it('adds up the people who clicked a link across every block of emails it reads', function (): void {
+    $campaign = Campaign::factory()->create();
+    $messages = CampaignMessage::factory()->for($campaign)->count(CampaignReport::CHUNK + 1)
+        ->create(['subscriber_id' => null, 'email' => null, 'status' => MessageStatus::Delivered, 'sent_at' => now()->subHour()]);
+
+    // The first email and the last are read in different blocks.
+    clickOn($messages->first(), 'https://example.com/sale');
+    clickOn($messages->last(), 'https://example.com/sale');
+    clickOn($messages->last(), 'https://example.com/sale');
+
+    expect(CampaignReport::build($campaign)['links'])->toBe([['url' => 'https://example.com/sale', 'people' => 2, 'human' => 3, 'machine' => 0]]);
 });

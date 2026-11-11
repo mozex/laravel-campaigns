@@ -220,6 +220,8 @@ it('reads a campaign\'s report through the tool, its queue as it is now', functi
 
     expect($report)->toMatchArray(['messages' => 2, 'sends' => 2, 'delivered' => 2, 'links_total' => CampaignReport::LINKS + 1, 'lists_total' => 1, 'locales_total' => 1, 'days_total' => 1])
         ->and($report['links'])->toHaveCount(ReportSummary::LINKS)
+        ->and($report['links'][0])->toBe(['url' => 'https://example.com/1', 'people' => 1, 'human' => 1, 'machine' => 0])
+        ->and(app(GetCampaignReportTool::class)->toArray()['outputSchema']['properties']['links']['items']['required'])->toBe(['url', 'people', 'human', 'machine'])
         ->and($report['campaign']['key'])->toBe('march')
         ->and($report['rates']['delivery'])->toEqual(100)
         ->and($report['failures'])->toBe([])
@@ -233,7 +235,7 @@ it('shows a report\'s largest parts with their totals, under the answer limit', 
     $report = CampaignReport::build($campaign);
 
     $report['campaign']['name'] = $long(255);
-    $report['links'] = array_map(fn (int $n): array => ['url' => $long(2048, "https://example.com/{$n}?"), 'human' => 1_000_000, 'machine' => 1_000_000], range(1, CampaignReport::LINKS));
+    $report['links'] = array_map(fn (int $n): array => ['url' => $long(2048, "https://example.com/{$n}?"), 'people' => 1_000_000, 'human' => 1_000_000, 'machine' => 1_000_000], range(1, CampaignReport::LINKS));
     $report['links_total'] = 5000;
     $report['by_list'] = [];
     $report['by_locale'] = [];
