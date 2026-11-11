@@ -35,7 +35,7 @@ CAMPAIGNS_SES_WEBHOOK_SECRET=a-long-random-value
 
 The SDK retries a request whose answer it lost three times by default, and SES may already have sent that email, so a person could get it twice. A mailer without `'retries' => 0`, on itself or in `services.ses`, is refused: every campaign on the domain pauses until it's set. When neither gives `http` options, the package sets a 10-second connect timeout and 30 seconds in all, so a stuck request ends before the send job's 60 seconds. Any other transport is refused, except the log and array mailers outside production.
 
-Each email carries its uuid as an SES message tag (`campaign-message`), which SES puts back in every event about it. Laravel's `X-Tag` header is left out. SES's own open and click tracking is turned off on every email, whatever the account's or the configuration set's settings say: the package already tracks both ([Opens and Clicks](../campaigns/tracking.md)). An older SDK can't send that switch, so the driver refuses it.
+Each email carries its uuid as an SES message tag (`campaign-message`), which SES puts back in every event about it. Laravel's `X-Tag` header is left out. SES's own open and click tracking is turned off on every email, whatever the account's or the configuration set's settings say: the package already tracks both ([Opens and Clicks](../campaigns/tracking.md)). An older SDK can't send that switch, so the driver refuses it, and the switch needs an IAM permission of its own ([below](#permissions)).
 
 ## Set up SES
 
@@ -54,13 +54,47 @@ Do these in the AWS console, in the region the mailer names:
      "detail": {"mail": {"tags": {"ses:configuration-set": ["your-configuration-set"]}}}
    }
    ```
-6. **Production access.** A new account is in the sandbox: 200 emails a day, one a second, and only to addresses you verified. Ask AWS for production access in that region before your first campaign.
-
-The credentials in the mailer need `ses:SendEmail` and `ses:SendRawEmail` to send, `ses:ListSuppressedDestinations` and `ses:GetSuppressedDestination` for the suppressions import and `unblock_contact`, and `ses:BatchGetMetricData` when VDM is on.
+6. **Feedback forwarding.** On the identity's Notifications tab, turn Email feedback forwarding off, or call `PutEmailIdentityFeedbackAttributes` with `EmailForwardingEnabled` set to `false`. SES turns it on for every identity and emails each bounce and spam report to the address the email came from. A forwarded report can carry the email it's about (a spam report follows RFC 5965), so opening the report in a mail app can load that email's open pixel, or a click in it follow a tracked link, and record an open or a click for the person who complained. The package already reads bounces and complaints from the events. SES keeps forwarding, whatever the switch says, for an email whose bounces and complaints reach you no other way: its guide counts an SNS topic or a Firehose stream as another way, its API reference any event destination. If reports keep arriving with forwarding off, give the identity SNS notifications for bounces and complaints too.
+7. **Production access.** A new account is in the sandbox: 200 emails a day, one a second, and only to addresses you verified. Ask AWS for production access in that region before your first campaign.
 
 EventBridge posts from AWS's servers, so a CDN or firewall in front of the app must let `POST /campaigns/webhooks/ses` through without a browser or bot check.
 
-To try it without real people, send to SES's mailbox simulator: `success@simulator.amazonses.com` gets a delivery, `bounce@simulator.amazonses.com` a hard bounce and `complaint@simulator.amazonses.com` a spam report. It works in the sandbox, and SES bills those emails like any other.
+To try it without real people, send to SES's mailbox simulator: `success@simulator.amazonses.com` gets a delivery, `bounce@simulator.amazonses.com` a hard bounce and `complaint@simulator.amazonses.com` a spam report. `suppressionlist@simulator.amazonses.com` stands for an address on SES's global suppression list, though its bounce comes as an ordinary permanent 5.1.1 (subtype General, not Suppressed), so it reads as any hard bounce. Send them in a campaign to see what they do: a test email's events are stored and change nothing. In a campaign, a bounce blocks the address and counts toward the stop-loss, although SES leaves simulator emails out of the account's own bounce and complaint rates. The simulator works in the sandbox, and SES bills those emails like any other.
+
+### Permissions
+
+The credentials in the mailer need:
+
+- `ses:SendEmail` and `ses:SendRawEmail` to send, since Laravel's transport sends each email as raw content;
+- `ses:ApplyTrackingConfigurationOverrides` for the switch that turns SES's own tracking off on each email;
+- `ses:ListSuppressedDestinations` and `ses:GetSuppressedDestination` for the suppressions import and `unblock_contact`;
+- `ses:BatchGetMetricData` when VDM is on.
+
+When SES denies a send, it answers 403: the email waits, and every campaign on the sending domain pauses with a reason that names the three send actions. A policy for one region, with your region, account id, sending domain and configuration set in place of the examples:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": ["ses:SendEmail", "ses:SendRawEmail"],
+      "Resource": [
+        "arn:aws:ses:eu-west-1:123456789012:identity/news.example.com",
+        "arn:aws:ses:eu-west-1:123456789012:configuration-set/your-configuration-set"
+      ]
+    },
+    {
+      "Effect": "Allow",
+      "Action": ["ses:ApplyTrackingConfigurationOverrides", "ses:ListSuppressedDestinations", "ses:GetSuppressedDestination"],
+      "Resource": "*",
+      "Condition": {"StringEquals": {"aws:RequestedRegion": "eu-west-1"}}
+    }
+  ]
+}
+```
+
+The tracking switch has no resource to name, and the suppression list covers the whole account, so the second statement takes `*`, held to the region. With VDM on, add `ses:BatchGetMetricData` to it.
 
 ## What it reads back
 
@@ -82,7 +116,7 @@ When SES refuses an email as it's sent, the driver reads the AWS error code and 
 | SES answers | What happens |
 |---|---|
 | throttling (429, `ThrottlingException`, the daily quota among them), a 408, or a 500, 502 or 503 | it took nothing: the email waits and goes later, at half the rate for ten minutes |
-| a suspended or paused account, an unverified MAIL FROM domain, `MessageRejected` (an unverified From address, or content SES refuses), `LimitExceededException`, a configuration set it doesn't have, or credentials it refuses (401, 403, 404) | the email waits and every campaign on the sending domain pauses until someone acts |
+| a suspended or paused account, an unverified MAIL FROM domain, `MessageRejected` (an unverified From address, or content SES refuses), `LimitExceededException`, a configuration set it doesn't have, or credentials it refuses (401, 403, 404) | the email waits and every campaign on the sending domain pauses until someone acts; after a 401 or 403 the pause reason names the [permissions](#permissions) a send needs |
 | `BadRequestException` | the email fails as `rejected`; 10 in a row pause the campaign |
 | no answer, a 504, or anything else | the email is `unknown` and never resent |
 

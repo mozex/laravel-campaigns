@@ -19,15 +19,18 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Sleep;
+use Mozex\Campaigns\Actions\PumpCampaignsAction;
 use Mozex\Campaigns\CampaignsException;
 use Mozex\Campaigns\CampaignsServiceProvider;
 use Mozex\Campaigns\Enums\BlockReason;
+use Mozex\Campaigns\Enums\CampaignStatus;
 use Mozex\Campaigns\Enums\DeliveryFailure;
 use Mozex\Campaigns\Enums\FeedbackType;
 use Mozex\Campaigns\Enums\MessageStatus;
 use Mozex\Campaigns\Enums\SendFailure;
 use Mozex\Campaigns\Enums\SuppressionType;
 use Mozex\Campaigns\Jobs\ProcessFeedbackJob;
+use Mozex\Campaigns\Jobs\SendMessageJob;
 use Mozex\Campaigns\Models\CampaignMessage;
 use Mozex\Campaigns\Models\ProviderEvent;
 use Mozex\Campaigns\Models\Subscriber;
@@ -138,6 +141,7 @@ describe('sending', function (): void {
     })->with([
         'throttled' => ['TooManyRequestsException', 429, SendFailure::NotAccepted],
         'throttled, the older code' => ['ThrottlingException', 400, SendFailure::NotAccepted],
+        'throttled with a 403, which names no permissions' => ['ThrottlingException', 403, SendFailure::NotAccepted],
         'a request it never received whole' => ['RequestTimeoutException', 408, SendFailure::NotAccepted],
         'its servers failing' => ['InternalFailure', 500, SendFailure::NotAccepted],
         'unavailable' => ['ServiceUnavailable', 503, SendFailure::NotAccepted],
@@ -146,13 +150,52 @@ describe('sending', function (): void {
         'paused sending' => ['SendingPausedException', 400, SendFailure::DomainRefused],
         'an unverified MAIL FROM domain' => ['MailFromDomainNotVerifiedException', 400, SendFailure::DomainRefused],
         'a configuration set it doesn\'t have' => ['NotFoundException', 404, SendFailure::DomainRefused],
-        'credentials it refuses' => ['UnrecognizedClientException', 403, SendFailure::DomainRefused],
-        'a denied action' => ['AccessDeniedException', 403, SendFailure::DomainRefused],
         'a From address it hasn\'t verified, or refused content, either failing every email' => ['MessageRejected', 400, SendFailure::DomainRefused],
         'a standing limit of the account' => ['LimitExceededException', 400, SendFailure::DomainRefused],
         'a field it can\'t take' => ['BadRequestException', 400, SendFailure::Rejected],
         'anything else' => ['SomethingNewException', 400, SendFailure::Unclear],
     ]);
+
+    it('names the actions a send needs when SES refuses the credentials, so the pause says what to grant', function (string $code, int $status): void {
+        sesMailer(new MockHandler([sesError($code, $status)]));
+
+        $failed = sendFailure(fn () => app(SesDriver::class)->send(outgoing()));
+
+        expect($failed->failure)->toBe(SendFailure::DomainRefused)
+            ->and($failed->status)->toBe($status)
+            ->and($failed->deliveryFailure)->toBeNull()
+            ->and($failed->getMessage())->toBe("Amazon SES answered {$status} ({$code}). The campaigns mailer's credentials must be valid and allow ses:SendEmail, ses:SendRawEmail and ses:ApplyTrackingConfigurationOverrides.")
+            ->and($failed->getPrevious())->toBeNull();
+    })->with([
+        'credentials it doesn\'t know' => ['UnrecognizedClientException', 403],
+        'a denied action, the tracking switch among them' => ['AccessDeniedException', 403],
+        'a caller it doesn\'t authorize' => ['NotAuthorized', 401],
+    ]);
+
+    it('fits those actions in a test email\'s 255-character failure, whatever the error code\'s length', function (): void {
+        // The longest error code the driver shows.
+        sesMailer(new MockHandler([sesError(str_repeat('A', 64), 403)]));
+
+        $failed = sendFailure(fn () => app(SesDriver::class)->send(outgoing()));
+
+        expect(mb_strlen($failed->getMessage()))->toBeLessThanOrEqual(255)
+            ->and($failed->getMessage())->toEndWith('ses:ApplyTrackingConfigurationOverrides.');
+    });
+
+    it('pauses the campaign with a reason naming those actions when SES denies its send', function (): void {
+        $campaign = sendingCampaign(1);
+        config()->set('campaigns.driver', 'ses');
+        sesMailer(new MockHandler([sesError('AccessDeniedException', 403)]));
+        Queue::fake([SendMessageJob::class]);
+        app(PumpCampaignsAction::class)->execute();
+        [$job] = Queue::pushed(SendMessageJob::class)->values()->all();
+
+        app()->call([$job, 'handle']);
+
+        expect($campaign->fresh())
+            ->status->toBe(CampaignStatus::Paused)
+            ->pause_reason->toBe('The provider refused the sending domain news.example.com: Amazon SES answered 403 (AccessDeniedException). The campaigns mailer\'s credentials must be valid and allow ses:SendEmail, ses:SendRawEmail and ses:ApplyTrackingConfigurationOverrides.');
+    });
 
     it('treats a connection error as unclear, never as not taken, since it can\'t tell whether the request went', function (): void {
         sesMailer(new MockHandler([sesError(null, null, connection: true), sesError('ServiceUnavailable', 503, connection: true)]));

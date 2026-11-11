@@ -442,7 +442,11 @@ class SesDriver implements CampaignDriver, ReadsMetrics, ReadsSuppressions, Rece
      * What a failure while sending means, by the AWS error code and the HTTP
      * status of the SDK's exception, which Laravel's transport wraps. A
      * connection error is unclear whatever kind it is: the SDK's flag doesn't
-     * say whether the request went, and a lost answer may have.
+     * say whether the request went, and a lost answer may have. A 401 or 403
+     * names the actions a send needs, since the pause reason is all an agent
+     * reads: Laravel's transport sends raw content, and the tracking switch
+     * on every email is an action of its own, which a policy granting only
+     * ses:SendEmail lacks.
      */
     protected function failure(TransportExceptionInterface $exception): SendFailed
     {
@@ -467,7 +471,9 @@ class SesDriver implements CampaignDriver, ReadsMetrics, ReadsSuppressions, Rece
             default => SendFailure::Unclear,
         };
 
-        return new SendFailed($failure, "Amazon SES answered {$status} ({$code}).", $status);
+        $fix = $failure === SendFailure::DomainRefused && in_array($status, [401, 403], true) ? ' The campaigns mailer\'s credentials must be valid and allow ses:SendEmail, ses:SendRawEmail and ses:ApplyTrackingConfigurationOverrides.' : '';
+
+        return new SendFailed($failure, "Amazon SES answered {$status} ({$code}).{$fix}", $status);
     }
 
     /**
