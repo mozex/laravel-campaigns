@@ -330,7 +330,7 @@ it('answers a start, a resume and a speed-up with Gmail\'s spam rate and the pro
     fakeDriver()->used(49_999, 50_000);
     Queue::pushed(FreezeCampaignJob::class)->first()->handle(app(FreezeCampaignAction::class));
     agent()->tool(PauseCampaignTool::class, ['key' => 'march'])->assertOk();
-    CampaignMessage::query()->whereKey(CampaignMessage::query()->min('id'))->update(['status' => MessageStatus::Sent, 'sent_at' => now()]);
+    CampaignMessage::query()->whereKey(CampaignMessage::query()->min('id'))->update(['status' => MessageStatus::Sent, 'claimed_at' => now(), 'sent_at' => now()]);
 
     // A resume counts its emails still to send (four of five) with the app's
     // other open campaigns' (two of another sending one; a draft's none).
@@ -348,11 +348,12 @@ it('answers a start, a resume and a speed-up with Gmail\'s spam rate and the pro
         ->and($withOthers['warnings'][1])->toBe('The account has sent 49999 of the 50000 emails its plan includes this month: of this campaign\'s 4 and the app\'s other open campaigns\' 2 still to send, 5 pass it, which the provider bills as overage if they all go this month.');
 
     // A quota: the lesser of the emails still to send and what the pace lets
-    // the campaign send in the next 24 hours, against what the last 24 left.
+    // the campaign send in the next 24 hours (its first pace day's rest, one
+    // claimed, and the whole next day), against what the last 24 left.
     Cache::flush();
     fakeDriver()->used(198, 200, Usage::DAY, enforced: true, perSecond: 14.0);
-    $fits = structuredContent(agent()->tool(SpeedUpCampaignTool::class, ['key' => 'march', 'pace' => ['daily_cap' => 2]])->assertOk());
-    $capped = structuredContent(agent()->tool(SpeedUpCampaignTool::class, ['key' => 'march', 'pace' => ['daily_cap' => 3]])->assertOk());
+    $fits = structuredContent(agent()->tool(SpeedUpCampaignTool::class, ['key' => 'march', 'pace' => ['daily_cap' => 1]])->assertOk());
+    $capped = structuredContent(agent()->tool(SpeedUpCampaignTool::class, ['key' => 'march', 'pace' => ['daily_cap' => 2]])->assertOk());
     $uncapped = structuredContent(agent()->tool(SpeedUpCampaignTool::class, ['key' => 'march', 'pace' => ['daily_cap' => null]])->assertOk());
 
     expect($fits['readings']['usage'])->toMatchArray(['period' => 'last_24_hours', 'sent' => 198, 'allowance' => 200, 'left' => 2, 'past_allowance' => 'held_back', 'per_second' => 14.0])
