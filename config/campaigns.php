@@ -82,6 +82,11 @@ return [
      * api.eu.mailgun.net (default: the campaigns mailer's endpoint, else
      * api.mailgun.net). log_days is how many days back your plan keeps logs
      * (5 on Foundation, 30 on Scale): nothing older is looked for.
+     * monthly_included is how many emails your plan includes each month
+     * (50000 on Foundation): the start, resume and speed-up answers warn
+     * when a campaign would take the account past it, which Mailgun bills
+     * as overage. The account's count is read from both regions, since one
+     * plan covers them. Default: not set, so nothing warns.
      *
      * The smtp driver has no settings of its own: the server, its port and
      * the login are the campaigns mailer's (the smtp transport).
@@ -99,6 +104,7 @@ return [
             'api_key' => env('CAMPAIGNS_MAILGUN_API_KEY'),
             'endpoint' => env('CAMPAIGNS_MAILGUN_ENDPOINT'),
             'log_days' => 5,
+            'monthly_included' => env('CAMPAIGNS_MAILGUN_MONTHLY_INCLUDED'),
         ],
         'smtp' => [],
         'ses' => [

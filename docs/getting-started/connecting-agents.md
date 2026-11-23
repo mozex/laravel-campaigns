@@ -103,7 +103,7 @@ The server tells agents how to work with it in its instructions, about 1,700 cha
 ],
 ```
 
-Both together must stay under 4,096 characters, which is what Claude Code keeps, so you have room for about 2,300. The server refuses to start past that, naming the setting.
+Both together must stay under 4,096 characters, which is what Claude Code keeps, so you have room for about 2,100. The server refuses to start past that, naming the setting.
 
 ## Throttling
 

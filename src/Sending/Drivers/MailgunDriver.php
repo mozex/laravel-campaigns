@@ -16,6 +16,7 @@ use Mozex\Campaigns\Contracts\CampaignDriver;
 use Mozex\Campaigns\Contracts\Drivers\ReadsEvents;
 use Mozex\Campaigns\Contracts\Drivers\ReadsMetrics;
 use Mozex\Campaigns\Contracts\Drivers\ReadsSuppressions;
+use Mozex\Campaigns\Contracts\Drivers\ReadsUsage;
 use Mozex\Campaigns\Contracts\Drivers\ReceivesWebhooks;
 use Mozex\Campaigns\Enums\DeliveryFailure;
 use Mozex\Campaigns\Enums\FeedbackType;
@@ -28,6 +29,7 @@ use Mozex\Campaigns\Sending\OutgoingMessage;
 use Mozex\Campaigns\Sending\SendFailed;
 use Mozex\Campaigns\Sending\SendReceipt;
 use Mozex\Campaigns\Sending\Suppression;
+use Mozex\Campaigns\Sending\Usage;
 use Mozex\Campaigns\Support\Sender;
 use Symfony\Component\Mailer\Bridge\Mailgun\Transport\MailgunApiTransport;
 use Symfony\Component\Mailer\Exception\HttpTransportException;
@@ -44,14 +46,15 @@ use Throwable;
  * headers. The log and array mailers are allowed too, for local runs and
  * tests, since they deliver nothing. Its webhooks post to
  * /campaigns/webhooks/mailgun, signed with campaigns.drivers.mailgun's
- * webhook_signing_key; its logs, suppression lists and metrics are read with
- * that block's api_key, since the mailer's sending key can only send. Its
+ * webhook_signing_key; its logs, suppression lists, metrics and usage are
+ * read with that block's api_key, since the mailer's sending key can only
+ * send. Its
  * config is read on every call, never kept, so a change reaches a driver
  * already built. Mailgun's own open and click tracking is off on every
  * message, and its opened and clicked events are dropped: the package
  * tracks both itself, the same for every driver, so nothing counts twice.
  */
-class MailgunDriver implements CampaignDriver, ReadsEvents, ReadsMetrics, ReadsSuppressions, ReceivesWebhooks
+class MailgunDriver implements CampaignDriver, ReadsEvents, ReadsMetrics, ReadsSuppressions, ReadsUsage, ReceivesWebhooks
 {
     use UsesCampaignsMailer;
 
@@ -123,6 +126,22 @@ class MailgunDriver implements CampaignDriver, ReadsEvents, ReadsMetrics, ReadsS
         'complained_count' => 'complaints',
         'unsubscribed_count' => 'unsubscribes',
     ];
+
+    /**
+     * Mailgun's regions' API hosts. Each answers the Metrics API for its own
+     * region's domains only, while one plan's volume covers both, so the
+     * account's usage is read from each and summed.
+     */
+    protected const REGIONS = [
+        'US' => 'api.mailgun.net',
+        'EU' => 'api.eu.mailgun.net',
+    ];
+
+    /**
+     * The seconds one region's usage read may take: an agent waits on it in
+     * the overview and the start, resume and speed-up answers.
+     */
+    protected const USAGE_TIMEOUT = 10;
 
     /**
      * Mailgun's suppression lists, by their path.
@@ -404,6 +423,73 @@ class MailgunDriver implements CampaignDriver, ReadsEvents, ReadsMetrics, ReadsS
     }
 
     /**
+     * The account's processed emails this calendar month (UTC), the count
+     * Mailgun bills against the plan: its own sends and the inbound mail its
+     * routes forward. Read through the Metrics API account-wide, a day at a
+     * time from the month's first instant to now (an end at the next
+     * month's first instant would add that month's first day), on both
+     * regions' hosts whatever campaigns.drivers.mailgun.endpoint says, and
+     * summed; a region that can't be read leaves the other's count with a
+     * note. The plan's volume is campaigns.drivers.mailgun.monthly_included,
+     * which Mailgun's API doesn't give; Mailgun bills what passes it, so
+     * nothing is held back.
+     */
+    public function usage(): Usage
+    {
+        $now = now()->utc();
+        $from = $now->copy()->startOfMonth();
+        $sent = [];
+        $failed = [];
+
+        foreach (static::REGIONS as $region => $host) {
+            try {
+                $json = $this->read('POST', "https://{$host}/v1/analytics/metrics", [
+                    'start' => $from->toRfc2822String(),
+                    'end' => $now->toRfc2822String(),
+                    'resolution' => 'day',
+                    'dimensions' => ['time'],
+                    'metrics' => ['processed_count'],
+                    'include_aggregates' => false,
+                ], timeout: static::USAGE_TIMEOUT);
+            } catch (CampaignsException $exception) {
+                $failed[$region] = $exception->getMessage();
+
+                continue;
+            }
+
+            $sent[$region] = 0;
+
+            foreach (is_array($json['items'] ?? null) ? $json['items'] : [] as $item) {
+                $date = $this->metricsDay(is_array($item) ? $item : []);
+                $value = is_array($item) ? data_get($item, 'metrics.processed_count') : null;
+
+                if ($date !== null && $date >= $from->toDateString() && $date <= $now->toDateString() && is_numeric($value)) {
+                    $sent[$region] += max(0, (int) $value);
+                }
+            }
+        }
+
+        if ($sent === []) {
+            throw CampaignsException::providerUnreadable((string) reset($failed));
+        }
+
+        $notes = [];
+
+        foreach ($failed as $region => $reason) {
+            $notes[] = 'This counts the '.implode(' and ', array_keys($sent))." region only: Mailgun's {$region} region couldn't be read. {$reason}";
+        }
+
+        $included = filter_var(config('campaigns.drivers.mailgun.monthly_included'), FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+
+        if ($included === false) {
+            $included = null;
+            $notes[] = 'campaigns.drivers.mailgun.monthly_included (CAMPAIGNS_MAILGUN_MONTHLY_INCLUDED) isn\'t set, so the emails the Mailgun plan includes each month aren\'t known and no overage is warned of.';
+        }
+
+        return new Usage(Usage::MONTH, $from, $now, array_sum($sent), $included, enforced: false, notes: $notes);
+    }
+
+    /**
      * The Logs API's events matching a filter in a period, oldest first, a
      * page of 100 at a time, following its page token to the end or the
      * page limit. The period starts no earlier than the logs reach. Events
@@ -518,15 +604,15 @@ class MailgunDriver implements CampaignDriver, ReadsEvents, ReadsMetrics, ReadsS
      *
      * @throws CampaignsException
      */
-    protected function read(string $method, string $url, array $body = [], bool $notFound = false): ?array
+    protected function read(string $method, string $url, array $body = [], bool $notFound = false, int $timeout = 30): ?array
     {
         $key = config('campaigns.drivers.mailgun.api_key');
 
         if (! is_string($key) || $key === '') {
-            throw new CampaignsException('Reading Mailgun\'s logs, suppressions and metrics needs an API key that can read them (campaigns.drivers.mailgun.api_key, CAMPAIGNS_MAILGUN_API_KEY); the campaigns mailer\'s sending key can only send.');
+            throw new CampaignsException('Reading Mailgun\'s logs, suppressions, metrics and usage needs an API key that can read them (campaigns.drivers.mailgun.api_key, CAMPAIGNS_MAILGUN_API_KEY); the campaigns mailer\'s sending key can only send.');
         }
 
-        $request = Http::withBasicAuth('api', $key)->acceptJson()->connectTimeout(10)->timeout(30);
+        $request = Http::withBasicAuth('api', $key)->acceptJson()->connectTimeout(min(10, $timeout))->timeout($timeout);
 
         try {
             $response = $method === 'POST' ? $request->post($url, $body) : $request->get($url);

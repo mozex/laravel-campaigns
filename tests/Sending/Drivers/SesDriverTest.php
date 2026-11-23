@@ -39,6 +39,7 @@ use Mozex\Campaigns\Sending\Drivers\DriverManager;
 use Mozex\Campaigns\Sending\Drivers\SesDriver;
 use Mozex\Campaigns\Sending\Feedback;
 use Mozex\Campaigns\Sending\Suppression;
+use Mozex\Campaigns\Sending\Usage;
 use Symfony\Component\Mailer\Transport\Smtp\EsmtpTransport;
 
 beforeEach(function (): void {
@@ -314,7 +315,7 @@ describe('sending', function (): void {
 });
 
 describe('as a driver', function (): void {
-    it('is built in, with webhooks, suppressions and daily counts but no logs, and reads back', function (): void {
+    it('is built in, with webhooks, suppressions, daily counts and usage but no logs, and reads back', function (): void {
         config()->set('campaigns.driver', 'ses');
         $drivers = app(DriverManager::class);
         $active = $drivers->active();
@@ -325,7 +326,7 @@ describe('as a driver', function (): void {
         config()->set('campaigns.drivers.ses.webhook_secret', 'webhook-secret');
 
         expect($active)->toBeInstanceOf(SesDriver::class)
-            ->and(DriverManager::abilities($active))->toBe(['webhooks', 'suppressions', 'metrics'])
+            ->and(DriverManager::abilities($active))->toBe(['webhooks', 'suppressions', 'metrics', 'usage'])
             ->and($readsBack)->toBeTrue()
             ->and($configuredAfter)->toBeFalse()
             ->and($drivers->isConfigured('ses'))->toBeTrue();
@@ -606,7 +607,7 @@ describe('suppressions', function (): void {
 
         throw new RuntimeException('Nothing was refused.');
     })->with([
-        'denied' => [sesError('AccessDeniedException', 403), 'Amazon SES answered 403 (AccessDeniedException) when the package read its suppression list. The campaigns mailer\'s credentials need ses:ListSuppressedDestinations'],
+        'denied' => [sesError('AccessDeniedException', 403), 'Amazon SES answered 403 (AccessDeniedException) when the package read its suppression list. The campaigns mailer\'s credentials need ses:GetAccount, ses:ListSuppressedDestinations'],
         'unreachable' => [sesError(null, null, connection: true), 'Amazon SES couldn\'t be reached when the package read its suppression list.'],
         'no credentials' => [fn (): CredentialsException => new CredentialsException('No credentials for reader@example.org.'), 'The AWS SDK found no credentials'],
     ]);
@@ -683,4 +684,72 @@ describe('daily counts', function (): void {
         expect(fn () => app(SesDriver::class)->domainMetrics('news.example.com', now()->subDay(), now()))
             ->toThrow(CampaignsException::class, 'Amazon SES couldn\'t give its daily counts (ACCESS_DENIED). The campaigns mailer\'s credentials need ses:BatchGetMetricData.');
     });
+});
+
+describe('usage', function (): void {
+    beforeEach(function (): void {
+        $this->travelTo(Carbon::parse('2026-02-03 14:30:00', 'UTC'));
+    });
+
+    it('reads the account\'s 24-hour quota and what it sent, within its own time limits', function (): void {
+        $handler = new MockHandler([new Result([
+            'SendQuota' => ['Max24HourSend' => 50000.0, 'MaxSendRate' => 14.0, 'SentLast24Hours' => 1234.0],
+            'ProductionAccessEnabled' => true,
+            'SendingEnabled' => true,
+            'EnforcementStatus' => 'HEALTHY',
+        ])]);
+        sesMailer($handler);
+
+        $usage = app(SesDriver::class)->usage();
+
+        expect($handler->getLastCommand()->getName())->toBe('GetAccount')
+            ->and($handler->getLastCommand()['@http'])->toMatchArray(['connect_timeout' => 10, 'timeout' => 10])
+            ->and($usage->period)->toBe(Usage::DAY)
+            ->and($usage->from->toIso8601String())->toBe('2026-02-02T14:30:00+00:00')
+            ->and($usage->to->toIso8601String())->toBe('2026-02-03T14:30:00+00:00')
+            ->and($usage->sent)->toBe(1234)
+            ->and($usage->allowance)->toBe(50000)
+            ->and($usage->left())->toBe(48766)
+            ->and($usage->enforced)->toBeTrue()
+            ->and($usage->perSecond)->toBe(14.0)
+            ->and($usage->notes)->toBe([]);
+    });
+
+    it('notes a quota with no limit, the sandbox, paused sending and a review', function (): void {
+        sesMailer(new MockHandler([new Result([
+            'SendQuota' => ['Max24HourSend' => -1.0, 'MaxSendRate' => 0.0, 'SentLast24Hours' => 7.0],
+            'ProductionAccessEnabled' => false,
+            'SendingEnabled' => false,
+            'EnforcementStatus' => 'PROBATION',
+        ])]));
+
+        $usage = app(SesDriver::class)->usage();
+
+        expect($usage->allowance)->toBeNull()
+            ->and($usage->left())->toBeNull()
+            ->and($usage->perSecond)->toBeNull()
+            ->and($usage->notes)->toBe([
+                'The account\'s 24-hour sending quota in this region has no limit.',
+                'The account is in Amazon SES\'s sandbox in this region: it sends only to addresses and domains verified in SES, and refuses a campaign\'s emails to anyone else. Request production access in SES first.',
+                'Sending is paused for the account in this region, so Amazon SES refuses every email.',
+                'Amazon SES\'s enforcement status for the account is PROBATION: its bounce or complaint rate is under review, and sending more may get it paused.',
+            ]);
+    });
+
+    it('fails without SES\'s words or an address, naming ses:GetAccount when refused', function (Closure $answer, string $says): void {
+        sesMailer(new MockHandler([$answer]));
+        $exception = null;
+
+        try {
+            app(SesDriver::class)->usage();
+        } catch (CampaignsException $exception) {
+        }
+
+        expect($exception?->getMessage())->toBe($says)
+            ->and($exception?->getPrevious())->toBeNull();
+    })->with([
+        'denied' => [sesError('AccessDeniedException', 403), 'Amazon SES answered 403 (AccessDeniedException) when the package read its sending quota. The campaigns mailer\'s credentials need ses:GetAccount, ses:ListSuppressedDestinations, ses:GetSuppressedDestination and, with VDM, ses:BatchGetMetricData.'],
+        'unreachable' => [sesError(null, null, connection: true), 'Amazon SES couldn\'t be reached when the package read its sending quota.'],
+        'no quota in the answer' => [fn (): Result => new Result(['SendingEnabled' => true]), 'Amazon SES\'s answer gave no sending quota.'],
+    ]);
 });

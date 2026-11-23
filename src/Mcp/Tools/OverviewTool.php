@@ -28,7 +28,7 @@ use Mozex\Campaigns\Sending\Drivers\DriverManager;
 
 #[Name('get_overview')]
 #[Title('Get overview')]
-#[Description('Start here. How sending is set up and what is switched off, the addresses test emails may go to, the sending domain\'s standing (its last 24 hours from the app\'s own records, its daily cap and what is left of it, the provider\'s counts for its last 30 days, and Gmail\'s spam rate and bulk-sender checks from Postmaster Tools), every list in use with its counts (by status, how many may be mailed, and by engagement tier) and whether it is a default list, the default lists first (archived lists through list_lists), the campaigns starting, scheduled, sending or paused, and the placeholders an email may hold with this app\'s values. At most 25 lists and 25 campaigns; lists_total and campaigns_total say how many there are.')]
+#[Description('Start here. How sending is set up and what is switched off, the addresses test emails may go to, the sending domain\'s standing (its last 24 hours from the app\'s own records, its daily cap and what is left of it, the provider\'s counts for its last 30 days, and Gmail\'s spam rate and bulk-sender checks from Postmaster Tools), what the provider account sent against its plan or quota, every list in use with its counts (by status, how many may be mailed, and by engagement tier) and whether it is a default list, the default lists first (archived lists through list_lists), the campaigns starting, scheduled, sending or paused, and the placeholders an email may hold with this app\'s values. At most 25 lists and 25 campaigns; lists_total and campaigns_total say how many there are.')]
 #[IsReadOnly]
 #[IsIdempotent]
 #[IsOpenWorld]
@@ -56,7 +56,7 @@ class OverviewTool extends CampaignsTool
                 'enabled' => $schema->boolean()->required()->description('Whether campaigns may start and test emails go out.'),
                 'driver' => $schema->object([
                     'name' => $schema->string()->required(),
-                    'abilities' => $schema->array()->items($schema->string()->enum(array_keys(DriverManager::ABILITIES)))->required()->description('What the driver reads back from its service besides sending: webhooks, events (its logs), suppressions (its lists of refused addresses), metrics (its daily counts). sending.notes says what a missing one means.'),
+                    'abilities' => $schema->array()->items($schema->string()->enum(array_keys(DriverManager::ABILITIES)))->required()->description('What the driver reads back from its service besides sending: webhooks, events (its logs), suppressions (its lists of refused addresses), metrics (its daily counts), usage (what the account sent against its plan or quota). sending.notes, domain.provider and usage.note say what a missing one means.'),
                 ])->required()->description('The driver that sends (campaigns.driver).'),
                 'mailer' => $schema->string()->required(),
                 'from_address' => $schema->string()->nullable()->required(),
@@ -92,6 +92,7 @@ class OverviewTool extends CampaignsTool
                 ])->nullable()->required()->description('The provider\'s own counts for the domain over the last '.DomainSummary::DAYS.' days: sent is the domain\'s own outgoing mail; forwarded is inbound mail its routes passed on; the bounces, spam reports and unsubscribes are the provider\'s for all of the domain\'s mail. A count the provider doesn\'t keep is null. Null when they can\'t be read or the driver reads no counts (sending.notes says why).'),
                 'gmail' => Schemas::gmail($schema)->required()->description('Gmail\'s numbers for the domain from Google Postmaster Tools over the '.GmailReading::DAYS.' days to yesterday: the user-reported spam rate, DKIM, SPF and DMARC success, and Google\'s bulk-sender checks.'),
             ])->nullable()->description('The sending domain\'s standing; null when no domain is configured.'),
+            'usage' => Schemas::usage($schema)->description('What the account behind the driver sent against its plan\'s monthly volume or its rolling quota, every app and domain on it counted.'),
             'lists' => $schema->array()->items($schema->object([
                 'key' => $schema->string()->required(),
                 'name' => $schema->string()->required(),

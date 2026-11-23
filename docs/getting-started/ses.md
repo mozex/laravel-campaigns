@@ -68,6 +68,7 @@ The credentials in the mailer need:
 - `ses:SendEmail` and `ses:SendRawEmail` to send, since Laravel's transport sends each email as raw content;
 - `ses:ApplyTrackingConfigurationOverrides` for the switch that turns SES's own tracking off on each email;
 - `ses:ListSuppressedDestinations` and `ses:GetSuppressedDestination` for the suppressions import and `unblock_contact`;
+- `ses:GetAccount` for the account's sending quota, which the overview and the start, resume and speed-up answers show;
 - `ses:BatchGetMetricData` when VDM is on.
 
 When SES denies a send, it answers 403: the email waits, and every campaign on the sending domain pauses with a reason that names the three send actions. A policy for one region, with your region, account id, sending domain and configuration set in place of the examples:
@@ -86,7 +87,7 @@ When SES denies a send, it answers 403: the email waits, and every campaign on t
     },
     {
       "Effect": "Allow",
-      "Action": ["ses:ApplyTrackingConfigurationOverrides", "ses:ListSuppressedDestinations", "ses:GetSuppressedDestination"],
+      "Action": ["ses:ApplyTrackingConfigurationOverrides", "ses:GetAccount", "ses:ListSuppressedDestinations", "ses:GetSuppressedDestination"],
       "Resource": "*",
       "Condition": {"StringEquals": {"aws:RequestedRegion": "eu-west-1"}}
     }
@@ -94,7 +95,7 @@ When SES denies a send, it answers 403: the email waits, and every campaign on t
 }
 ```
 
-The tracking switch has no resource to name, and the suppression list covers the whole account, so the second statement takes `*`, held to the region. With VDM on, add `ses:BatchGetMetricData` to it.
+The tracking switch has no resource to name, and the suppression list and the quota cover the whole account, so the second statement takes `*`, held to the region. With VDM on, add `ses:BatchGetMetricData` to it.
 
 ## What it reads back
 
@@ -135,3 +136,9 @@ CAMPAIGNS_SES_VDM=true
 ```
 
 Without it, the overview notes that the counts need VDM. SES counts no forwarded mail and no unsubscribes, so those stay null.
+
+## The sending quota
+
+SES limits how many emails the account sends in any 24 hours and how many a second, per region. `get_overview` shows them as `usage`: what the account sent in the last 24 hours, its quota, what's left and the rate. `start_campaign`, `resume_campaign` and `speed_up_campaign` show the same in their answer, and their `warnings` say when what the campaign may send in a day (its emails still to send, or its daily cap when that's lower) passes what the quota leaves. SES holds back what passes it, so the campaign's sending slows until the 24 hours allow more.
+
+The usage also notes an account still in SES's sandbox (it sends only to verified addresses, so a campaign to anyone else fails), sending paused for the account, and an enforcement status other than healthy.

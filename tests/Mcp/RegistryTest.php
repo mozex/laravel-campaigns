@@ -85,6 +85,28 @@ it('lets each principal reach exactly the tools its rights allow', function (Rig
     'a person who may run campaigns' => [Rights::Full, true],
 ]);
 
+it('answers the readings and their warnings on exactly a start, a resume and a speed-up', function (): void {
+    $answering = [];
+
+    foreach (toolClasses() as $class) {
+        $properties = app($class)->toArray()['outputSchema']['properties'] ?? [];
+
+        expect($properties)->not->toHaveKey('warning', "{$class} still answers the single warning.");
+
+        if (isset($properties['readings']) || isset($properties['warnings'])) {
+            $answering[] = $class;
+
+            expect($properties['readings']['type'] ?? null)->toBe(['object', 'null'])
+                ->and(array_keys($properties['readings']['properties'] ?? []))->toBe(['gmail', 'usage'])
+                ->and($properties['warnings'])->toMatchArray(['type' => 'array', 'items' => ['type' => 'string']]);
+        }
+    }
+
+    sort($answering);
+
+    expect($answering)->toBe([ResumeCampaignTool::class, SpeedUpCampaignTool::class, StartCampaignTool::class]);
+});
+
 it('asks the person before exactly the risky calls', function (): void {
     $asking = array_values(array_filter(toolClasses(), fn (string $class): bool => app($class)->requiresApproval()));
     sort($asking);

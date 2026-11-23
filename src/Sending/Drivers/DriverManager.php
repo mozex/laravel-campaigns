@@ -14,6 +14,7 @@ use Mozex\Campaigns\Contracts\CampaignDriver;
 use Mozex\Campaigns\Contracts\Drivers\ReadsEvents;
 use Mozex\Campaigns\Contracts\Drivers\ReadsMetrics;
 use Mozex\Campaigns\Contracts\Drivers\ReadsSuppressions;
+use Mozex\Campaigns\Contracts\Drivers\ReadsUsage;
 use Mozex\Campaigns\Contracts\Drivers\ReceivesWebhooks;
 use Throwable;
 
@@ -73,6 +74,7 @@ class DriverManager extends Manager
         'events' => ReadsEvents::class,
         'suppressions' => ReadsSuppressions::class,
         'metrics' => ReadsMetrics::class,
+        'usage' => ReadsUsage::class,
     ];
 
     /**

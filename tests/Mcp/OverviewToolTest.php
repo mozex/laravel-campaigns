@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use GuzzleHttp\Promise\PromiseInterface;
 use Illuminate\Http\Client\Request as ClientRequest;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
@@ -22,10 +23,12 @@ use Mozex\Campaigns\Models\Subscriber;
 use Mozex\Campaigns\Reports\DomainSummary;
 use Mozex\Campaigns\Reports\GmailReading;
 use Mozex\Campaigns\Reports\Overview;
+use Mozex\Campaigns\Reports\ProviderUsage;
 use Mozex\Campaigns\Sending\DomainMetrics;
 use Mozex\Campaigns\Sending\Drivers\DriverManager;
 use Mozex\Campaigns\Sending\Drivers\FakeSendOnlyDriver;
 use Mozex\Campaigns\Sending\Drivers\FakeWebhookDriver;
+use Mozex\Campaigns\Sending\Usage;
 
 it('reads every list\'s counts, the open campaigns and the placeholders with the app\'s values', function (string $driver): void {
     useDatabase($driver);
@@ -59,7 +62,13 @@ it('reads every list\'s counts, the open campaigns and the placeholders with the
     Campaign::factory()->create(['key' => 'done', 'status' => CampaignStatus::Completed]);
 
     Http::preventStrayRequests();
-    Http::fake(['https://api.mailgun.net/v1/analytics/metrics' => Http::response(['items' => []])]);
+    Http::fake([
+        // The domain's days on the mailer's host; the account's usage on
+        // both regions' hosts.
+        'https://api.mailgun.net/v1/analytics/metrics' => fn (ClientRequest $request): PromiseInterface => Http::response(['items' => $request['metrics'] === ['processed_count'] ? [mailgunMetricsDay(now(), ['processed_count' => 120])] : []]),
+        'https://api.eu.mailgun.net/v1/analytics/metrics' => Http::response(['items' => [mailgunMetricsDay(now(), ['processed_count' => 3000])]]),
+    ]);
+    config()->set('campaigns.drivers.mailgun.monthly_included', '50000');
 
     $overview = CampaignsServer::actingAs(ApiToken::factory()->readOnly()->create(), 'campaigns')
         ->tool(OverviewTool::class)
@@ -76,10 +85,24 @@ it('reads every list\'s counts, the open campaigns and the placeholders with the
 
     Http::assertSent(fn (ClientRequest $request): bool => $request['resolution'] === 'day');
 
+    expect($content['usage'])->toBe([
+        'read' => true,
+        'read_at' => now()->toIso8601String(),
+        'period' => 'month',
+        'from' => now()->utc()->startOfMonth()->toIso8601String(),
+        'to' => now()->utc()->toIso8601String(),
+        'sent' => 3120,
+        'allowance' => 50000,
+        'left' => 46880,
+        'past_allowance' => 'billed',
+        'per_second' => null,
+        'note' => null,
+    ]);
+
     expect($content['app'])->toBe('Acme')
         ->and($content['sending'])->toBe([
             'enabled' => true,
-            'driver' => ['name' => 'mailgun', 'abilities' => ['webhooks', 'events', 'suppressions', 'metrics']],
+            'driver' => ['name' => 'mailgun', 'abilities' => ['webhooks', 'events', 'suppressions', 'metrics', 'usage']],
             'mailer' => 'campaigns',
             'from_address' => 'news@news.example.com',
             'from_name' => 'Example News',
@@ -157,6 +180,10 @@ it('stays under the answer limit with every column at its longest', function (st
         fakeDriver()->count(now()->utc()->subDays($day)->toDateString(), array_fill_keys(DomainMetrics::COUNTS, 1_000_000_000));
     }
 
+    // The account's usage, every count at its longest and its notes past
+    // the cut.
+    fakeDriver()->used(PHP_INT_MAX, PHP_INT_MAX, Usage::DAY, enforced: true, perSecond: 123456.789012345, notes: [str_repeat($character, 5000), str_repeat($character, 5000)]);
+
     // Gmail's 14 days, every rate with its most digits over the stop line,
     // and Google's checks at their longest for both domains.
     $days = [];
@@ -183,6 +210,8 @@ it('stays under the answer limit with every column at its longest', function (st
     expect($content['domain']['provider']['days'])->toHaveCount(DomainSummary::DAYS)
         ->and($content['domain']['gmail']['warning'])->toContain('stop line')
         ->and($content['domain']['gmail']['compliance']['subdomain']['requirements'])->toHaveCount(GmailReading::REQUIREMENTS)
+        ->and($content['usage']['sent'])->toBe(PHP_INT_MAX)
+        ->and(mb_strlen($content['usage']['note']))->toBe(ProviderUsage::NOTE_LENGTH + 3)
         ->and($content['lists'])->toHaveCount(Overview::LIMIT)
         ->and($content['lists_total'])->toBe(Overview::LIMIT + 1)
         ->and($content['campaigns'])->toHaveCount(Overview::LIMIT)
@@ -205,6 +234,10 @@ it('says what is switched off or missing, and what a driver without each ability
         ->assertOk();
 
     $sending = structuredContent($overview)['sending'];
+
+    // No usage is read, never a count of 0.
+    expect(structuredContent($overview)['usage'])->toMatchArray(['read' => false, 'period' => null, 'sent' => null, 'allowance' => null, 'left' => null])
+        ->and(structuredContent($overview)['usage']['note'])->toBe('The campaigns driver "fake" reads no usage, so what the account sent against its plan or quota isn\'t known here.');
 
     expect($sending['enabled'])->toBeFalse()
         ->and($sending['driver'])->toBe(['name' => 'fake', 'abilities' => []])
@@ -239,7 +272,9 @@ it('says what is switched off or missing, and what a driver without each ability
         ->and($unknown['sending']['driver'])->toBe(['name' => 'postmark', 'abilities' => []])
         ->and($unknown['domain']['provider'])->toBeNull()
         ->and($unknown['sending']['notes'])->toHaveCount(1)
-        ->and($unknown['sending']['notes'][0])->toStartWith('No campaigns driver is called "postmark"');
+        ->and($unknown['sending']['notes'][0])->toStartWith('No campaigns driver is called "postmark"')
+        ->and($unknown['usage']['read'])->toBeFalse()
+        ->and($unknown['usage']['note'])->toStartWith('No campaigns driver is called "postmark"');
 });
 
 it('shows the sending domain\'s standing: its last 24 hours, its daily cap and the provider\'s counts', function (string $driver): void {

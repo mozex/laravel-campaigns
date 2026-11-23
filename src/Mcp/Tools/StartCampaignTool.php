@@ -15,14 +15,13 @@ use Laravel\Mcp\Server\Tools\Annotations\IsDestructive;
 use Laravel\Mcp\Server\Tools\Annotations\IsOpenWorld;
 use Mozex\Campaigns\Actions\StartCampaignAction;
 use Mozex\Campaigns\CampaignsException;
-use Mozex\Campaigns\Mcp\Schemas;
 use Mozex\Campaigns\Mcp\Tools\Concerns\SendsCampaigns;
 use Mozex\Campaigns\Models\Campaign;
 use Throwable;
 
 #[Name('start_campaign')]
 #[Title('Start or schedule a campaign')]
-#[Description('Starts a draft campaign now, or schedules it for a time, once the person you work for has approved the exact number of recipients and the pace. recipients must be the number preview_audience gave: the start freezes the audience and is handed back to a draft (start_error) when the count differs, so nobody uncounted is mailed. Its email is frozen with its UTM tags; its pace may be set here too. It answers at once with status starting: read get_campaign_status until it is sending, scheduled, or a draft with start_error. Refused while sending is switched off.')]
+#[Description('Starts a draft campaign now, or schedules it for a time, once the person you work for has approved the exact number of recipients and the pace. recipients must be the number preview_audience gave: the start freezes the audience and is handed back to a draft (start_error) when the count differs, so nobody uncounted is mailed. Its email is frozen with its UTM tags; its pace may be set here too. It answers at once with status starting: read get_campaign_status until it is sending, scheduled, or a draft with start_error. It also answers Gmail\'s spam rate for the sending domain and the provider\'s usage (readings), with what they warn of (warnings): at a spam rate of 0.3% or above, pause the campaign at once and tell the person. Refused while sending is switched off.')]
 #[IsOpenWorld]
 #[IsDestructive]
 class StartCampaignTool extends CampaignsTool
@@ -43,10 +42,7 @@ class StartCampaignTool extends CampaignsTool
 
     protected function output(JsonSchema $schema): array
     {
-        return [
-            'campaign' => Schemas::progress($schema),
-            'warning' => static::warningOutput($schema),
-        ];
+        return static::checkedOutput($schema);
     }
 
     public function perform(Request $request, StartCampaignAction $start): ResponseFactory
@@ -65,7 +61,7 @@ class StartCampaignTool extends CampaignsTool
             isset($input['pace']) ? static::pace($input['pace']) : null,
         );
 
-        return static::progress($campaign, warn: true);
+        return static::checked($campaign, readBack: true, approved: (int) $input['recipients']);
     }
 
     /**

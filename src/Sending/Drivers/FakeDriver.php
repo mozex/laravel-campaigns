@@ -8,6 +8,7 @@ use Mozex\Campaigns\Contracts\CampaignDriver;
 use Mozex\Campaigns\Contracts\Drivers\ReadsEvents;
 use Mozex\Campaigns\Contracts\Drivers\ReadsMetrics;
 use Mozex\Campaigns\Contracts\Drivers\ReadsSuppressions;
+use Mozex\Campaigns\Contracts\Drivers\ReadsUsage;
 use Mozex\Campaigns\Contracts\Drivers\ReceivesWebhooks;
 
 /**
@@ -16,7 +17,7 @@ use Mozex\Campaigns\Contracts\Drivers\ReceivesWebhooks;
  * campaigns.driver "fake"; the manager keeps the one it builds, so a test
  * reads what was sent from it.
  */
-class FakeDriver implements CampaignDriver, ReadsEvents, ReadsMetrics, ReadsSuppressions, ReceivesWebhooks
+class FakeDriver implements CampaignDriver, ReadsEvents, ReadsMetrics, ReadsSuppressions, ReadsUsage, ReceivesWebhooks
 {
     use FakesDriver;
 }

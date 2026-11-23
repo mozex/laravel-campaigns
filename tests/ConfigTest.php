@@ -45,7 +45,8 @@ it('defaults to the mailgun driver, keeping Mailgun\'s env names', function (): 
     $config = file_get_contents(__DIR__.'/../config/campaigns.php');
 
     expect($defaults['driver'])->toBe('mailgun')
-        ->and($defaults['drivers']['mailgun'])->toHaveKeys(['webhook_signing_key', 'api_key', 'endpoint', 'log_days'])
+        ->and($defaults['drivers']['mailgun'])->toHaveKeys(['webhook_signing_key', 'api_key', 'endpoint', 'log_days', 'monthly_included'])
+        ->and($config)->toContain("env('CAMPAIGNS_MAILGUN_MONTHLY_INCLUDED')")
         ->and($config)->toContain("env('CAMPAIGNS_DRIVER', 'mailgun')")
         ->and($config)->toContain("env('MAILGUN_WEBHOOK_SIGNING_KEY')")
         ->and($config)->toContain("env('CAMPAIGNS_MAILGUN_API_KEY')")
@@ -56,11 +57,13 @@ it('fills a published nested group in from the defaults', function (): void {
     config()->set('campaigns', [
         'pace' => ['first_day' => 500],
         'domain_daily_caps' => ['news.example.com' => 3000],
+        'drivers' => ['mailgun' => ['webhook_signing_key' => 'key', 'api_key' => 'reader', 'endpoint' => null, 'log_days' => 30]],
     ]);
 
     (new CampaignsServiceProvider(app()))->packageRegistered();
 
-    expect(config('campaigns.pace.first_day'))->toBe(500)
+    expect(config('campaigns.drivers.mailgun'))->toBe(['webhook_signing_key' => 'key', 'api_key' => 'reader', 'endpoint' => null, 'log_days' => 30, 'monthly_included' => null])
+        ->and(config('campaigns.pace.first_day'))->toBe(500)
         ->and(config('campaigns.pace.per_minute'))->toBe(10)
         ->and(config('campaigns.stop_loss.complaint_rate'))->toBe(0.08)
         ->and(config('campaigns.postmaster'))->toBe(['credentials' => null])

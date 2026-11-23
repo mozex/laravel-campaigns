@@ -374,6 +374,21 @@ function mailgunLogs(array $items, ?string $next = null): array
 }
 
 /**
+ * One day's item in a Metrics API answer, in the documented shape
+ * (tests/Fixtures/Mailgun/metrics.json): its time dimension the day's first
+ * instant (UTC) as an RFC 2822 time.
+ *
+ * @param  array<string, mixed>  $metrics
+ * @return array<string, mixed>
+ */
+function mailgunMetricsDay(CarbonInterface $day, array $metrics): array
+{
+    $time = Carbon::instance($day)->utc()->startOfDay()->toRfc2822String();
+
+    return ['metrics' => $metrics, 'dimensions' => [['dimension' => 'time', 'value' => $time, 'display_value' => $time]]];
+}
+
+/**
  * A webhook request's body as Mailgun posts it: the event, and a signature
  * of its timestamp (now, unless given) and token made with the given key.
  *

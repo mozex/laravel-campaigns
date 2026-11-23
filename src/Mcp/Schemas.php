@@ -18,7 +18,9 @@ use Mozex\Campaigns\Reports\AssetSummary;
 use Mozex\Campaigns\Reports\CampaignSummary;
 use Mozex\Campaigns\Reports\ListActivity;
 use Mozex\Campaigns\Reports\ListSummary;
+use Mozex\Campaigns\Reports\ProviderUsage;
 use Mozex\Campaigns\Reports\SubscriberSummary;
+use Mozex\Campaigns\Sending\Usage;
 
 /**
  * The shapes several tools answer with, declared once.
@@ -254,6 +256,40 @@ class Schemas
                 'subdomain' => $compliance,
             ])->nullable()->required()->description('Google\'s bulk-sender checks for the registrable domain and, when Google has them, the sending subdomain itself.'),
         ]);
+    }
+
+    /**
+     * What the account behind the driver sent against its allowance
+     * (ProviderUsage::read()).
+     */
+    public static function usage(JsonSchema $schema): Type
+    {
+        return $schema->object([
+            'read' => $schema->boolean()->required()->description('Whether the provider answered; false when the driver reads no usage or the read failed (note says which).'),
+            'read_at' => $schema->string()->nullable()->required()->description('When the provider answered: a reading is kept for an hour.'),
+            'period' => $schema->string()->enum([Usage::MONTH, Usage::DAY])->nullable()->required()->description('month: the calendar month (UTC) so far, for a plan with a monthly volume; last_24_hours: a rolling quota.'),
+            'from' => $schema->string()->nullable()->required(),
+            'to' => $schema->string()->nullable()->required(),
+            'sent' => $schema->integer()->nullable()->required()->description('What the provider counted in the period for the whole account, every app and domain on it (with a plan, what it bills, forwarded mail included).'),
+            'allowance' => $schema->integer()->nullable()->required()->description('What the plan includes or the quota allows in the period; null when unlimited or not known (note says which).'),
+            'left' => $schema->integer()->nullable()->required(),
+            'past_allowance' => $schema->string()->enum(ProviderUsage::PAST_ALLOWANCE)->nullable()->required()->description('What the provider does with mail past the allowance: billed (as overage) or held_back (sending slows until the period allows more).'),
+            'per_second' => $schema->number()->nullable()->required()->description('The most emails the provider takes a second, when it sets a limit.'),
+            'note' => $schema->string()->nullable()->required()->description('Why the usage wasn\'t read, what the count leaves out, or what the account\'s state means for sending.'),
+        ]);
+    }
+
+    /**
+     * What the start, resume and speed-up answers read after the change:
+     * Gmail's numbers for the campaign's sending domain and the provider's
+     * usage.
+     */
+    public static function readings(JsonSchema $schema): Type
+    {
+        return $schema->object([
+            'gmail' => static::gmail($schema)->required()->description('Gmail\'s numbers for the campaign\'s sending domain, as get_overview\'s domain.gmail.'),
+            'usage' => static::usage($schema)->required()->description('What the account sent against its plan or quota, as get_overview\'s usage.'),
+        ])->nullable()->description('Null when they couldn\'t be read; warnings says so.');
     }
 
     /**

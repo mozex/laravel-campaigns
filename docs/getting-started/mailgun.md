@@ -40,6 +40,18 @@ Where your plan offers roles, the Support role is the narrowest one that reads l
 
 Without the key, Mailgun's logs aren't read: events a webhook missed and sends that ended unclear stay unsettled, `campaigns:reconcile` fails every run (after putting back lost jobs and queueing unprocessed events again), and the overview's notes say the domain's counts couldn't be read for want of it.
 
+## Your plan's monthly volume
+
+The same key reads how many emails the whole account has processed this month, the number Mailgun bills: every domain and app on the account, and the inbound mail your routes forward. Each Mailgun region reports only its own domains while one plan covers both, so the package reads `api.mailgun.net` and `api.eu.mailgun.net` and adds them up, whatever `CAMPAIGNS_MAILGUN_ENDPOINT` says. The month is the calendar month in UTC, which is when Mailgun's billing cycle starts again.
+
+Tell the package how many emails your plan includes, and agents are warned when a campaign would take the account past it:
+
+```dotenv
+CAMPAIGNS_MAILGUN_MONTHLY_INCLUDED=50000
+```
+
+`get_overview` shows the count as `usage`, and `start_campaign`, `resume_campaign` and `speed_up_campaign` show it again in their answer. When this month's count plus the campaign's emails still to send passes the plan, their `warnings` say by how many. Mailgun bills those as overage rather than refusing them, so nothing is stopped. A region that can't be read leaves the other's count with a note saying so.
+
 ## Suppressions you already have
 
 If the domain has sent before, Mailgun already holds addresses that bounced, complained or unsubscribed. Bring them in as blocks and opt-outs before the first campaign:

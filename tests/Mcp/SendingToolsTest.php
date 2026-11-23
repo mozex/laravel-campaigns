@@ -2,10 +2,14 @@
 
 declare(strict_types=1);
 
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Exceptions;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
 use Mozex\Campaigns\Actions\CreateCampaignAction;
 use Mozex\Campaigns\Actions\FreezeCampaignAction;
+use Mozex\Campaigns\Campaigns;
 use Mozex\Campaigns\Content\EmailSource;
 use Mozex\Campaigns\Enums\CampaignStatus;
 use Mozex\Campaigns\Enums\FeedbackType;
@@ -29,10 +33,14 @@ use Mozex\Campaigns\Models\CampaignList;
 use Mozex\Campaigns\Models\CampaignMessage;
 use Mozex\Campaigns\Models\ProviderEvent;
 use Mozex\Campaigns\Reports\CampaignReport;
+use Mozex\Campaigns\Reports\GmailReading;
+use Mozex\Campaigns\Reports\ProviderUsage;
 use Mozex\Campaigns\Reports\ReportSummary;
 use Mozex\Campaigns\Sending\Drivers\DriverManager;
+use Mozex\Campaigns\Sending\Drivers\FakeDriver;
 use Mozex\Campaigns\Sending\Drivers\FakeSendOnlyDriver;
 use Mozex\Campaigns\Sending\Pace;
+use Mozex\Campaigns\Sending\Usage;
 
 beforeEach(function (): void {
     sendFromExample();
@@ -288,9 +296,133 @@ it('warns on starting and resuming through a driver that reads nothing back, and
     $resumed = structuredContent(agent()->tool(ResumeCampaignTool::class, ['key' => 'april'])->assertOk());
     $paused = structuredContent(agent()->tool(PauseCampaignTool::class, ['key' => 'april'])->assertOk());
 
-    expect($quiet['warning'])->toBeNull()
-        ->and($started['warning'])->toStartWith('The campaigns driver "fake" reads nothing back from its service')
-        ->and($started['warning'])->toContain('no bounce, spam report or unsubscribe made at the service reaches the package')
-        ->and($resumed['warning'])->toBe($started['warning'])
-        ->and($paused)->not->toHaveKey('warning');
+    $sped = structuredContent(agent()->tool(SpeedUpCampaignTool::class, ['key' => 'april', 'pace' => ['per_minute' => 50]])->assertOk());
+
+    expect($quiet['warnings'])->toBe([])
+        ->and($started['warnings'])->toHaveCount(1)
+        ->and($started['warnings'][0])->toStartWith('The campaigns driver "fake" reads nothing back from its service')
+        ->and($started['warnings'][0])->toContain('no bounce, spam report or unsubscribe made at the service reaches the package')
+        ->and($resumed['warnings'])->toBe($started['warnings'])
+        // A speed-up changes nothing the driver reads back.
+        ->and($sped['warnings'])->toBe([])
+        ->and($paused)->not->toHaveKeys(['warnings', 'readings']);
 });
+
+it('answers a start, a resume and a speed-up with Gmail\'s spam rate and the provider\'s usage, and what they warn of', function (string $driver): void {
+    useDatabase($driver);
+    $this->travelTo(Carbon::parse('2026-11-23 12:00:00', 'UTC'));
+    Queue::fake([FreezeCampaignJob::class, SendMessageJob::class]);
+    fakeGoogle(postmasterStats(['2026-11-21' => ['spam_rate' => 0.0035]]));
+    fakeDriver()->used(49_990, 50_000);
+    draftFor(5);
+
+    // The freeze is queued, so the approved count is what is still to send:
+    // 49,990 and 5 stay inside the plan.
+    $started = structuredContent(agent()->tool(StartCampaignTool::class, ['key' => 'march', 'recipients' => 5])->assertOk());
+
+    expect($started['campaign']['status'])->toBe('starting')
+        ->and($started['readings']['gmail'])->toMatchArray(['read' => true, 'spam_rate' => 0.35, 'spam_rate_date' => '2026-11-21'])
+        ->and($started['readings']['usage'])->toMatchArray(['read' => true, 'period' => 'month', 'sent' => 49_990, 'allowance' => 50_000, 'left' => 10, 'past_allowance' => 'billed'])
+        ->and($started['warnings'])->toBe([$started['readings']['gmail']['warning']])
+        ->and($started['warnings'][0])->toContain('stop line');
+
+    Cache::flush();
+    fakeDriver()->used(49_999, 50_000);
+    Queue::pushed(FreezeCampaignJob::class)->first()->handle(app(FreezeCampaignAction::class));
+    agent()->tool(PauseCampaignTool::class, ['key' => 'march'])->assertOk();
+    CampaignMessage::query()->whereKey(CampaignMessage::query()->min('id'))->update(['status' => MessageStatus::Sent, 'sent_at' => now()]);
+
+    // A resume counts its emails still to send: four of five.
+    $resumed = structuredContent(agent()->tool(ResumeCampaignTool::class, ['key' => 'march'])->assertOk());
+
+    expect($resumed['campaign']['status'])->toBe('sending')
+        ->and($resumed['warnings'])->toHaveCount(2)
+        ->and($resumed['warnings'][1])->toBe('The account has sent 49999 of the 50000 emails its plan includes this month: with this campaign\'s 4 still to send, it passes them by 3, which the provider bills as overage if they all go this month.');
+
+    // A quota: the lesser of the emails still to send and the daily cap,
+    // against what the last 24 hours left.
+    Cache::flush();
+    fakeDriver()->used(198, 200, Usage::DAY, enforced: true, perSecond: 14.0);
+    $fits = structuredContent(agent()->tool(SpeedUpCampaignTool::class, ['key' => 'march', 'pace' => ['daily_cap' => 2]])->assertOk());
+    $capped = structuredContent(agent()->tool(SpeedUpCampaignTool::class, ['key' => 'march', 'pace' => ['daily_cap' => 3]])->assertOk());
+    $uncapped = structuredContent(agent()->tool(SpeedUpCampaignTool::class, ['key' => 'march', 'pace' => ['daily_cap' => null]])->assertOk());
+
+    expect($fits['readings']['usage'])->toMatchArray(['period' => 'last_24_hours', 'sent' => 198, 'allowance' => 200, 'left' => 2, 'past_allowance' => 'held_back', 'per_second' => 14.0])
+        ->and($fits['warnings'])->toHaveCount(1)
+        ->and($capped['warnings'][1])->toBe('The account may send 2 more of its 200 in 24 hours (it sent 198 in the last 24), while its daily cap lets it send 3 in a day: what passes the quota the provider holds back, so its sending slows.')
+        ->and($uncapped['warnings'][1])->toBe('The account may send 2 more of its 200 in 24 hours (it sent 198 in the last 24), while its 4 emails still to send could go within a day: what passes the quota the provider holds back, so its sending slows.');
+
+    // Past the plan already, every email still to send is overage; none
+    // warns of a campaign with nothing left.
+    $past = ['period' => Usage::MONTH, 'sent' => 60_000, 'allowance' => 50_000, 'past_allowance' => 'billed'];
+
+    expect(ProviderUsage::warning($past, 4, null))->toContain('passes them by 4,')
+        ->and(ProviderUsage::warning($past, 0, null))->toBeNull()
+        ->and(ProviderUsage::warning([...$past, 'allowance' => null], 4, null))->toBeNull();
+})->with('databases');
+
+it('answers a start whose readings can\'t be read, since the start is already made', function (): void {
+    Queue::fake([FreezeCampaignJob::class, SendMessageJob::class]);
+    Exceptions::fake();
+    draftFor(1);
+    draftFor(1, 'may');
+
+    // A driver an app registered whose usage fails in its own way.
+    app(DriverManager::class)->swap('fake', new class extends FakeDriver
+    {
+        public function usage(): Usage
+        {
+            throw new RuntimeException('The usage broke for reader@example.org.');
+        }
+    });
+
+    $started = structuredContent(agent()->tool(StartCampaignTool::class, ['key' => 'march', 'recipients' => 1])->assertOk()->assertHasNoErrors());
+
+    expect($started['campaign']['status'])->toBe('starting')
+        ->and($started['readings']['usage'])->toMatchArray(['read' => false, 'sent' => null])
+        ->and($started['readings']['usage']['note'])->toBe('The provider\'s usage couldn\'t be read (RuntimeException). It is read again after 5 minutes.')
+        ->and(json_encode($started))->not->toContain('reader@example.org');
+
+    Exceptions::assertReported(fn (RuntimeException $exception): bool => $exception->getMessage() === 'The usage broke for reader@example.org.');
+
+    // A driver that can't even be built.
+    app(Campaigns::class)->extend('broken', fn (): never => throw new LogicException('The creator broke.'));
+    config(['campaigns.driver' => 'broken']);
+
+    $broken = structuredContent(agent()->tool(StartCampaignTool::class, ['key' => 'may', 'recipients' => 1])->assertOk()->assertHasNoErrors());
+
+    expect(Campaign::forKey('may')->status)->toBe(CampaignStatus::Starting)
+        ->and($broken['readings'])->toBeNull()
+        ->and($broken['warnings'])->toBe(['The readings couldn\'t be read (LogicException), so nothing here says how Gmail\'s spam rate, the provider\'s usage or the driver stand: read get_overview before going on.']);
+
+    Exceptions::assertReported(fn (LogicException $exception): bool => $exception->getMessage() === 'The creator broke.');
+});
+
+it('stays under the answer limit with the readings at their longest', function (string $character): void {
+    Queue::fake([FreezeCampaignJob::class, SendMessageJob::class]);
+    draftFor(1);
+    Campaign::forKey('march')->forceFill(['name' => mb_substr(str_repeat($character, 255), 0, 255)])->save();
+
+    $days = [];
+
+    foreach (range(1, GmailReading::DAYS) as $day) {
+        $days[now()->utc()->subDays($day)->toDateString()] = array_fill_keys(array_keys(GmailReading::METRICS), 0.1234567);
+    }
+
+    $checks = [
+        'domainId' => str_repeat('d', 253),
+        'rowData' => array_map(fn (int $n): array => ['requirement' => str_pad("R{$n}_", 40, 'X'), 'status' => ['status' => str_repeat('N', 40)]], range(1, GmailReading::REQUIREMENTS + 5)),
+        'oneClickUnsubscribeVerdict' => ['status' => ['status' => str_repeat('N', 40)], 'reason' => str_repeat('R', 40)],
+        'honorUnsubscribeVerdict' => ['status' => ['status' => str_repeat('N', 40)], 'reason' => str_repeat('R', 40)],
+        'deliverabilityStatusVerdict' => ['state' => ['status' => str_repeat('N', 40)], 'reason' => str_repeat('R', 40)],
+    ];
+
+    fakeGoogle(postmasterStats($days), ['complianceData' => $checks, 'subdomainComplianceData' => $checks]);
+    app(DriverManager::class)->swap('fake', (new FakeDriver)->used(PHP_INT_MAX, PHP_INT_MAX - 1, Usage::DAY, enforced: true, perSecond: 123456.789012345, notes: [str_repeat($character, 5000)]));
+
+    $answer = structuredContent(agent()->tool(StartCampaignTool::class, ['key' => 'march', 'recipients' => 1])->assertOk()->assertHasNoErrors());
+
+    expect(mb_strlen((string) json_encode($answer, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)))->toBeLessThan(CampaignsTool::RESULT_LIMIT)
+        ->and($answer['readings']['gmail']['compliance']['subdomain']['requirements'])->toHaveCount(GmailReading::REQUIREMENTS)
+        ->and($answer['warnings'])->toHaveCount(2);
+})->with('costly characters');

@@ -28,7 +28,7 @@ Some services refuse an email as it's handed over, as an SMTP server does with a
 
 ## Drivers that read nothing back
 
-A driver with neither webhooks nor logs, such as the [SMTP driver](../getting-started/smtp.md), never learns what happens to an email after its service takes it. No delivery, bounce or spam report reaches the package, and neither does an unsubscribe made at the service; the package's own unsubscribe page and the one-click header still work. So its emails end at `sent`, the stop-loss sees only refusals while sending, and the report divides opens and clicks by sent emails. `get_overview` says this, and so do `start_campaign` and `resume_campaign` in their `warning`.
+A driver with neither webhooks nor logs, such as the [SMTP driver](../getting-started/smtp.md), never learns what happens to an email after its service takes it. No delivery, bounce or spam report reaches the package, and neither does an unsubscribe made at the service; the package's own unsubscribe page and the one-click header still work. So its emails end at `sent`, the stop-loss sees only refusals while sending, and the report divides opens and clicks by sent emails. `get_overview` says this, and so do `start_campaign` and `resume_campaign` in their `warnings`.
 
 ## The stop-loss
 
@@ -52,7 +52,7 @@ What paused a campaign counts again from that pause, so a campaign someone resum
 
 ## Gmail's spam rate
 
-Gmail tells no sender who marked its mail as spam. It reports only a daily rate per domain, in [Google Postmaster Tools](https://postmaster.google.com), and Google asks bulk senders to keep it under 0.1% and never let it reach 0.3%. The package reads it for the sending domain, so an agent sees it in `get_overview`'s `domain.gmail` before it asks to start or speed up a campaign.
+Gmail tells no sender who marked its mail as spam. It reports only a daily rate per domain, in [Google Postmaster Tools](https://postmaster.google.com), and Google asks bulk senders to keep it under 0.1% and never let it reach 0.3%. The package reads it for the sending domain, so an agent sees it in `get_overview`'s `domain.gmail` before it asks to start or speed up a campaign, and again in the `readings` that `start_campaign`, `resume_campaign` and `speed_up_campaign` answer, with the warning in their `warnings`.
 
 To turn it on:
 
@@ -79,7 +79,7 @@ The package signs in with that key, asking only for the read-only `postmaster.tr
 | `compliance` | Google's checks (SPF and DKIM, DMARC, encryption, one-click unsubscribe and the rest) for the registrable domain and the subdomain you send from |
 | `read`, `note` | whether Google answered, and why not when it didn't |
 
-Gmail reports a day only when the domain sent it enough mail. A day with no report, a day it fills with zeros (DKIM and SPF included) and a day without a spam rate show as `null`: unknown, never clean. A new or quiet domain often has no known day at all. The warning refuses nothing: whether to start, slow down or pause stays with the agent and the person it works for.
+Gmail reports a day only when the domain sent it enough mail. A day with no report, a day it fills with zeros (DKIM and SPF included) and a day without a spam rate show as `null`: unknown, never clean. A new or quiet domain often has no known day at all. The warning refuses nothing: whether to start, slow down or pause stays with the agent and the person it works for. The guide tells agents to pause a campaign at once when a start or a resume answers a rate at 0.3% or above, and never to speed one up at 0.1% or above.
 
 A reading is kept in `campaigns.cache_store` for an hour, so Google is asked at most once an hour; a failed one is tried again after 5 minutes. Each request gives up after 10 seconds. The key, the signed sign-in request and the access token never reach a log, an exception or an answer.
 

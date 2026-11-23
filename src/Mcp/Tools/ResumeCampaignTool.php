@@ -13,13 +13,12 @@ use Laravel\Mcp\Server\Attributes\Title;
 use Laravel\Mcp\Server\Tools\Annotations\IsDestructive;
 use Laravel\Mcp\Server\Tools\Annotations\IsOpenWorld;
 use Mozex\Campaigns\Actions\ResumeCampaignAction;
-use Mozex\Campaigns\Mcp\Schemas;
 use Mozex\Campaigns\Mcp\Tools\Concerns\SendsCampaigns;
 use Mozex\Campaigns\Models\Campaign;
 
 #[Name('resume_campaign')]
 #[Title('Resume a paused campaign')]
-#[Description('Resumes a paused campaign where it stopped, once the person you work for has approved it knowing why it paused: an automatic pause names the numbers and the limit that stopped it, and resuming counts its limits again from that pause. One paused before its scheduled time that is still ahead waits for it again; after a pause of more than a day the pace starts again from its first day. Refused while sending is switched off.')]
+#[Description('Resumes a paused campaign where it stopped, once the person you work for has approved it knowing why it paused: an automatic pause names the numbers and the limit that stopped it, and resuming counts its limits again from that pause. One paused before its scheduled time that is still ahead waits for it again; after a pause of more than a day the pace starts again from its first day. It also answers Gmail\'s spam rate for the sending domain and the provider\'s usage (readings), with what they warn of (warnings): at a spam rate of 0.3% or above, pause the campaign at once and tell the person. Refused while sending is switched off.')]
 #[IsOpenWorld]
 #[IsDestructive]
 class ResumeCampaignTool extends CampaignsTool
@@ -37,10 +36,7 @@ class ResumeCampaignTool extends CampaignsTool
 
     protected function output(JsonSchema $schema): array
     {
-        return [
-            'campaign' => Schemas::progress($schema),
-            'warning' => static::warningOutput($schema),
-        ];
+        return static::checkedOutput($schema);
     }
 
     public function perform(Request $request, ResumeCampaignAction $resume): ResponseFactory
@@ -49,6 +45,6 @@ class ResumeCampaignTool extends CampaignsTool
             'key' => ['required', 'string'],
         ]);
 
-        return static::progress($resume->execute(Campaign::forKey($input['key'])), warn: true);
+        return static::checked($resume->execute(Campaign::forKey($input['key'])), readBack: true);
     }
 }

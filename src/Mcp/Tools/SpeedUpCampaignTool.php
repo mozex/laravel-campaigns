@@ -19,7 +19,7 @@ use Mozex\Campaigns\Models\Campaign;
 
 #[Name('speed_up_campaign')]
 #[Title('Speed a campaign up')]
-#[Description('Changes a campaign\'s pace (before it starts, while scheduled, sending or paused) in any way, faster included, once the person you work for has approved the new pace knowing the sending domain\'s standing (get_overview) and the campaign\'s numbers so far. Only the values given change. Refused while sending is switched off.')]
+#[Description('Changes a campaign\'s pace (before it starts, while scheduled, sending or paused) in any way, faster included, once the person you work for has approved the new pace knowing the sending domain\'s standing (get_overview) and the campaign\'s numbers so far: never while Gmail\'s spam rate for the domain is at 0.1% or above. Only the values given change. It also answers Gmail\'s spam rate and the provider\'s usage (readings), with what they warn of (warnings). Refused while sending is switched off.')]
 #[IsIdempotent]
 #[IsOpenWorld]
 #[IsDestructive]
@@ -37,6 +37,11 @@ class SpeedUpCampaignTool extends CampaignsTool
         ];
     }
 
+    protected function output(JsonSchema $schema): array
+    {
+        return static::checkedOutput($schema);
+    }
+
     public function perform(Request $request, ChangePaceAction $change): ResponseFactory
     {
         $input = $request->validate([
@@ -44,6 +49,6 @@ class SpeedUpCampaignTool extends CampaignsTool
             'pace' => ['present', 'array'],
         ]);
 
-        return static::progress($change->execute(Campaign::forKey($input['key']), static::pace($input['pace']), faster: true));
+        return static::checked($change->execute(Campaign::forKey($input['key']), static::pace($input['pace']), faster: true), readBack: false);
     }
 }

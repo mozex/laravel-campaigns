@@ -17,7 +17,7 @@ Tools marked "asks" carry the `anthropic/requiresUserInteraction` flag, so Claud
 
 | Tool | | What it does |
 |---|---|---|
-| `get_overview` | R | how sending is set up and what's switched off, the sending domain's standing (Gmail's spam rate among it), every list with its counts, the default lists first, the campaigns running, and the placeholders an email may use |
+| `get_overview` | R | how sending is set up and what's switched off, the sending domain's standing (Gmail's spam rate among it), what the provider account sent against its plan or quota, every list with its counts, the default lists first, the campaigns running, and the placeholders an email may use |
 | `get_guide` | R | the full workflow agents follow, and your app's own resources a page at a time |
 
 **Lists and people**
@@ -88,6 +88,12 @@ The server's instructions tell an agent to call `get_overview` first and read th
 10. Watch it, and pause it the moment something looks wrong.
 
 A start freezes the audience and the email in a queued job and answers `starting` at once. When the count it finds differs from the one approved, the campaign goes back to a draft with `start_error` saying why, and the agent previews and asks again.
+
+## The same checks in every client
+
+`start_campaign`, `resume_campaign` and `speed_up_campaign` read the server's own numbers again once the change is made, and answer them beside the campaign: `readings` holds Gmail's spam rate for the sending domain and the provider's usage, as `get_overview` shows them, and `warnings` lists in words what needs the person's attention. A warning comes when Gmail's rate is at 0.1% or above (worded for Google's stop line at 0.3%), when the campaign would take the account past its plan's monthly volume or its daily quota, and, on a start or a resume, when the driver reads nothing back from its service.
+
+Because the server reads these itself, an agent in Claude Code, Claude's desktop app, claude.ai or ChatGPT works from the same numbers. The guide tells it to read `get_overview` before asking for a start, a resume or a speed-up, to pause a campaign at once and tell the person when an answer shows Gmail's rate at 0.3% or above, to never speed up at 0.1% or above, and to read the overview again before a scheduled campaign's start time. A warning refuses nothing: the person decides. A reading that fails is a warning too, since the change is already made.
 
 ## Answers
 

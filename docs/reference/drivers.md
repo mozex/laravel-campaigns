@@ -21,10 +21,13 @@ What else a service offers, a driver says by implementing the abilities in `Moze
 | `ReadsEvents` | `eventsForMessage()`, `eventsBetween()`, `logDays()` | nothing a webhook missed is replayed, an email whose send ended unclear stays `unknown`, never resent, and one its job left `sending` becomes `unknown` after 15 minutes |
 | `ReadsSuppressions` | `suppressions()`, `suppressionsFor()` | `campaigns:import-provider-suppressions` refuses, and `unblock_contact` answers `checked: false` with the reason |
 | `ReadsMetrics` | `domainMetrics()` | `get_overview`'s `domain.provider` is null, with a note |
+| `ReadsUsage` | `usage()` | `get_overview`'s `usage` and the start, resume and speed-up answers' `readings.usage` say it wasn't read, and nothing warns about a plan or quota |
 
 A driver with neither `ReceivesWebhooks` nor `ReadsEvents` reads nothing back: its emails end at `sent`, never `delivered`, the report divides opens and clicks by sent emails, and the stop-loss sees only what's refused while sending ([Feedback](../campaigns/feedback.md#drivers-that-read-nothing-back)). `get_overview`, `start_campaign` and `resume_campaign` warn about it.
 
-The Mailgun driver has all four abilities. The Amazon SES driver takes webhooks and reads its suppression list and daily counts, but has no logs. The SMTP driver has none. The fake has all four too; `FakeSendOnlyDriver` (send only) and `FakeWebhookDriver` (webhooks and suppression lists) share its `FakesDriver` trait, for testing what the package does with fewer.
+`usage()` returns a `Mozex\Campaigns\Sending\Usage`: what the whole account sent in its period (`Usage::MONTH`, the calendar month in UTC, for a plan with a monthly volume; `Usage::DAY`, the last 24 hours, for a rolling quota), the allowance for that period (null when there's no limit or none is known), whether the service holds back mail past it or bills it, the most it takes a second, and notes in words. The package keeps a reading for an hour.
+
+The Mailgun driver has all five abilities. The Amazon SES driver takes webhooks and reads its suppression list, daily counts and sending quota, but has no logs. The SMTP driver has none. The fake has all five too; `FakeSendOnlyDriver` (send only) and `FakeWebhookDriver` (webhooks and suppression lists) share its `FakesDriver` trait, for testing what the package does with fewer.
 
 ## Registering a driver
 

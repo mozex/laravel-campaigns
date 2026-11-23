@@ -18,7 +18,8 @@ use Mozex\Campaigns\Support\TestAddresses;
 
 /**
  * What an agent reads first: how sending is set up and what is switched
- * off, the sending domain's standing (DomainSummary), the lists with their
+ * off, the sending domain's standing (DomainSummary), what the account
+ * sent against its plan or quota (ProviderUsage), the lists with their
  * counts, the campaigns running or waiting, and the placeholders an email
  * may hold with this app's values.
  */
@@ -96,6 +97,7 @@ class Overview
             'package_version' => static::version(),
             'sending' => $sending,
             'domain' => $domain,
+            'usage' => ProviderUsage::read(),
             'lists' => static::lists(),
             'lists_total' => CampaignList::query()->active()->count(),
             'campaigns' => static::campaigns(),

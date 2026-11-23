@@ -25,12 +25,13 @@ $driver = app(DriverManager::class)->get('fake');
 $driver->sent();                          // every OutgoingMessage sent: to, subject, html, text...
 $driver->failNext(new SendFailed(SendFailure::NotAccepted, 'Rate limited', 429));
 $driver->count('2026-01-15', ['sent' => 1200, 'hard_bounces' => 3]);  // the domain's counts that day
-$driver->failReads();                     // every read of logs, suppression lists or metrics throws
+$driver->used(49_000, allowance: 50_000); // the account's usage this month
+$driver->failReads();                     // every read of logs, suppression lists, metrics or usage throws
 $driver->readsWork();                     // until this
 $driver->keepLogsFor(30);
 ```
 
-`log()` and `suppress()` fill its logs and suppression lists, for code that reconciles or imports them, and `webhook()` gives the next request to `/campaigns/webhooks/fake` the events it carries (a request made without it is refused).
+`log()` and `suppress()` fill its logs and suppression lists, for code that reconciles or imports them, and `webhook()` gives the next request to `/campaigns/webhooks/fake` the events it carries (a request made without it is refused). Until `used()` is called, the account has sent nothing this month and has no allowance. For a rolling quota, pass `period: Usage::DAY, enforced: true` (`Mozex\Campaigns\Sending\Usage`). The package keeps a usage reading in `campaigns.cache_store` for an hour, so clear that cache before changing it within a test.
 
 The fake has every ability a driver can have. To see what your code does with a driver that has fewer, put `FakeSendOnlyDriver` (it only sends) or `FakeWebhookDriver` (webhooks and suppression lists, no logs or counts) in its place; both take the same calls:
 

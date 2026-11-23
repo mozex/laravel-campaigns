@@ -14,6 +14,7 @@ use Mozex\Campaigns\Sending\OutgoingMessage;
 use Mozex\Campaigns\Sending\SendFailed;
 use Mozex\Campaigns\Sending\SendReceipt;
 use Mozex\Campaigns\Sending\Suppression;
+use Mozex\Campaigns\Sending\Usage;
 
 /**
  * What the fake drivers record and answer, shared so a test can pick the
@@ -22,8 +23,9 @@ use Mozex\Campaigns\Sending\Suppression;
  * keeps every message it is given and answers with a made-up id, or with
  * the failures it was told to give (failNext()); its webhooks carry what it
  * was told to post (webhook()), its logs and suppression lists hold what it
- * was given (log(), suppress()), its domain counts what it was told
- * (count()), and its reads can be made to fail (failReads()). It keeps
+ * was given (log(), suppress()), its domain counts and the account's usage
+ * what it was told (count(), used(); none sent this month with no
+ * allowance until then), and its reads can be made to fail (failReads()). It keeps
  * every message for the life of the process, so it suits tests and short
  * local runs, not a long-running worker.
  */
@@ -50,6 +52,14 @@ trait FakesDriver
 
     /** @var array<string, array{sent: ?int, forwarded: ?int, hard_bounces: ?int, complaints: ?int, unsubscribes: ?int}> */
     protected array $metrics = [];
+
+    /**
+     * The usage used() set: what Usage takes but its times, which are
+     * worked out when read.
+     *
+     * @var array{period: string, sent: int, allowance: ?int, enforced: bool, perSecond: ?float, notes: list<string>}
+     */
+    protected array $usage = ['period' => Usage::MONTH, 'sent' => 0, 'allowance' => null, 'enforced' => false, 'perSecond' => null, 'notes' => []];
 
     /**
      * Refused in production, for the whole domain: it would mark a campaign
@@ -235,7 +245,31 @@ trait FakesDriver
     }
 
     /**
-     * Every read of the logs, suppression lists or metrics throws this (by
+     * What the account has sent in its period and what the period allows
+     * (Usage says what each value means): a plan's month by default, or
+     * the last 24 hours (Usage::DAY) for a quota.
+     *
+     * @param  list<string>  $notes
+     */
+    public function used(int $sent, ?int $allowance = null, string $period = Usage::MONTH, bool $enforced = false, ?float $perSecond = null, array $notes = []): static
+    {
+        $this->usage = ['period' => $period, 'sent' => $sent, 'allowance' => $allowance, 'enforced' => $enforced, 'perSecond' => $perSecond, 'notes' => $notes];
+
+        return $this;
+    }
+
+    public function usage(): Usage
+    {
+        $this->throwReadFailure();
+
+        $now = now()->utc();
+        $from = $this->usage['period'] === Usage::DAY ? $now->copy()->subDay() : $now->copy()->startOfMonth();
+
+        return new Usage($this->usage['period'], $from, $now, $this->usage['sent'], $this->usage['allowance'], $this->usage['enforced'], $this->usage['perSecond'], $this->usage['notes']);
+    }
+
+    /**
+     * Every read of the logs, suppression lists, metrics or usage throws this (by
      * default, the error an unreadable service gives) until readsWork().
      */
     public function failReads(?CampaignsException $exception = null): static

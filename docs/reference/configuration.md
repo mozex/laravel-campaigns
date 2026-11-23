@@ -19,9 +19,10 @@ weight: 1
 | `driver` | `CAMPAIGNS_DRIVER` | `mailgun` | the driver that sends: `mailgun`, `ses`, `smtp`, `fake` or one you register ([Drivers](./drivers.md)) |
 | `drivers.<name>` | | | each driver's own settings, handed to a registered driver's creator |
 | `drivers.mailgun.webhook_signing_key` | `MAILGUN_WEBHOOK_SIGNING_KEY` | none | verifies Mailgun's webhooks, whichever driver sends |
-| `drivers.mailgun.api_key` | `CAMPAIGNS_MAILGUN_API_KEY` | none | reads Mailgun's logs, metrics and suppression lists |
+| `drivers.mailgun.api_key` | `CAMPAIGNS_MAILGUN_API_KEY` | none | reads Mailgun's logs, metrics, usage and suppression lists |
 | `drivers.mailgun.endpoint` | `CAMPAIGNS_MAILGUN_ENDPOINT` | the mailer's endpoint, else `api.mailgun.net` | the region's API host |
 | `drivers.mailgun.log_days` | | `5` | how many days back Mailgun keeps logs on your plan |
+| `drivers.mailgun.monthly_included` | `CAMPAIGNS_MAILGUN_MONTHLY_INCLUDED` | none | the emails your Mailgun plan includes each month; set, the start, resume and speed-up answers warn when a campaign would pass it |
 | `drivers.ses.webhook_secret` | `CAMPAIGNS_SES_WEBHOOK_SECRET` | none | the value Amazon SES's EventBridge connection sends in the `X-Campaigns-Webhook-Key` header, whichever driver sends |
 | `drivers.ses.vdm` | `CAMPAIGNS_SES_VDM` | `false` | whether Virtual Deliverability Manager is on, which SES's daily counts need |
 | `no_open_tracking_countries` | | `['FR']` | where opens are never tracked |

@@ -9,6 +9,7 @@ Call `get_overview` first. It tells you:
 - whether sending is switched on, which driver (the sending service), mailer and domain send, what the driver reads back besides sending (`sending.driver.abilities`), who emails come from, and what is switched off or missing (`sending.notes`, in words, including what a driver without an ability can't tell you);
 - the addresses a test email may go to;
 - the sending domain's standing (`domain`): its last 24 hours from the app's own records (sends, hard bounces, spam reports and unsubscribes, with their rates per send), its daily cap and what is left of it, the provider's own counts for its last 30 days, and Gmail's numbers from Google Postmaster Tools (`domain.gmail`: the latest known day's spam rate with its date and a `warning` at 0.1% or above, each of the last 14 days, and Google's bulk-sender checks; a rate Gmail didn't report is null, which means unknown, never clean);
+- what the provider account sent against its allowance (`usage`): this calendar month against the plan's included emails (`period` `month`, past which the provider bills overage), or the last 24 hours against a sending quota (`last_24_hours`, past which it holds mail back), the whole account counted, every app and domain on it; `note` says why it wasn't read or what the count leaves out;
 - every list in use, the default lists first, with its counts: `subscribed`, `pending` (waiting for a double opt-in), `unsubscribed`, `mailable` (subscribed people who aren't opted out, blocked or sunset) and the subscribed people by engagement tier;
 - the campaigns that are starting, scheduled, sending or paused;
 - the placeholders an email may hold, with this app's values.
@@ -18,6 +19,7 @@ Call `get_overview` first. It tells you:
 ## Rules that never change
 
 - Never start, resume or speed up a campaign without the approval of the person you work for, given with the exact number of recipients and the pace. Those calls ask that person themselves in clients that support it; ask anyway.
+- Read `get_overview` before asking for a start, a resume or a speed-up. When a start's or a resume's answer shows Gmail's spam rate at 0.3% or above, pause the campaign at once and tell the person. Never speed up while it is at 0.1% or above. Before a scheduled campaign's start time, read `get_overview` again.
 - Pausing never waits: pause as soon as something looks wrong. Cancel only when the person decides the campaign must not go on: a cancelled campaign can't be resumed.
 - An unsubscribe, a spam report or a hard bounce stops an address. Never try to add such a person back.
 - A refused call says why in its error. Tell the person what it says rather than retrying the same call.
@@ -103,6 +105,7 @@ Ask the person to approve, and give them:
 - the pace: `first_day` (sends on day 1), `daily_growth` (percent more each day), `daily_cap`, `per_minute`, `sending_hours` and `timezone`; left out, each follows the app's config;
 - the checks' results, with anything that failed;
 - the sending domain's standing from `get_overview`: its last 24 hours, its daily cap and what is left, and the provider's last 30 days. Compare the last 24 hours with the limits the stop-loss holds the domain to: the app's own hard-bounce and spam-report limits, whatever a campaign sets (`get_campaign_status` shows them as `limits` for a campaign without its own `thresholds`: by the package's defaults, a pause at 2 spam reports before 2,500 sends and above 0.08% after, and at 10 hard bounces, or 5% of at least 50 sends, before 200): a domain near them pauses a new campaign at its first bounce or spam report, so wait and ask. Gmail's spam rate (`domain.gmail.spam_rate`, with its date) should be under 0.1% and never reach 0.3%; when it is null, say it is unknown;
+- the provider's usage (`usage`): what the account has sent this month against its plan, or in the last 24 hours against its quota, and whether this campaign's recipients fit in what is left;
 - the test email, as it arrived.
 
 A new or quiet sending domain starts slowly: a small first day that grows each day, so mailbox providers learn it.
@@ -113,7 +116,8 @@ A new or quiet sending domain starts slowly: a small first day that grows each d
 - It answers at once with status `starting` while the audience and email are frozen. Read `get_campaign_status` until it is `sending`, `scheduled`, or a `draft` with `start_error` (the count changed, say: preview again and ask again).
 - A scheduled campaign is frozen when scheduled and starts at its time. People who unsubscribe or are blocked in between are still skipped when their turn comes.
 - Starting is refused while sending is switched off.
-- When the driver reads nothing back from its service (no webhooks, no logs: SMTP, say), `get_overview`'s notes say so, and `start_campaign` and `resume_campaign` answer with the same `warning`: no bounce or spam report reaches the package, so the stop-loss sees only what the service refuses while sending, and every email ends `sent`, never `delivered`. Make sure the person knows before they approve.
+- `start_campaign`, `resume_campaign` and `speed_up_campaign` answer the campaign with `readings` (Gmail's numbers for its sending domain and the provider's usage, as `get_overview` shows them) and `warnings`, a list in words. A warning comes when Gmail's spam rate is at 0.1% or above (worded for the stop line at 0.3%), when the campaign's emails still to send would take the account past its plan this month or past what its quota leaves in a day, and when readings couldn't be read. Tell the person each warning; the rules above say when to pause.
+- When the driver reads nothing back from its service (no webhooks, no logs: SMTP, say), `get_overview`'s notes say so, and `start_campaign` and `resume_campaign` add the same text to `warnings`: no bounce or spam report reaches the package, so the stop-loss sees only what the service refuses while sending, and every email ends `sent`, never `delivered`. Make sure the person knows before they approve.
 
 ## The pace and the allowance
 
@@ -159,8 +163,8 @@ If the provider refuses the sending domain itself (a key or domain problem), the
 ## Pausing, resuming, changing the pace, cancelling
 
 - `pause_campaign` stops handing out emails at once (with an optional reason); queued emails wait. It never needs approval and works while sending is off.
-- `resume_campaign` carries on where it stopped, after the person's approval. One paused before its scheduled time that is still ahead waits for it again.
-- `slow_down_campaign` takes any change that sends no faster; `speed_up_campaign` takes any change, after the person's approval. Only the values given change.
+- `resume_campaign` carries on where it stopped, after the person's approval. One paused before its scheduled time that is still ahead waits for it again. Its answer carries the readings and warnings, as a start's does.
+- `slow_down_campaign` takes any change that sends no faster; `speed_up_campaign` takes any change, after the person's approval, and answers the readings and warnings too. Only the values given change.
 - `cancel_campaign` stops a campaign for good (in any status but completed); its unsent emails stay counted, and it can't be resumed. `duplicate_campaign` makes a new draft that targets the same people again, those already reached included: before previewing it, add the filter `{"campaigns": [{"campaign": "<old key>", "outcome": "not_received"}]}` to its audience, keeping the audience's other parts.
 
 ## What runs on its own

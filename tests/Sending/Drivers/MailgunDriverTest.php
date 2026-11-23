@@ -23,6 +23,7 @@ use Mozex\Campaigns\Enums\SuppressionType;
 use Mozex\Campaigns\Sending\Drivers\MailgunDriver;
 use Mozex\Campaigns\Sending\OutgoingMessage;
 use Mozex\Campaigns\Sending\Suppression;
+use Mozex\Campaigns\Sending\Usage;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
 use Symfony\Component\Mailer\Bridge\Mailgun\Transport\MailgunApiTransport;
@@ -596,5 +597,104 @@ describe('reading Mailgun\'s metrics', function (): void {
 
         expect(fn (): mixed => app(MailgunDriver::class)->domainMetrics('example.com', now()->subDay(), now()))
             ->toThrow(CampaignsException::class, 'Mailgun answered 401 when its logs, suppressions or metrics were read. campaigns.drivers.mailgun.api_key must be an account API key');
+    });
+});
+
+describe('reading Mailgun\'s usage', function (): void {
+    beforeEach(function (): void {
+        Http::preventStrayRequests();
+        config()->set('campaigns.drivers.mailgun.api_key', 'key-reader');
+        config()->set('campaigns.mail.from', ['address' => 'news@example.com', 'name' => 'Example News']);
+        // The region the config names changes nothing: the plan covers both.
+        config()->set('campaigns.drivers.mailgun.endpoint', 'api.eu.mailgun.net');
+    });
+
+    it('sums both regions\' processed emails this UTC month, read a day at a time with explicit times inside it', function (): void {
+        $this->travelTo(Carbon::parse('2026-11-23 16:40:27', 'UTC'));
+        config()->set('campaigns.drivers.mailgun.monthly_included', '50000');
+        $requests = [];
+
+        Http::fake(function (ClientRequest $request, array $options) use (&$requests): PromiseInterface {
+            $requests[] = [$request, $options];
+            $us = str_starts_with($request->url(), 'https://api.mailgun.net/');
+
+            return Http::response(['items' => $us
+                ? [mailgunMetricsDay(Carbon::parse('2026-11-01'), ['processed_count' => 200]), mailgunMetricsDay(Carbon::parse('2026-11-23'), ['processed_count' => 3])]
+                // Mailgun rounds to days: one outside the month is dropped,
+                // as is a count that isn't one.
+                : [mailgunMetricsDay(Carbon::parse('2026-10-31'), ['processed_count' => 9999]), mailgunMetricsDay(Carbon::parse('2026-11-02'), ['processed_count' => 23894]), mailgunMetricsDay(Carbon::parse('2026-11-03'), ['processed_count' => 'n/a']), ['metrics' => ['processed_count' => 5]]],
+            ]);
+        });
+
+        $usage = app(MailgunDriver::class)->usage();
+
+        expect(array_map(fn (array $sent): string => $sent[0]->url(), $requests))->toBe(['https://api.mailgun.net/v1/analytics/metrics', 'https://api.eu.mailgun.net/v1/analytics/metrics'])
+            ->and($requests[0][0]->header('Authorization'))->toBe(['Basic '.base64_encode('api:key-reader')])
+            ->and($requests[0][0]->data())->toBe([
+                'start' => 'Sun, 01 Nov 2026 00:00:00 +0000',
+                'end' => 'Mon, 23 Nov 2026 16:40:27 +0000',
+                'resolution' => 'day',
+                'dimensions' => ['time'],
+                'metrics' => ['processed_count'],
+                'include_aggregates' => false,
+            ])
+            ->and($requests[1][0]->data())->toBe($requests[0][0]->data())
+            ->and($requests[0][1])->toMatchArray(['timeout' => 10, 'connect_timeout' => 10])
+            ->and($usage->period)->toBe(Usage::MONTH)
+            ->and($usage->from->toIso8601String())->toBe('2026-11-01T00:00:00+00:00')
+            ->and($usage->to->toIso8601String())->toBe('2026-11-23T16:40:27+00:00')
+            ->and($usage->sent)->toBe(24097)
+            ->and($usage->allowance)->toBe(50000)
+            ->and($usage->left())->toBe(25903)
+            ->and($usage->enforced)->toBeFalse()
+            ->and($usage->perSecond)->toBeNull()
+            ->and($usage->notes)->toBe([]);
+    });
+
+    it('reads the month from its first instant on its first day, and says when the plan\'s volume isn\'t set', function (mixed $included): void {
+        $this->travelTo(Carbon::parse('2026-12-01 00:20:00', 'UTC'));
+        config()->set('campaigns.drivers.mailgun.monthly_included', $included);
+        Http::fake(['*' => Http::response(['items' => [mailgunMetricsDay(Carbon::parse('2026-11-30'), ['processed_count' => 40000]), mailgunMetricsDay(Carbon::parse('2026-12-01'), ['processed_count' => 4])]])]);
+
+        $usage = app(MailgunDriver::class)->usage();
+
+        expect($usage->sent)->toBe(8)
+            ->and($usage->from->toIso8601String())->toBe('2026-12-01T00:00:00+00:00')
+            ->and($usage->allowance)->toBeNull()
+            ->and($usage->notes)->toBe(['campaigns.drivers.mailgun.monthly_included (CAMPAIGNS_MAILGUN_MONTHLY_INCLUDED) isn\'t set, so the emails the Mailgun plan includes each month aren\'t known and no overage is warned of.']);
+
+        Http::assertSent(fn (ClientRequest $request): bool => $request['start'] === 'Tue, 01 Dec 2026 00:00:00 +0000');
+    })->with([
+        'unset' => [null],
+        'blank' => [''],
+        'zero' => ['0'],
+        'not a number' => ['fifty thousand'],
+    ]);
+
+    it('counts the region it could read, saying which it couldn\'t, and fails only when neither answers', function (): void {
+        Http::fake([
+            'https://api.mailgun.net/*' => Http::response(['message' => 'Server error for person@example.org'], 500),
+            'https://api.eu.mailgun.net/*' => Http::response(['items' => [mailgunMetricsDay(now(), ['processed_count' => 12])]]),
+        ]);
+
+        $usage = app(MailgunDriver::class)->usage();
+
+        expect($usage->sent)->toBe(12)
+            ->and($usage->notes[0])->toBe('This counts the EU region only: Mailgun\'s US region couldn\'t be read. Mailgun answered 500 when its logs, suppressions or metrics were read.');
+
+        Http::fake(['*' => fn (): never => throw new ConnectionException('cURL error 28 for https://api.eu.mailgun.net/v1/analytics/metrics')]);
+        $exception = null;
+
+        try {
+            app(MailgunDriver::class)->usage();
+        } catch (CampaignsException $exception) {
+        }
+
+        expect($exception?->getMessage())->toBe('Mailgun couldn\'t be reached (ConnectionException).')
+            ->and($exception?->getPrevious())->toBeNull();
+
+        config()->set('campaigns.drivers.mailgun.api_key', '');
+
+        expect(fn (): mixed => app(MailgunDriver::class)->usage())->toThrow(CampaignsException::class, 'CAMPAIGNS_MAILGUN_API_KEY');
     });
 });

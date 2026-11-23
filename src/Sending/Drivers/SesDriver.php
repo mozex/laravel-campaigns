@@ -20,6 +20,7 @@ use Mozex\Campaigns\CampaignsException;
 use Mozex\Campaigns\Contracts\CampaignDriver;
 use Mozex\Campaigns\Contracts\Drivers\ReadsMetrics;
 use Mozex\Campaigns\Contracts\Drivers\ReadsSuppressions;
+use Mozex\Campaigns\Contracts\Drivers\ReadsUsage;
 use Mozex\Campaigns\Contracts\Drivers\ReceivesWebhooks;
 use Mozex\Campaigns\Enums\DeliveryFailure;
 use Mozex\Campaigns\Enums\FeedbackType;
@@ -32,6 +33,7 @@ use Mozex\Campaigns\Sending\OutgoingMessage;
 use Mozex\Campaigns\Sending\SendFailed;
 use Mozex\Campaigns\Sending\SendReceipt;
 use Mozex\Campaigns\Sending\Suppression;
+use Mozex\Campaigns\Sending\Usage;
 use Mozex\Campaigns\Support\Sender;
 use Symfony\Component\Mailer\Exception\TransportExceptionInterface;
 use Symfony\Component\Mailer\Header\TagHeader;
@@ -60,13 +62,14 @@ use Throwable;
  * logs a driver can read, so an event a webhook missed is lost, and an email
  * whose send ended unclear stays unknown. Its suppression list is the
  * account's in the region, whatever the domain; its daily counts need
- * Virtual Deliverability Manager (campaigns.drivers.ses.vdm). Reads go
- * through the campaigns mailer's own SES client.
+ * Virtual Deliverability Manager (campaigns.drivers.ses.vdm); its usage is
+ * the account's 24-hour quota in the region. Reads go through the campaigns
+ * mailer's own SES client.
  *
  * A failure is read from the AWS error code and the HTTP status, never the
  * service's words, which may quote an address.
  */
-class SesDriver implements CampaignDriver, ReadsMetrics, ReadsSuppressions, ReceivesWebhooks
+class SesDriver implements CampaignDriver, ReadsMetrics, ReadsSuppressions, ReadsUsage, ReceivesWebhooks
 {
     use UsesCampaignsMailer;
 
@@ -166,6 +169,12 @@ class SesDriver implements CampaignDriver, ReadsMetrics, ReadsSuppressions, Rece
      * takes one request a second for everything but sending.
      */
     protected const READ_TRIES = 3;
+
+    /**
+     * The limits on the usage read: an agent waits on it in the overview and
+     * the start, resume and speed-up answers.
+     */
+    protected const USAGE_HTTP = ['connect_timeout' => 10, 'timeout' => 10];
 
     /**
      * VDM's metrics a domain's day is read from, by the name DomainMetrics
@@ -391,6 +400,59 @@ class SesDriver implements CampaignDriver, ReadsMetrics, ReadsSuppressions, Rece
 
         /** @var array<string, array{sent: int, forwarded: null, hard_bounces: int, complaints: int, unsubscribes: null}> $days */
         return new DomainMetrics($days);
+    }
+
+    /**
+     * The account's sending quota in the campaigns mailer's region: what it
+     * sent in the last 24 hours against the most it may (SES's
+     * Max24HourSend, -1 for no limit), and the most it takes a second. SES
+     * holds back what passes the quota. An account in the sandbox, with
+     * sending paused, or under review gets a note, since SES then refuses
+     * a campaign's emails whatever the quota says.
+     */
+    public function usage(): Usage
+    {
+        $client = $this->client();
+        $now = now()->utc();
+
+        $account = $this->read(fn (): array => $client->getAccount(['@http' => static::USAGE_HTTP])->toArray(), 'its sending quota');
+        $quota = is_array($account['SendQuota'] ?? null) ? $account['SendQuota'] : [];
+        $max = is_numeric($quota['Max24HourSend'] ?? null) ? (float) $quota['Max24HourSend'] : null;
+        $rate = is_numeric($quota['MaxSendRate'] ?? null) && $quota['MaxSendRate'] > 0 ? (float) $quota['MaxSendRate'] : null;
+        $notes = [];
+
+        if ($max === null) {
+            throw CampaignsException::providerUnreadable('Amazon SES\'s answer gave no sending quota.');
+        }
+
+        if ($max < 0) {
+            $notes[] = 'The account\'s 24-hour sending quota in this region has no limit.';
+        }
+
+        if (($account['ProductionAccessEnabled'] ?? null) === false) {
+            $notes[] = 'The account is in Amazon SES\'s sandbox in this region: it sends only to addresses and domains verified in SES, and refuses a campaign\'s emails to anyone else. Request production access in SES first.';
+        }
+
+        if (($account['SendingEnabled'] ?? null) === false) {
+            $notes[] = 'Sending is paused for the account in this region, so Amazon SES refuses every email.';
+        }
+
+        $enforcement = $this->code($account['EnforcementStatus'] ?? null);
+
+        if (! in_array($enforcement, ['HEALTHY', 'unknown'], true)) {
+            $notes[] = "Amazon SES's enforcement status for the account is {$enforcement}: its bounce or complaint rate is under review, and sending more may get it paused.";
+        }
+
+        return new Usage(
+            Usage::DAY,
+            $now->copy()->subDay(),
+            $now,
+            is_numeric($quota['SentLast24Hours'] ?? null) ? max(0, (int) $quota['SentLast24Hours']) : 0,
+            $max < 0 ? null : (int) $max,
+            enforced: true,
+            perSecond: $rate,
+            notes: $notes,
+        );
     }
 
     /**
@@ -711,7 +773,7 @@ class SesDriver implements CampaignDriver, ReadsMetrics, ReadsSuppressions, Rece
             }
 
             $code = $this->code($exception->getAwsErrorCode());
-            $fix = in_array($status, [401, 403], true) ? ' The campaigns mailer\'s credentials need ses:ListSuppressedDestinations, ses:GetSuppressedDestination and, with VDM, ses:BatchGetMetricData.' : '';
+            $fix = in_array($status, [401, 403], true) ? ' The campaigns mailer\'s credentials need ses:GetAccount, ses:ListSuppressedDestinations, ses:GetSuppressedDestination and, with VDM, ses:BatchGetMetricData.' : '';
 
             throw CampaignsException::providerUnreadable(($exception->isConnectionError() || ! is_int($status) ? 'Amazon SES couldn\'t be reached' : "Amazon SES answered {$status} ({$code})")." when the package read {$what}.{$fix}");
         } catch (CredentialsException) {
