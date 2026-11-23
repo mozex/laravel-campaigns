@@ -64,7 +64,7 @@ weight: 1
 | Key | Env | Default | What it does |
 |---|---|---|---|
 | `queue.connection`, `queue.name` | `CAMPAIGNS_QUEUE_CONNECTION`, `CAMPAIGNS_QUEUE` | the default connection, `campaigns` | where the jobs run |
-| `cache_store` | `CAMPAIGNS_CACHE_STORE` | the default store | the scheduled commands' locks, a few marks and Gmail's latest reading; use a store your deploys don't flush |
+| `cache_store` | `CAMPAIGNS_CACHE_STORE` | the default store | the scheduled commands' locks, a few marks and the latest Gmail and provider usage readings; use a store your deploys don't flush |
 | `schedule` | | `true` | whether the package schedules its commands |
 | `event_retention_days` | | `180` | how long provider events are kept |
 
