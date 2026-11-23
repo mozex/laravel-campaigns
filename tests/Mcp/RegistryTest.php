@@ -85,6 +85,32 @@ it('lets each principal reach exactly the tools its rights allow', function (Rig
     'a person who may run campaigns' => [Rights::Full, true],
 ]);
 
+it('lets every nullable choice in an answer be null, as a client checking the answer against its schema requires', function (): void {
+    $broken = [];
+
+    $walk = function (mixed $node, string $path) use (&$walk, &$broken): void {
+        if (! is_array($node)) {
+            return;
+        }
+
+        $types = (array) ($node['type'] ?? []);
+
+        if (isset($node['enum']) && in_array('null', $types, true) && ! in_array(null, (array) $node['enum'], true)) {
+            $broken[] = $path;
+        }
+
+        foreach ($node as $key => $child) {
+            $walk($child, "{$path}.{$key}");
+        }
+    };
+
+    foreach (toolClasses() as $class) {
+        $walk(app($class)->toArray()['outputSchema'] ?? [], class_basename($class));
+    }
+
+    expect($broken)->toBe([]);
+});
+
 it('answers the readings and their warnings on exactly a start, a resume and a speed-up', function (): void {
     $answering = [];
 

@@ -407,8 +407,9 @@ class SesDriver implements CampaignDriver, ReadsMetrics, ReadsSuppressions, Read
      * sent in the last 24 hours against the most it may (SES's
      * Max24HourSend, -1 for no limit), and the most it takes a second. SES
      * holds back what passes the quota. An account in the sandbox, with
-     * sending paused, or under review gets a note, since SES then refuses
-     * a campaign's emails whatever the quota says.
+     * sending paused or shut down, or on probation gets a note: SES refuses
+     * a campaign's emails in the first three whatever the quota says, and
+     * may shut down one on probation.
      */
     public function usage(): Usage
     {
@@ -437,11 +438,12 @@ class SesDriver implements CampaignDriver, ReadsMetrics, ReadsSuppressions, Read
             $notes[] = 'Sending is paused for the account in this region, so Amazon SES refuses every email.';
         }
 
-        $enforcement = $this->code($account['EnforcementStatus'] ?? null);
-
-        if (! in_array($enforcement, ['HEALTHY', 'unknown'], true)) {
-            $notes[] = "Amazon SES's enforcement status for the account is {$enforcement}: its bounce or complaint rate is under review, and sending more may get it paused.";
-        }
+        $notes[] = match ($enforcement = $this->code($account['EnforcementStatus'] ?? null)) {
+            'HEALTHY', 'unknown' => null,
+            'PROBATION' => 'Amazon SES has the account on probation: its bounce or complaint rate is under review, and sending more of the same may get it shut down.',
+            'SHUTDOWN' => 'Amazon SES has shut the account\'s sending down, so it refuses every email until AWS lifts it.',
+            default => "Amazon SES's enforcement status for the account is {$enforcement}.",
+        };
 
         return new Usage(
             Usage::DAY,
@@ -451,7 +453,7 @@ class SesDriver implements CampaignDriver, ReadsMetrics, ReadsSuppressions, Read
             $max < 0 ? null : (int) $max,
             enforced: true,
             perSecond: $rate,
-            notes: $notes,
+            notes: array_values(array_filter($notes, is_string(...))),
         );
     }
 

@@ -186,7 +186,7 @@ it('names in its guidance only tools the server has, and every tool in its guide
 });
 
 it('leaves an app room for its own instructions', function (): void {
-    config(['app.name' => str_repeat('A', 60), 'campaigns.mcp.instructions' => str_repeat('Only start campaigns from the office. ', 60)]);
+    config(['app.name' => str_repeat('A', 60), 'campaigns.mcp.instructions' => str_repeat('Only start campaigns from the office. ', 55)]);
 
     expect(mb_strlen(CampaignsServer::instructions()))->toBeLessThanOrEqual(CampaignsServer::INSTRUCTIONS_LIMIT)
         ->and(mb_strlen((string) config('campaigns.mcp.instructions')))->toBeGreaterThan(2000);

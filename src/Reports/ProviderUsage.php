@@ -90,14 +90,19 @@ class ProviderUsage
 
     /**
      * What a reading says about a campaign with this many emails still to
-     * send: a plan's month passed (billed), or a quota passed by what the
-     * campaign may send in a day (the lesser of those emails and its daily
-     * cap), which the provider holds back. Null when nothing passes, the
-     * reading has no allowance, or the count is unknown.
+     * send. A plan's month warns when they, with the app's other open
+     * campaigns' emails still to send, pass what the plan has left; the
+     * provider bills the rest. A quota warns when the campaign's next 24
+     * hours (the lesser of its emails still to send and what its pace lets
+     * it send in 24 hours) pass what the quota has left; the provider holds
+     * the rest back. Null when nothing passes, the reading has no
+     * allowance, or the count is unknown.
      *
      * @param  array<string, mixed>  $reading  as read() answers it
+     * @param  ?int  $nextDay  the most the campaign's pace lets it send in the next 24 hours; null for no limit
+     * @param  int  $others  the app's other open campaigns' emails still to send
      */
-    public static function warning(array $reading, ?int $unsent, ?int $dailyCap): ?string
+    public static function warning(array $reading, ?int $unsent, ?int $nextDay, int $others = 0): ?string
     {
         $sent = $reading['sent'] ?? null;
         $allowance = $reading['allowance'] ?? null;
@@ -106,31 +111,36 @@ class ProviderUsage
             return null;
         }
 
-        if (($reading['period'] ?? null) === Usage::MONTH) {
-            // Counted from what is left, so no sum can overflow.
-            $left = $allowance - $sent;
+        // Counted from what is left, so no sum of counts can overflow.
+        $left = $allowance - $sent;
+        $billed = ($reading['past_allowance'] ?? null) === 'billed';
 
-            if ($unsent <= $left) {
+        if (($reading['period'] ?? null) === Usage::MONTH) {
+            $toSend = $unsent + max(0, $others);
+
+            if ($toSend <= $left) {
                 return null;
             }
 
-            $over = $left < 0 ? $unsent : $unsent - $left;
-            $verb = ($reading['past_allowance'] ?? null) === 'held_back' ? 'holds back' : 'bills as overage';
+            $what = $others > 0 ? "this campaign's {$unsent} and the app's other open campaigns' {$others} still to send" : "this campaign's {$unsent} still to send";
+            $fate = $billed ? 'the provider bills as overage if they all go this month' : 'the provider holds back until next month';
 
-            return "The account has sent {$sent} of the {$allowance} emails its plan includes this month: with this campaign's {$unsent} still to send, it passes them by {$over}, which the provider {$verb} if they all go this month.";
+            return $left < 0
+                ? "The account has sent {$sent} this month, already ".(-$left)." past the {$allowance} its plan includes: {$what} all pass it, which {$fate}."
+                : "The account has sent {$sent} of the {$allowance} emails its plan includes this month: of {$what}, ".($toSend - $left)." pass it, which {$fate}.";
         }
 
-        $day = $dailyCap === null ? $unsent : min($unsent, $dailyCap);
-        $left = max(0, $allowance - $sent);
+        $day = $nextDay === null ? $unsent : min($unsent, $nextDay);
+        $left = max(0, $left);
 
         if ($day <= $left) {
             return null;
         }
 
-        $verb = ($reading['past_allowance'] ?? null) === 'billed' ? 'bills as extra' : 'holds back, so its sending slows';
-        $what = $dailyCap !== null && $dailyCap < $unsent ? "its daily cap lets it send {$day} in a day" : "its {$unsent} emails still to send could go within a day";
+        $what = $day < $unsent ? "its pace lets it send {$day} in the next 24 hours" : "its {$unsent} emails still to send could all go in the next 24 hours";
+        $fate = $billed ? 'the provider bills as extra' : 'the provider holds back, so its sending slows';
 
-        return "The account may send {$left} more of its {$allowance} in 24 hours (it sent {$sent} in the last 24), while {$what}: what passes the quota the provider {$verb}.";
+        return "The account may send {$left} more of its {$allowance} in 24 hours (it sent {$sent} in the last 24), while {$what}: what passes the quota {$fate}.";
     }
 
     /**
@@ -147,7 +157,6 @@ class ProviderUsage
             throw CampaignsException::providerUnreadable('The driver gave a period the package doesn\'t know.');
         }
 
-        $sent = max(0, $usage->sent);
         $allowance = $usage->allowance === null || $usage->allowance < 0 ? null : $usage->allowance;
         $notes = array_values(array_filter($usage->notes, fn (string $note): bool => trim($note) !== ''));
 
@@ -157,11 +166,12 @@ class ProviderUsage
             'period' => $usage->period,
             'from' => $usage->from->toIso8601String(),
             'to' => $usage->to->toIso8601String(),
-            'sent' => $sent,
+            'sent' => max(0, $usage->sent),
             'allowance' => $allowance,
-            'left' => $allowance === null ? null : max(0, $allowance - $sent),
+            'left' => $usage->left(),
             'past_allowance' => $allowance === null ? null : static::PAST_ALLOWANCE[$usage->enforced ? 1 : 0],
-            'per_second' => $usage->perSecond !== null && $usage->perSecond > 0 ? $usage->perSecond : null,
+            // JSON has no infinity, which a driver may mean as "no limit".
+            'per_second' => $usage->perSecond !== null && is_finite($usage->perSecond) && $usage->perSecond > 0 ? $usage->perSecond : null,
             'note' => $notes === [] ? null : ShownText::of(implode(' ', $notes), static::NOTE_LENGTH),
         ];
     }

@@ -94,7 +94,7 @@ Each tool is either read-only or a write, and the rights decide which an agent s
 
 ## Your own instructions
 
-The server tells agents how to work with it in its instructions, about 1,700 characters, and a full guide they read on demand. Add your own rules after the package's:
+The server tells agents how to work with it in its instructions, about 1,950 characters, and a full guide they read on demand. Add your own rules after the package's:
 
 ```php
 'mcp' => [

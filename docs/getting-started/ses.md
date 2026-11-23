@@ -139,6 +139,6 @@ Without it, the overview notes that the counts need VDM. SES counts no forwarded
 
 ## The sending quota
 
-SES limits how many emails the account sends in any 24 hours and how many a second, per region. `get_overview` shows them as `usage`: what the account sent in the last 24 hours, its quota, what's left and the rate. `start_campaign`, `resume_campaign` and `speed_up_campaign` show the same in their answer, and their `warnings` say when what the campaign may send in a day (its emails still to send, or its daily cap when that's lower) passes what the quota leaves. SES holds back what passes it, so the campaign's sending slows until the 24 hours allow more.
+SES limits how many emails the account sends in any 24 hours and how many a second, per region. `get_overview` shows them as `usage`: what the account sent in the last 24 hours, its quota, what's left and the rate. `start_campaign`, `resume_campaign` and `speed_up_campaign` show the same in their answer, and their `warnings` say when what the campaign may send in the next 24 hours (its emails still to send, or what its pace allows in that time when that's lower) passes what the quota leaves. SES holds back what passes it, so the campaign's sending slows until the 24 hours allow more.
 
 The usage also notes an account still in SES's sandbox (it sends only to verified addresses, so a campaign to anyone else fails), sending paused for the account, and an enforcement status other than healthy.

@@ -40,10 +40,11 @@ readonly class Usage
     ) {}
 
     /**
-     * What the allowance leaves; null without one.
+     * What the allowance leaves, 0 once passed; null without one (an
+     * allowance below 0 counts as none).
      */
     public function left(): ?int
     {
-        return $this->allowance === null ? null : max(0, $this->allowance - $this->sent);
+        return $this->allowance === null || $this->allowance < 0 ? null : max(0, $this->allowance - max(0, $this->sent));
     }
 }

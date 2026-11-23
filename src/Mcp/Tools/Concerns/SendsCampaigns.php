@@ -17,6 +17,7 @@ use Mozex\Campaigns\Reports\CampaignProgress;
 use Mozex\Campaigns\Reports\GmailReading;
 use Mozex\Campaigns\Reports\Overview;
 use Mozex\Campaigns\Reports\ProviderUsage;
+use Mozex\Campaigns\Sending\Allowance;
 use Mozex\Campaigns\Sending\Pace;
 use Throwable;
 
@@ -91,7 +92,11 @@ trait SendsCampaigns
             $readings = ['gmail' => $gmail, 'usage' => $usage];
 
             $warnings[] = is_string($gmail['warning'] ?? null) ? $gmail['warning'] : null;
-            $warnings[] = ProviderUsage::warning($usage, static::unsent($campaign, $approved), Pace::resolve($campaign->pace)['daily_cap']);
+            $warnings[] = ProviderUsage::warning($usage, static::unsent($campaign, $approved), static::nextDay($campaign), static::othersUnsent($campaign));
+
+            // Checked here, so a value JSON can't hold never fails the answer
+            // to a change already made.
+            json_encode($readings, JSON_THROW_ON_ERROR);
         } catch (Throwable $exception) {
             report($exception);
             $readings = null;
@@ -120,6 +125,38 @@ trait SendsCampaigns
                 ->whereIn('status', [MessageStatus::Pending, MessageStatus::Queued, MessageStatus::Sending])
                 ->count(),
         };
+    }
+
+    /**
+     * The app's other open campaigns' emails still to send, which the same
+     * plan pays for. A campaign still starting has none yet: its approved
+     * count isn't stored, and its freeze takes seconds.
+     */
+    protected static function othersUnsent(Campaign $campaign): int
+    {
+        return CampaignMessage::query()
+            ->whereIn('campaign_id', Campaign::query()
+                ->select('id')
+                ->whereKeyNot($campaign->getKey())
+                ->whereIn('status', [CampaignStatus::Scheduled, CampaignStatus::Sending, CampaignStatus::Paused]))
+            ->whereIn('status', [MessageStatus::Pending, MessageStatus::Queued, MessageStatus::Sending])
+            ->count();
+    }
+
+    /**
+     * The most the campaign's pace lets it send in the next 24 hours: its
+     * first day's volume before it starts, else the next pace day's (a
+     * window of 24 hours spans the rest of one pace day and the start of
+     * the next, and a day sends no fewer than the one before), held to
+     * per_minute through a whole day.
+     */
+    protected static function nextDay(Campaign $campaign): int
+    {
+        $pace = Pace::resolve($campaign->pace);
+        $started = $campaign->pace_started_at ?? $campaign->started_at;
+        $day = $started === null ? 1 : intdiv(max(0, now()->getTimestamp() - $started->getTimestamp()), Allowance::DAY) + 2;
+
+        return min(Pace::dayVolume($pace, $day), $pace['per_minute'] * 1440);
     }
 
     /**

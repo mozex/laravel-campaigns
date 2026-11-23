@@ -19,7 +19,7 @@ Call `get_overview` first. It tells you:
 ## Rules that never change
 
 - Never start, resume or speed up a campaign without the approval of the person you work for, given with the exact number of recipients and the pace. Those calls ask that person themselves in clients that support it; ask anyway.
-- Read `get_overview` before asking for a start, a resume or a speed-up. When a start's or a resume's answer shows Gmail's spam rate at 0.3% or above, pause the campaign at once and tell the person. Never speed up while it is at 0.1% or above. Before a scheduled campaign's start time, read `get_overview` again.
+- Read `get_overview` before asking for a start, a resume or a speed-up. When a start's or a resume's answer shows Gmail's spam rate at 0.3% or above, tell the person and pause the campaign at once: a resumed one now, a started one as soon as `get_campaign_status` shows it `sending` or `scheduled` (a campaign still `starting` can't be paused). Never speed up while it is at 0.1% or above. Before a scheduled campaign's start time, read `get_overview` again.
 - Pausing never waits: pause as soon as something looks wrong. Cancel only when the person decides the campaign must not go on: a cancelled campaign can't be resumed.
 - An unsubscribe, a spam report or a hard bounce stops an address. Never try to add such a person back.
 - A refused call says why in its error. Tell the person what it says rather than retrying the same call.
@@ -105,7 +105,7 @@ Ask the person to approve, and give them:
 - the pace: `first_day` (sends on day 1), `daily_growth` (percent more each day), `daily_cap`, `per_minute`, `sending_hours` and `timezone`; left out, each follows the app's config;
 - the checks' results, with anything that failed;
 - the sending domain's standing from `get_overview`: its last 24 hours, its daily cap and what is left, and the provider's last 30 days. Compare the last 24 hours with the limits the stop-loss holds the domain to: the app's own hard-bounce and spam-report limits, whatever a campaign sets (`get_campaign_status` shows them as `limits` for a campaign without its own `thresholds`: by the package's defaults, a pause at 2 spam reports before 2,500 sends and above 0.08% after, and at 10 hard bounces, or 5% of at least 50 sends, before 200): a domain near them pauses a new campaign at its first bounce or spam report, so wait and ask. Gmail's spam rate (`domain.gmail.spam_rate`, with its date) should be under 0.1% and never reach 0.3%; when it is null, say it is unknown;
-- the provider's usage (`usage`): what the account has sent this month against its plan, or in the last 24 hours against its quota, and whether this campaign's recipients fit in what is left;
+- the provider's usage (`usage`): what the account has sent this month against its plan, or in the last 24 hours against its quota, and whether this campaign's recipients, with the other open campaigns' emails still to send, fit in what is left;
 - the test email, as it arrived.
 
 A new or quiet sending domain starts slowly: a small first day that grows each day, so mailbox providers learn it.
@@ -116,7 +116,7 @@ A new or quiet sending domain starts slowly: a small first day that grows each d
 - It answers at once with status `starting` while the audience and email are frozen. Read `get_campaign_status` until it is `sending`, `scheduled`, or a `draft` with `start_error` (the count changed, say: preview again and ask again).
 - A scheduled campaign is frozen when scheduled and starts at its time. People who unsubscribe or are blocked in between are still skipped when their turn comes.
 - Starting is refused while sending is switched off.
-- `start_campaign`, `resume_campaign` and `speed_up_campaign` answer the campaign with `readings` (Gmail's numbers for its sending domain and the provider's usage, as `get_overview` shows them) and `warnings`, a list in words. A warning comes when Gmail's spam rate is at 0.1% or above (worded for the stop line at 0.3%), when the campaign's emails still to send would take the account past its plan this month or past what its quota leaves in a day, and when readings couldn't be read. Tell the person each warning; the rules above say when to pause.
+- `start_campaign`, `resume_campaign` and `speed_up_campaign` answer the campaign with `readings` (Gmail's numbers for its sending domain and the provider's usage, as `get_overview` shows them) and `warnings`, a list in words. A warning comes when Gmail's spam rate is at 0.1% or above (worded for the stop line at 0.3%), when the emails still to send would take the account past its plan this month (this campaign's and the app's other open campaigns') or past what its quota leaves in the next 24 hours (what this campaign's pace can send in that time), and when readings couldn't be read. Tell the person each warning; the rules above say when to pause.
 - When the driver reads nothing back from its service (no webhooks, no logs: SMTP, say), `get_overview`'s notes say so, and `start_campaign` and `resume_campaign` add the same text to `warnings`: no bounce or spam report reaches the package, so the stop-loss sees only what the service refuses while sending, and every email ends `sent`, never `delivered`. Make sure the person knows before they approve.
 
 ## The pace and the allowance

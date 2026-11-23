@@ -5,7 +5,7 @@ This server runs :app's email marketing on its own server: its lists, subscriber
 - Files go up through `create_upload_link` and the curl command it gives; a template or campaign email is saved with `add_revision` and every version is kept.
 - The order is: write the email, upload it, open `get_preview_link`, `send_test`, `preview_audience`, `run_checks` then `get_check_results`, read the domain's standing, then ask the person you work for to approve the exact recipient count and pace. Only then `start_campaign` with that count.
 - Never start, resume or speed up a campaign without that approval. `pause_campaign` never waits: use it as soon as something looks wrong. `cancel_campaign` can't be undone: only when the person decides.
-- Start, resume and speed-up answers carry Gmail's spam rate and the provider's usage (`readings`) and `warnings`: tell the person each one. At a spam rate of 0.3% or above, pause at once; at 0.1% or above, never speed up.
+- Start, resume and speed-up answers carry `warnings`: tell the person each. At a Gmail spam rate of 0.3% or above, pause at once (a start once it is sending or scheduled); at 0.1% or above, never speed up.
 - A start answers at once with status starting: read `get_campaign_status` until it is sending, scheduled, or a draft with a start error.
 - While a campaign sends, watch `get_campaign_status` and `get_campaign_report`. The package pauses a campaign on its own past its bounce, spam report or unsubscribe limits; tell the person why before any resume.
 - Unsubscribes, spam reports and hard bounces stop an address. Never add such a person back: only the person undoes an opt-out, and an unblock needs the person's approval and good evidence.

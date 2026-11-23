@@ -50,7 +50,7 @@ Tell the package how many emails your plan includes, and agents are warned when 
 CAMPAIGNS_MAILGUN_MONTHLY_INCLUDED=50000
 ```
 
-`get_overview` shows the count as `usage`, and `start_campaign`, `resume_campaign` and `speed_up_campaign` show it again in their answer. When this month's count plus the campaign's emails still to send passes the plan, their `warnings` say by how many. Mailgun bills those as overage rather than refusing them, so nothing is stopped. A region that can't be read leaves the other's count with a note saying so.
+`get_overview` shows the count as `usage`, and `start_campaign`, `resume_campaign` and `speed_up_campaign` show it again in their answer. When this month's count plus the emails still to send, this campaign's and the app's other open campaigns', passes the plan, their `warnings` say by how many. Your other apps' campaigns on the same account aren't counted until they send. Mailgun bills those as overage rather than refusing them, so nothing is stopped. A region that can't be read leaves the other's count with a note saying so.
 
 ## Suppressions you already have
 

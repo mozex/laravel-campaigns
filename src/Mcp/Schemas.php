@@ -143,7 +143,7 @@ class Schemas
             'mailable' => $schema->boolean()->description('Not opted out, blocked or sunset.'),
             'opted_out_at' => $schema->string()->nullable(),
             'blocked_at' => $schema->string()->nullable(),
-            'blocked_reason' => $schema->string()->enum(array_column(BlockReason::cases(), 'value'))->nullable(),
+            'blocked_reason' => $schema->string()->enum([...array_column(BlockReason::cases(), 'value'), null])->nullable(),
             'last_engaged_at' => $schema->string()->nullable()->description('The latest open, click or app activity.'),
             'first_mailed_at' => $schema->string()->nullable(),
             'created_at' => $schema->string()->nullable(),
@@ -267,13 +267,13 @@ class Schemas
         return $schema->object([
             'read' => $schema->boolean()->required()->description('Whether the provider answered; false when the driver reads no usage or the read failed (note says which).'),
             'read_at' => $schema->string()->nullable()->required()->description('When the provider answered: a reading is kept for an hour.'),
-            'period' => $schema->string()->enum([Usage::MONTH, Usage::DAY])->nullable()->required()->description('month: the calendar month (UTC) so far, for a plan with a monthly volume; last_24_hours: a rolling quota.'),
+            'period' => $schema->string()->enum([Usage::MONTH, Usage::DAY, null])->nullable()->required()->description('month: the calendar month (UTC) so far, for a plan with a monthly volume; last_24_hours: a rolling quota.'),
             'from' => $schema->string()->nullable()->required(),
             'to' => $schema->string()->nullable()->required(),
             'sent' => $schema->integer()->nullable()->required()->description('What the provider counted in the period for the whole account, every app and domain on it (with a plan, what it bills, forwarded mail included).'),
             'allowance' => $schema->integer()->nullable()->required()->description('What the plan includes or the quota allows in the period; null when unlimited or not known (note says which).'),
             'left' => $schema->integer()->nullable()->required(),
-            'past_allowance' => $schema->string()->enum(ProviderUsage::PAST_ALLOWANCE)->nullable()->required()->description('What the provider does with mail past the allowance: billed (as overage) or held_back (sending slows until the period allows more).'),
+            'past_allowance' => $schema->string()->enum([...ProviderUsage::PAST_ALLOWANCE, null])->nullable()->required()->description('What the provider does with mail past the allowance: billed (as overage) or held_back (sending slows until the period allows more).'),
             'per_second' => $schema->number()->nullable()->required()->description('The most emails the provider takes a second, when it sets a limit.'),
             'note' => $schema->string()->nullable()->required()->description('Why the usage wasn\'t read, what the count leaves out, or what the account\'s state means for sending.'),
         ]);
@@ -467,7 +467,7 @@ class Schemas
             'mailable' => $schema->boolean()->required(),
             'opted_out_at' => $schema->string()->nullable()->required(),
             'blocked_at' => $schema->string()->nullable()->required(),
-            'blocked_reason' => $schema->string()->enum(array_column(BlockReason::cases(), 'value'))->nullable()->required(),
+            'blocked_reason' => $schema->string()->enum([...array_column(BlockReason::cases(), 'value'), null])->nullable()->required(),
         ]);
     }
 }

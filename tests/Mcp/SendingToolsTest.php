@@ -332,15 +332,23 @@ it('answers a start, a resume and a speed-up with Gmail\'s spam rate and the pro
     agent()->tool(PauseCampaignTool::class, ['key' => 'march'])->assertOk();
     CampaignMessage::query()->whereKey(CampaignMessage::query()->min('id'))->update(['status' => MessageStatus::Sent, 'sent_at' => now()]);
 
-    // A resume counts its emails still to send: four of five.
+    // A resume counts its emails still to send (four of five) with the app's
+    // other open campaigns' (two of another sending one; a draft's none).
     $resumed = structuredContent(agent()->tool(ResumeCampaignTool::class, ['key' => 'march'])->assertOk());
+    agent()->tool(PauseCampaignTool::class, ['key' => 'march'])->assertOk();
+    sendingCampaign(2, key: 'april', list: 'april-readers');
+    Queue::pushed(FreezeCampaignJob::class)->last()->handle(app(FreezeCampaignAction::class));
+    draftFor(3, 'may');
+    $withOthers = structuredContent(agent()->tool(ResumeCampaignTool::class, ['key' => 'march'])->assertOk());
 
     expect($resumed['campaign']['status'])->toBe('sending')
         ->and($resumed['warnings'])->toHaveCount(2)
-        ->and($resumed['warnings'][1])->toBe('The account has sent 49999 of the 50000 emails its plan includes this month: with this campaign\'s 4 still to send, it passes them by 3, which the provider bills as overage if they all go this month.');
+        ->and($resumed['warnings'][1])->toBe('The account has sent 49999 of the 50000 emails its plan includes this month: of this campaign\'s 4 still to send, 3 pass it, which the provider bills as overage if they all go this month.')
+        ->and(Campaign::forKey('april')->status)->toBe(CampaignStatus::Sending)
+        ->and($withOthers['warnings'][1])->toBe('The account has sent 49999 of the 50000 emails its plan includes this month: of this campaign\'s 4 and the app\'s other open campaigns\' 2 still to send, 5 pass it, which the provider bills as overage if they all go this month.');
 
-    // A quota: the lesser of the emails still to send and the daily cap,
-    // against what the last 24 hours left.
+    // A quota: the lesser of the emails still to send and what the pace lets
+    // the campaign send in the next 24 hours, against what the last 24 left.
     Cache::flush();
     fakeDriver()->used(198, 200, Usage::DAY, enforced: true, perSecond: 14.0);
     $fits = structuredContent(agent()->tool(SpeedUpCampaignTool::class, ['key' => 'march', 'pace' => ['daily_cap' => 2]])->assertOk());
@@ -349,17 +357,28 @@ it('answers a start, a resume and a speed-up with Gmail\'s spam rate and the pro
 
     expect($fits['readings']['usage'])->toMatchArray(['period' => 'last_24_hours', 'sent' => 198, 'allowance' => 200, 'left' => 2, 'past_allowance' => 'held_back', 'per_second' => 14.0])
         ->and($fits['warnings'])->toHaveCount(1)
-        ->and($capped['warnings'][1])->toBe('The account may send 2 more of its 200 in 24 hours (it sent 198 in the last 24), while its daily cap lets it send 3 in a day: what passes the quota the provider holds back, so its sending slows.')
-        ->and($uncapped['warnings'][1])->toBe('The account may send 2 more of its 200 in 24 hours (it sent 198 in the last 24), while its 4 emails still to send could go within a day: what passes the quota the provider holds back, so its sending slows.');
-
-    // Past the plan already, every email still to send is overage; none
-    // warns of a campaign with nothing left.
-    $past = ['period' => Usage::MONTH, 'sent' => 60_000, 'allowance' => 50_000, 'past_allowance' => 'billed'];
-
-    expect(ProviderUsage::warning($past, 4, null))->toContain('passes them by 4,')
-        ->and(ProviderUsage::warning($past, 0, null))->toBeNull()
-        ->and(ProviderUsage::warning([...$past, 'allowance' => null], 4, null))->toBeNull();
+        ->and($capped['warnings'][1])->toBe('The account may send 2 more of its 200 in 24 hours (it sent 198 in the last 24), while its pace lets it send 3 in the next 24 hours: what passes the quota the provider holds back, so its sending slows.')
+        ->and($uncapped['warnings'][1])->toBe('The account may send 2 more of its 200 in 24 hours (it sent 198 in the last 24), while its 4 emails still to send could all go in the next 24 hours: what passes the quota the provider holds back, so its sending slows.');
 })->with('databases');
+
+it('words a plan already passed, and warns of a quota only by what the pace can send in a day', function (): void {
+    $plan = ['period' => Usage::MONTH, 'sent' => 60_000, 'allowance' => 50_000, 'past_allowance' => 'billed'];
+    $quota = ['period' => Usage::DAY, 'sent' => 0, 'allowance' => 50_000, 'past_allowance' => 'held_back'];
+
+    expect(ProviderUsage::warning($plan, 4, null))->toBe('The account has sent 60000 this month, already 10000 past the 50000 its plan includes: this campaign\'s 4 still to send all pass it, which the provider bills as overage if they all go this month.')
+        ->and(ProviderUsage::warning($plan, 4, null, 30))->toContain('this campaign\'s 4 and the app\'s other open campaigns\' 30 still to send all pass it')
+        ->and(ProviderUsage::warning([...$plan, 'sent' => 10_000], 25_000, null, 30_000))->toContain('of this campaign\'s 25000 and the app\'s other open campaigns\' 30000 still to send, 15000 pass it')
+        ->and(ProviderUsage::warning([...$plan, 'past_allowance' => 'held_back'], 4, null))->toEndWith('which the provider holds back until next month.')
+        // 60,000 to send at a pace of 100 the first day fits a quota of 50,000.
+        ->and(ProviderUsage::warning($quota, 60_000, 100))->toBeNull()
+        ->and(ProviderUsage::warning($quota, 60_000, 50_001))->toContain('its pace lets it send 50001 in the next 24 hours')
+        ->and(ProviderUsage::warning($quota, 60_000, null))->toContain('its 60000 emails still to send could all go')
+        // Other campaigns don't count against a day's quota.
+        ->and(ProviderUsage::warning($quota, 100, 100, 1_000_000))->toBeNull()
+        ->and(ProviderUsage::warning($plan, 0, null))->toBeNull()
+        ->and(ProviderUsage::warning($plan, null, null))->toBeNull()
+        ->and(ProviderUsage::warning([...$plan, 'allowance' => null], 4, null))->toBeNull();
+});
 
 it('answers a start whose readings can\'t be read, since the start is already made', function (): void {
     Queue::fake([FreezeCampaignJob::class, SendMessageJob::class]);

@@ -732,9 +732,20 @@ describe('usage', function (): void {
                 'The account\'s 24-hour sending quota in this region has no limit.',
                 'The account is in Amazon SES\'s sandbox in this region: it sends only to addresses and domains verified in SES, and refuses a campaign\'s emails to anyone else. Request production access in SES first.',
                 'Sending is paused for the account in this region, so Amazon SES refuses every email.',
-                'Amazon SES\'s enforcement status for the account is PROBATION: its bounce or complaint rate is under review, and sending more may get it paused.',
+                'Amazon SES has the account on probation: its bounce or complaint rate is under review, and sending more of the same may get it shut down.',
             ]);
     });
+
+    it('says what each enforcement status means, and only a code for one it doesn\'t know', function (string $status, ?string $note): void {
+        sesMailer(new MockHandler([new Result(['SendQuota' => ['Max24HourSend' => 200.0, 'MaxSendRate' => 1.0, 'SentLast24Hours' => 0.0], 'ProductionAccessEnabled' => true, 'EnforcementStatus' => $status])]));
+
+        expect(app(SesDriver::class)->usage()->notes)->toBe($note === null ? [] : [$note]);
+    })->with([
+        'healthy' => ['HEALTHY', null],
+        'shut down' => ['SHUTDOWN', 'Amazon SES has shut the account\'s sending down, so it refuses every email until AWS lifts it.'],
+        'a new one' => ['SUSPENDED_FOR_REVIEW', 'Amazon SES\'s enforcement status for the account is SUSPENDED_FOR_REVIEW.'],
+        'free text' => ['Under review for reader@example.org', null],
+    ]);
 
     it('fails without SES\'s words or an address, naming ses:GetAccount when refused', function (Closure $answer, string $says): void {
         sesMailer(new MockHandler([$answer]));

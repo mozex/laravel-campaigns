@@ -479,11 +479,12 @@ class MailgunDriver implements CampaignDriver, ReadsEvents, ReadsMetrics, ReadsS
             $notes[] = 'This counts the '.implode(' and ', array_keys($sent))." region only: Mailgun's {$region} region couldn't be read. {$reason}";
         }
 
-        $included = filter_var(config('campaigns.drivers.mailgun.monthly_included'), FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+        $given = config('campaigns.drivers.mailgun.monthly_included');
+        $included = filter_var($given, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
 
         if ($included === false) {
             $included = null;
-            $notes[] = 'campaigns.drivers.mailgun.monthly_included (CAMPAIGNS_MAILGUN_MONTHLY_INCLUDED) isn\'t set, so the emails the Mailgun plan includes each month aren\'t known and no overage is warned of.';
+            $notes[] = 'campaigns.drivers.mailgun.monthly_included (CAMPAIGNS_MAILGUN_MONTHLY_INCLUDED) '.($given === null || $given === '' ? 'isn\'t set' : 'isn\'t a whole number above 0, such as 50000').', so the emails the Mailgun plan includes each month aren\'t known and no overage is warned of.';
         }
 
         return new Usage(Usage::MONTH, $from, $now, array_sum($sent), $included, enforced: false, notes: $notes);

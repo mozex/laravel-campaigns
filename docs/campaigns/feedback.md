@@ -79,7 +79,7 @@ The package signs in with that key, asking only for the read-only `postmaster.tr
 | `compliance` | Google's checks (SPF and DKIM, DMARC, encryption, one-click unsubscribe and the rest) for the registrable domain and the subdomain you send from |
 | `read`, `note` | whether Google answered, and why not when it didn't |
 
-Gmail reports a day only when the domain sent it enough mail. A day with no report, a day it fills with zeros (DKIM and SPF included) and a day without a spam rate show as `null`: unknown, never clean. A new or quiet domain often has no known day at all. The warning refuses nothing: whether to start, slow down or pause stays with the agent and the person it works for. The guide tells agents to pause a campaign at once when a start or a resume answers a rate at 0.3% or above, and never to speed one up at 0.1% or above.
+Gmail reports a day only when the domain sent it enough mail. A day with no report, a day it fills with zeros (DKIM and SPF included) and a day without a spam rate show as `null`: unknown, never clean. A new or quiet domain often has no known day at all. The warning refuses nothing: whether to start, slow down or pause stays with the agent and the person it works for. The guide tells agents to pause a campaign as soon as they can when a start or a resume answers a rate at 0.3% or above (a start once it's sending or scheduled), and never to speed one up at 0.1% or above.
 
 A reading is kept in `campaigns.cache_store` for an hour, so Google is asked at most once an hour; a failed one is tried again after 5 minutes. Each request gives up after 10 seconds. The key, the signed sign-in request and the access token never reach a log, an exception or an answer.
 

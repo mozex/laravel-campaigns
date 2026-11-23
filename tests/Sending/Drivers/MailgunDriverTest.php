@@ -651,7 +651,7 @@ describe('reading Mailgun\'s usage', function (): void {
             ->and($usage->notes)->toBe([]);
     });
 
-    it('reads the month from its first instant on its first day, and says when the plan\'s volume isn\'t set', function (mixed $included): void {
+    it('reads the month from its first instant on its first day, and says when the plan\'s volume isn\'t set or can\'t be read', function (mixed $included, string $says): void {
         $this->travelTo(Carbon::parse('2026-12-01 00:20:00', 'UTC'));
         config()->set('campaigns.drivers.mailgun.monthly_included', $included);
         Http::fake(['*' => Http::response(['items' => [mailgunMetricsDay(Carbon::parse('2026-11-30'), ['processed_count' => 40000]), mailgunMetricsDay(Carbon::parse('2026-12-01'), ['processed_count' => 4])]])]);
@@ -661,14 +661,15 @@ describe('reading Mailgun\'s usage', function (): void {
         expect($usage->sent)->toBe(8)
             ->and($usage->from->toIso8601String())->toBe('2026-12-01T00:00:00+00:00')
             ->and($usage->allowance)->toBeNull()
-            ->and($usage->notes)->toBe(['campaigns.drivers.mailgun.monthly_included (CAMPAIGNS_MAILGUN_MONTHLY_INCLUDED) isn\'t set, so the emails the Mailgun plan includes each month aren\'t known and no overage is warned of.']);
+            ->and($usage->notes)->toBe(["campaigns.drivers.mailgun.monthly_included (CAMPAIGNS_MAILGUN_MONTHLY_INCLUDED) {$says}, so the emails the Mailgun plan includes each month aren't known and no overage is warned of."]);
 
         Http::assertSent(fn (ClientRequest $request): bool => $request['start'] === 'Tue, 01 Dec 2026 00:00:00 +0000');
     })->with([
-        'unset' => [null],
-        'blank' => [''],
-        'zero' => ['0'],
-        'not a number' => ['fifty thousand'],
+        'unset' => [null, 'isn\'t set'],
+        'blank' => ['', 'isn\'t set'],
+        'zero' => ['0', 'isn\'t a whole number above 0, such as 50000'],
+        'with a separator' => ['50,000', 'isn\'t a whole number above 0, such as 50000'],
+        'not a number' => ['fifty thousand', 'isn\'t a whole number above 0, such as 50000'],
     ]);
 
     it('counts the region it could read, saying which it couldn\'t, and fails only when neither answers', function (): void {

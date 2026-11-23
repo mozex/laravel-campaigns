@@ -86,6 +86,14 @@ it('shows a driver\'s odd values safely: no count below 0, no allowance below 0,
         'note' => 'One. Two.',
     ]);
 
+    // JSON has no infinity, which a driver may mean as "no limit".
+    Cache::store('campaigns')->flush();
+    app(DriverManager::class)->swap('fake', (new FakeDriver)->used(1, 10, perSecond: INF));
+
+    expect(ProviderUsage::read())->toMatchArray(['per_second' => null, 'left' => 9])
+        ->and((new Usage(Usage::DAY, now(), now(), 5, -1, true))->left())->toBeNull()
+        ->and((new Usage(Usage::DAY, now(), now(), 12, 10, true))->left())->toBe(0);
+
     Cache::store('campaigns')->flush();
     app(DriverManager::class)->swap('fake', (new FakeDriver)->used(1, period: 'week'));
 
