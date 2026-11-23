@@ -24,7 +24,7 @@ A campaign created without `lists` goes to the default lists: the ones marked `i
 
 The defaults are read when the campaign is created and become its own lists. Marking or unmarking a list later changes no campaign that already exists, and `duplicate_campaign` copies the original's lists. So the count the person approves at the start is the count that's frozen. Naming lists replaces the defaults: to send to the defaults and one more list, name all of them. With no list marked, a campaign created without lists has none, and its preview and start are refused until it names some.
 
-An agent with full rights marks a list with `create_list` or `update_list` (`is_default`), a dynamic list included. Your code does it with `UpdateListAction` ([Dynamic Lists](../lists-and-subscribers/dynamic-lists.md#a-default-list)). Archiving a list takes its mark away, and restoring it doesn't bring the mark back.
+An agent with full rights marks the static list it makes with `create_list`, and marks or unmarks any list, a dynamic one included, with `update_list` (`is_default`). Your code does it with `UpdateListAction` ([Dynamic Lists](../lists-and-subscribers/dynamic-lists.md#a-default-list)). Archiving a list takes its mark away, and restoring it doesn't bring the mark back.
 
 ## Filters
 

@@ -75,7 +75,7 @@ Business sponsors get logo placement in package READMEs. [**See sponsorship tier
 composer require mozex/laravel-campaigns
 ```
 
-Then run the install command once. It publishes the config file and the migrations, which you run with `php artisan migrate`.
+Then run the install command. It publishes the config file and the migrations, which you run with `php artisan migrate`. Run it again after updating to a version that adds a migration: it publishes only the new ones.
 
 ```bash
 php artisan campaigns:install

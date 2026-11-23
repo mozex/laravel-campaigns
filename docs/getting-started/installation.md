@@ -18,7 +18,7 @@ php artisan migrate
 
 The tables work on MySQL, MariaDB, PostgreSQL and SQLite. SQL Server isn't supported, since its unique indexes allow only one `NULL`.
 
-A later version can add a migration. After updating, run `php artisan campaigns:install` again and migrate: it publishes only the migrations missing from `database/migrations` and leaves your config file as it is. If you keep migrations in another folder, copy just the new stub from the package's `database/migrations` instead, since the install command can't see that folder and would publish the first migration a second time.
+A later version can add a migration. After updating, run `php artisan campaigns:install` again and migrate: it publishes only the migrations missing from `database/migrations` and leaves your config file as it is. If you keep migrations in another folder, copy just the new stub from the package's `database/migrations` instead, named the way Laravel runs it (`2026_12_01_000000_upgrade_campaigns_tables_to_0_2.php`, with a timestamp after your first one), since the install command can't see that folder and would publish the first migration a second time. The same happens after `php artisan schema:dump --prune` removed the first migration: delete the copy of it the install command publishes before you migrate.
 
 ## Add the campaigns mailer
 
