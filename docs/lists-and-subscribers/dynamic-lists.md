@@ -101,14 +101,46 @@ $user = User::withCampaignConsent(
 );
 ```
 
-A ticked box (`accepted: true`) joins them with their consent recorded, their IP address and browser kept with it. An unticked one (`accepted: false`) records that they declined and opts them out of all marketing. The choice is recorded even when the record isn't eligible yet, so a later sync never subscribes someone who said no. Records created without a context join on the list's default basis.
+A ticked box (`accepted: true`) joins them with their consent recorded, their IP address and browser kept with it. An unticked one (`accepted: false`) records that they declined and opts them out of all marketing. When the form shows a note instead of a box, leave `accepted` out: the record joins on the basis you give, with the notice version and the request kept, and an earlier opt-out of the address stays.
+
+A record that can't join its list when it's created, such as an account whose address isn't confirmed yet, gets no subscriber then, since the address may not be the person's: nothing is linked, moved or deleted on its behalf. A ticked or unticked box is the exception, recorded at once so a later sync never subscribes someone who said no. Wrap the save that makes the record eligible as well, and it joins under that context, with the notice the account was shown and the request that confirmed the address:
+
+```php
+User::withCampaignConsent(
+    ConsentContext::fromRequest(
+        $request,
+        'email-confirmation',
+        $user->signup_notice === null ? ConsentBasis::Legacy : ConsentBasis::SoftOptIn,
+        noticeVersion: $user->signup_notice,
+    ),
+    fn (): bool => $user->markEmailAsVerified(),
+);
+```
+
+Here `signup_notice` stands for the version of the sign-up note your app kept for the account; one made before your notice mentioned marketing has none and joins as `legacy`. Only a record that becomes eligible in that save takes the context, and never its `accepted`, so another account saved inside the callback keeps its own consent: record a box ticked on that page with `SubscribeAction` after the save. A list source whose `isEligible()` reads other tables can't show what the save changed, so its record joins as a sync.
+
+Fortify's and Breeze's verification routes call `markEmailAsVerified()` themselves, so put that route behind a middleware that runs the request inside the context:
+
+```php
+public function handle(Request $request, Closure $next): Response
+{
+    $notice = $request->user()?->signup_notice;
+
+    return User::withCampaignConsent(
+        ConsentContext::fromRequest($request, 'email-confirmation', $notice === null ? ConsentBasis::Legacy : ConsentBasis::SoftOptIn, noticeVersion: $notice),
+        fn (): Response => $next($request),
+    );
+}
+```
+
+A record created without a context joins on the list's default basis from source `staff`, and one made eligible outside a context from source `sync`.
 
 ## What happens as records change
 
-- **Created:** the record's subscriber is made (or linked, when the address is already known) and joins the list.
+- **Created:** the record's subscriber is made (or linked, when the address is already known) and joins the list. A record that isn't eligible yet gets its subscriber once it is, unless its sign-up recorded a choice.
 - **Updated:** its details follow `fields()`. A changed address moves the person: their consent history and sent mail go with them, while a block stays with the old address, since a bounce is a fact about an address, not a person.
 - **No longer eligible:** off the list, back once eligible again.
-- **Deleted:** the person is forgotten ([Privacy and Security](../reference/privacy-and-security.md#forgetting-someone)). An address that was blocked or opted out keeps its row, stripped to the address, so an import can't bring it back.
+- **Deleted:** the person is forgotten ([Privacy and Security](../reference/privacy-and-security.md#forgetting-someone)). An address that was blocked or opted out keeps its row, stripped to the address, with the consent records that prove it, so an import can't bring it back.
 
 The trait hears only Eloquent's model events. A delete that fires none (`User::where(...)->delete()`, a database cascade, a mass prune) leaves the subscriber linked to a record that's gone, still mailable. `campaigns:sync-list` finds those after its walk and forgets them. Forgetting can't be undone, so after such a delete run it without `--force` first and read its "Forgotten" count before running it with `--force`. It forgets nobody while the model's table holds no rows at all, as it would mid-restore.
 

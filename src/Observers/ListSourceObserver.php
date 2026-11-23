@@ -12,6 +12,7 @@ use Mozex\Campaigns\Actions\ForgetSubscriberAction;
 use Mozex\Campaigns\Actions\SyncRecordAction;
 use Mozex\Campaigns\Campaigns;
 use Mozex\Campaigns\CampaignsException;
+use Mozex\Campaigns\Contracts\ListSource;
 use Mozex\Campaigns\Models\Subscriber;
 use Mozex\Campaigns\Support\ConsentContext;
 use Mozex\Campaigns\Support\DatabaseErrors;
@@ -43,9 +44,28 @@ class ListSourceObserver
         $this->sync($record, $this->campaigns->consentFor($record) ?? new ConsentContext('staff'));
     }
 
+    /**
+     * A record that becomes eligible in this save joins under the consent
+     * context around it, so an app that lets a record join only later (an
+     * account whose address must be confirmed first) records the notice and
+     * the request at the save that makes it eligible. Any other record of the
+     * class saved inside the callback (a referrer credited at sign-up) keeps
+     * its own consent, and the context's choice never reaches an update, so
+     * nobody's opt-out is cleared or declined by a save made for someone else.
+     * A list source whose eligibility reads other tables sees no change here
+     * and joins the record as a sync.
+     */
     public function updated(Model $record): void
     {
-        $this->sync($record, null);
+        $context = $this->campaigns->consentFor($record);
+
+        foreach (array_keys($this->campaigns->listSourcesFor($record)) as $key) {
+            $this->safely(fn () => $this->sync->execute(
+                $key,
+                $record,
+                $context !== null && $this->joinsNow($key, $record) ? $this->withoutChoice($context) : null,
+            ));
+        }
     }
 
     /**
@@ -67,6 +87,35 @@ class ListSourceObserver
                 $this->forget->execute($subscriber);
             }
         });
+    }
+
+    /**
+     * Whether the save made the record eligible for the list: Eloquent keeps
+     * the attributes it had before the save until the save is done.
+     */
+    protected function joinsNow(string $key, Model $record): bool
+    {
+        $source = $this->campaigns->listSource($key);
+        $before = (clone $record)->setRawAttributes($record->getRawOriginal());
+
+        return ! $this->isEligible($source, $before) && $this->isEligible($source, $record);
+    }
+
+    protected function isEligible(ListSource $source, Model $record): bool
+    {
+        return ! (method_exists($record, 'trashed') && $record->trashed()) && $source->isEligible($record);
+    }
+
+    protected function withoutChoice(ConsentContext $context): ConsentContext
+    {
+        return new ConsentContext(
+            source: $context->source,
+            basis: $context->basis,
+            noticeVersion: $context->noticeVersion,
+            ipAddress: $context->ipAddress,
+            userAgent: $context->userAgent,
+            meta: $context->meta,
+        );
     }
 
     protected function sync(Model $record, ?ConsentContext $context): void

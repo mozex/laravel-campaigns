@@ -25,7 +25,7 @@ if ($subscriber = Subscriber::findByEmail($email)) {
 }
 ```
 
-Their lists, details, IP addresses, browsers and the addresses on their sent mail go, and mail still waiting is never sent. The consent records and the campaigns' numbers stay. A blocked or opted-out address keeps its row, stripped to the address and that state, so a later import of the same address can't mail it again; any other address is deleted.
+Their lists, details, IP addresses, browsers and the addresses on their sent mail go, and mail still waiting is never sent. The consent records and the campaigns' numbers stay. A blocked or opted-out address keeps its row, stripped to the address and that state, with the consent records that prove it, so a later import of the same address can't mail it again. Its sent mail no longer points at it; only its consent records name the email that led to the opt-out or block. Any other address is deleted.
 
 ## What your error tracker should never see
 

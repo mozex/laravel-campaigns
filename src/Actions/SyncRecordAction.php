@@ -31,6 +31,12 @@ use Mozex\Campaigns\Support\SubscriberDetails;
  * except when the record is created with the person's own choice in its
  * consent context (a ticked or unticked sign-up box). Leaving and rejoining
  * for eligibility writes no consent records: it isn't a consent change.
+ *
+ * A record that can't join yet makes no subscriber unless its context holds
+ * a choice, which a later sync couldn't record: until it is eligible its
+ * address may not be its own (an account not confirmed yet), so it takes
+ * over no row and collects nothing. It joins under the context the app gives
+ * around the save that makes it eligible (ListSourceObserver::updated()).
  */
 class SyncRecordAction
 {
@@ -47,7 +53,7 @@ class SyncRecordAction
     ) {}
 
     /**
-     * @param  ?ConsentContext  $context  The consent the record was created under; null for a sync of a record that already existed.
+     * @param  ?ConsentContext  $context  The consent the record was created, or first made eligible, under; null for a sync of a record that already existed.
      */
     public function execute(string $listKey, Model $record, ?ConsentContext $context = null): SyncResult
     {

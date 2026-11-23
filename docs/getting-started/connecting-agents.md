@@ -51,13 +51,21 @@ Signing in isn't enough: a person needs one of two gate abilities, which your ap
 ```php
 use Illuminate\Support\Facades\Gate;
 
-Gate::define('campaigns.read', fn (User $user): bool => $user->isStaff());
-Gate::define('campaigns.full', fn (User $user): bool => $user->isAdmin());
+Gate::define('campaigns.read', fn (User $user): bool => ! $user->isBanned() && $user->isStaff());
+Gate::define('campaigns.full', fn (User $user): bool => ! $user->isBanned() && $user->isAdmin());
 ```
 
 `campaigns.full` reaches every tool, `campaigns.read` only the ones that change nothing. Someone signed in with neither is refused with a 403 before any tool is listed. A request with no valid token or sign-in gets a 401 whose `WWW-Authenticate` header points at your OAuth metadata once your app serves it, which is how a client knows to start the sign-in.
 
-Under a token, the request's user is the token (`Mozex\Campaigns\Models\ApiToken`), not one of your users. The package never asks your gate about it, but middleware you add to the route might: a `Gate::before()` callback typed for your own user model would throw there.
+The server's route runs none of your app's `web` or `api` middleware, only what you list in `campaigns.mcp.middleware` (below), so the abilities are the place for your account checks, as the ban above: a chat app connected before the ban can keep refreshing its token.
+
+Once someone signs in through OAuth, the guard that knew them (`api`) becomes the request's default guard, since the tools read the default. A permissions package that picks its guard from that default then looks for an `api` permission. With spatie/laravel-permission, whose permissions usually belong to the `web` guard, name the guard in the check:
+
+```php
+Gate::define('campaigns.full', fn (User $user): bool => ! $user->isBanned() && $user->can('manage campaigns', 'web'));
+```
+
+Under a token, the request's user is the token (`Mozex\Campaigns\Models\ApiToken`), not one of your users. The package never asks your gate about it, and nothing of yours that an MCP call runs may either: your audiences, resources and the listeners on the package's events. A gate check about the request's user (`Gate::allows()`, `@can`) runs every gate callback against the token, and one written for your own user model throws there. spatie/laravel-permission's callback does, and so does Filament Shield's super-admin callback, since a gate's `before` and `after` callbacks run for every ability. `$request->user()->can()` throws too, since a token has no `can()`. To check a user you already hold, ask `Gate::forUser($user)`.
 
 ## What agents can do
 

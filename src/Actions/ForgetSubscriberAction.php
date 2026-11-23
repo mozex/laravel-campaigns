@@ -18,8 +18,10 @@ use Mozex\Campaigns\Models\Subscription;
  * sent. The consent records and the campaigns' numbers stay.
  *
  * A blocked or opted-out address keeps its row, stripped to the address and
- * that state, so a later import of the same address can't mail it again.
- * Any other address is deleted.
+ * that state, so a later import of the same address can't mail it again,
+ * with the consent records that prove it. Its sent mail no longer points at
+ * it, as a deleted row's doesn't: only those records name the email that
+ * led to the opt-out or block. Any other address is deleted.
  */
 class ForgetSubscriberAction
 {
@@ -35,11 +37,11 @@ class ForgetSubscriberAction
             $now = now();
             $messages = CampaignMessage::query()->where('subscriber_id', $fresh->id);
 
-            // Before the row is deleted, which nulls the messages' key and
-            // leaves nothing to find them by.
+            // In this order: the last update unlinks the messages, leaving
+            // nothing to find them by.
             (clone $messages)->where('status', MessageStatus::Pending)->update(['status' => MessageStatus::Skipped, 'updated_at' => $now]);
             ProviderEvent::query()->whereIn('message_id', (clone $messages)->select('id'))->update(['payload' => null]);
-            (clone $messages)->update(['email' => null, 'updated_at' => $now]);
+            (clone $messages)->update(['email' => null, 'subscriber_id' => null, 'updated_at' => $now]);
 
             ConsentRecord::query()->where('subscriber_id', $fresh->id)->update(['ip_address' => null, 'user_agent' => null]);
             Subscription::query()->where('subscriber_id', $fresh->id)->delete();

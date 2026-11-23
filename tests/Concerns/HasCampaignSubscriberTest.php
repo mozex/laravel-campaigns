@@ -31,6 +31,22 @@ class MemberListWithPhone extends MemberList
 }
 
 /**
+ * Every member, banned or not.
+ */
+class EveryMember extends MemberList
+{
+    public function name(): string
+    {
+        return 'Everyone';
+    }
+
+    public function isEligible(Model $record): bool
+    {
+        return true;
+    }
+}
+
+/**
  * Custom fields no filter could find, which every other path refuses.
  */
 class MemberListWithBadFields extends MemberList
@@ -160,6 +176,159 @@ it('records the choice of a record that cannot join its list yet', function (): 
         ->and($subscriber?->fresh()?->opted_out_at)->not->toBeNull()
         ->and(consentActions($subscriber))->toBe(['decline'])
         ->and(ConsentRecord::query()->sole()->source)->toBe('registration');
+});
+
+/**
+ * A sign-up made with a note and no box, while the record can't join its
+ * list yet.
+ */
+function unconfirmedSignUp(string $email): Member
+{
+    return Member::withCampaignConsent(
+        new ConsentContext('registration', ConsentBasis::SoftOptIn, 'v1', null, '203.0.113.9', 'Browser/1.0'),
+        fn (): Member => Member::query()->create(['email' => $email, 'name' => 'Someone Else', 'banned_at' => now()]),
+    );
+}
+
+it('joins a record that could not join yet under the consent around the save that makes it eligible', function (): void {
+    $member = unconfirmedSignUp('jane@example.com');
+    $staffMade = Member::query()->create(['email' => 'staff-made@example.com', 'banned_at' => now()]);
+    $whileUnconfirmed = Subscriber::query()->count();
+
+    Member::withCampaignConsent(
+        new ConsentContext('email-confirmation', ConsentBasis::SoftOptIn, 'v1', null, '198.51.100.4', 'Browser/2.0'),
+        fn (): bool => $member->update(['banned_at' => null]),
+    );
+    $staffMade->update(['banned_at' => null]);
+
+    expect($whileUnconfirmed)->toBe(0)
+        ->and(Subscription::query()->orderBy('id')->get(['status', 'source', 'basis'])->toArray())->toBe([
+            ['status' => 'subscribed', 'source' => 'email-confirmation', 'basis' => 'soft_opt_in'],
+            ['status' => 'subscribed', 'source' => 'sync', 'basis' => 'soft_opt_in'],
+        ])
+        ->and(ConsentRecord::query()->where('subscriber_id', Subscriber::findFor($member)?->id)->sole())
+        ->action->toBe(ConsentAction::Subscribe)
+        ->source->toBe('email-confirmation')
+        ->notice_version->toBe('v1')
+        ->ip_address->toBe('198.51.100.4')
+        ->user_agent->toBe('Browser/2.0');
+});
+
+it('keeps the consent of another record saved inside the callback', function (): void {
+    $referrer = Member::query()->create(['email' => 'referrer@example.com']);
+    app(OptOutAction::class)->execute(Subscriber::findFor($referrer), new ConsentContext('unsubscribe-page'));
+
+    Member::withCampaignConsent(new ConsentContext('registration', accepted: true), function () use ($referrer): void {
+        Member::query()->create(['email' => 'jane@example.com']);
+        $referrer->update(['name' => 'Credited']);
+    });
+
+    expect(Subscriber::findFor($referrer)?->opted_out_at)->not->toBeNull()
+        ->and(consentActions(Subscriber::findFor($referrer)))->toBe(['subscribe', 'opt_out']);
+});
+
+it('never lets a choice around a save reach another record that cannot join', function (bool $accepted): void {
+    $referrer = Member::query()->create(['email' => 'referrer@example.com', 'banned_at' => now()]);
+    $contact = Subscriber::factory()->optedOut()->create(['email' => 'referrer@example.com']);
+
+    Member::withCampaignConsent(new ConsentContext('registration', accepted: $accepted), function () use ($referrer): void {
+        Member::query()->create(['email' => 'jane@example.com']);
+        $referrer->update(['name' => 'Credited']);
+    });
+
+    expect($contact->fresh())
+        ->subscribable_type->toBeNull()
+        ->opted_out_at->not->toBeNull()
+        ->and(consentActions($contact))->toBe([]);
+})->with(['ticked' => true, 'unticked' => false]);
+
+it('never lends the context around a save to a record that was already eligible', function (): void {
+    $existing = Member::withoutEvents(fn (): Member => Member::query()->create(['email' => 'existing@example.com', 'created_at' => now()->subDay()]));
+
+    Member::withCampaignConsent(new ConsentContext('registration', ConsentBasis::SoftOptIn, 'v1', null, '203.0.113.9'), function () use ($existing): void {
+        Member::query()->create(['email' => 'jane@example.com']);
+        $existing->update(['name' => 'Credited']);
+    });
+
+    expect(Subscription::query()->where('subscriber_id', Subscriber::findFor($existing)?->id)->sole())
+        ->source->toBe('sync')
+        ->basis->toBe(ConsentBasis::Legacy);
+});
+
+it('joins under the context around a save without the choice it carries', function (): void {
+    $contact = Subscriber::factory()->optedOut()->create(['email' => 'jane@example.com']);
+    $member = unconfirmedSignUp('jane@example.com');
+
+    Member::withCampaignConsent(
+        new ConsentContext('email-confirmation', accepted: true),
+        fn (): bool => $member->update(['banned_at' => null]),
+    );
+
+    expect($contact->fresh())
+        ->opted_out_at->not->toBeNull()
+        ->and($contact->fresh()?->subscribable?->is($member))->toBeTrue()
+        ->and(consentActions($contact))->toBe(['subscribe'])
+        ->and(ConsentRecord::query()->sole()->source)->toBe('email-confirmation');
+});
+
+it('joins each list under the context around the save that makes the record eligible for it', function (): void {
+    config()->set('campaigns.list_sources', ['members' => MemberList::class, 'everyone' => EveryMember::class]);
+    $member = unconfirmedSignUp('jane@example.com');
+
+    Member::withCampaignConsent(
+        new ConsentContext('email-confirmation', ConsentBasis::SoftOptIn, 'v1'),
+        fn (): bool => $member->update(['banned_at' => null]),
+    );
+
+    expect(Subscription::query()->with('list')->get()->mapWithKeys(fn (Subscription $subscription): array => [$subscription->list?->key => $subscription->source])->all())
+        ->toEqual(['everyone' => 'registration', 'members' => 'email-confirmation']);
+});
+
+it('leaves an address\'s existing subscriber alone until a record that cannot join yet is eligible', function (string $state): void {
+    $contact = Subscriber::factory()->create(['email' => 'jane@example.com', 'name' => 'Jane Doe', $state => now()]);
+    $newsletter = Subscription::factory()->for($contact)->create();
+
+    $member = unconfirmedSignUp('jane@example.com');
+    $whileUnconfirmed = [$contact->fresh()?->subscribable_type, $contact->fresh()?->name, ConsentRecord::query()->count()];
+
+    $member->update(['banned_at' => null]);
+
+    expect($whileUnconfirmed)->toBe([null, 'Jane Doe', 0])
+        ->and($contact->fresh())
+        ->{$state}->not->toBeNull()
+        ->isMailable()->toBeFalse()
+        ->and($contact->fresh()?->subscribable?->is($member))->toBeTrue()
+        ->and($newsletter->fresh()?->status)->toBe(SubscriptionStatus::Subscribed)
+        ->and(ConsentRecord::query()->sole()->source)->toBe('sync');
+})->with(['opted_out_at', 'blocked_at']);
+
+it('never hands an address\'s existing subscriber to a record that cannot join yet and then changes or goes', function (string $then): void {
+    $contact = Subscriber::factory()->create(['email' => 'jane@example.com', 'name' => 'Jane Doe']);
+    $newsletter = Subscription::factory()->for($contact)->create();
+
+    $member = unconfirmedSignUp('jane@example.com');
+    $then === 'corrected' ? $member->update(['email' => 'john@example.com']) : $member->forceDelete();
+
+    expect($contact->fresh())
+        ->email->toBe('jane@example.com')
+        ->name->toBe('Jane Doe')
+        ->subscribable_type->toBeNull()
+        ->and($newsletter->fresh()?->status)->toBe(SubscriptionStatus::Subscribed)
+        ->and(Subscriber::query()->count())->toBe(1);
+})->with(['corrected', 'deleted']);
+
+it('records a refusal on the address\'s existing subscriber at once, even before the record can join', function (): void {
+    $contact = Subscriber::factory()->create(['email' => 'jane@example.com']);
+
+    Member::withCampaignConsent(
+        new ConsentContext('registration', accepted: false),
+        fn (): Member => Member::query()->create(['email' => 'jane@example.com', 'banned_at' => now()]),
+    );
+
+    expect($contact->fresh())
+        ->subscribable_type->not->toBeNull()
+        ->opted_out_at->not->toBeNull()
+        ->and(consentActions($contact))->toBe(['decline']);
 });
 
 it('takes a record off its list while its address cannot be synced', function (): void {

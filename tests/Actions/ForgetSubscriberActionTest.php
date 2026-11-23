@@ -82,3 +82,27 @@ it('keeps a blocked or opted-out address, stripped to that state', function (str
         ->last_active_at->toBeNull()
         ->and(Subscription::query()->count())->toBe(0);
 })->with(['blocked_at', 'opted_out_at']);
+
+it('unlinks a kept address\'s mail, so only the address, its state and its consent records stay', function (string $driver, string $state): void {
+    useDatabase($driver);
+
+    [$subscriber, $pending, $sent, $event] = subscriberWithHistory();
+    $subscriber->forceFill([$state => now()])->save();
+
+    app(ForgetSubscriberAction::class)->execute($subscriber);
+
+    expect($subscriber->fresh())->not->toBeNull()
+        ->and($pending->fresh())
+        ->status->toBe(MessageStatus::Skipped)
+        ->email->toBeNull()
+        ->subscriber_id->toBeNull()
+        ->and($sent->fresh())
+        ->status->toBe(MessageStatus::Delivered)
+        ->email->toBeNull()
+        ->subscriber_id->toBeNull()
+        ->and($event->fresh()?->payload)->toBeNull()
+        ->and(ConsentRecord::query()->sole())
+        ->subscriber_id->toBe($subscriber->id)
+        ->ip_address->toBeNull()
+        ->user_agent->toBeNull();
+})->with('databases')->with(['blocked_at', 'opted_out_at']);

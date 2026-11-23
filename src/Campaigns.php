@@ -29,8 +29,8 @@ use Throwable;
 class Campaigns
 {
     /**
-     * The consent each model class is being created under, set only for the
-     * length of a withConsent() callback.
+     * The consent each model class is being created, or first made eligible,
+     * under, set only for the length of a withConsent() callback.
      *
      * @var array<class-string<Model>, ConsentContext>
      */
@@ -38,8 +38,9 @@ class Campaigns
 
     /**
      * Runs the callback with a consent context for records of the model
-     * created inside it, such as a sign-up's ticked or unticked box. Records
-     * of other models, and anything created after the callback returns or
+     * created inside it, such as a sign-up's ticked or unticked box, or first
+     * made eligible inside it, without the box (ListSourceObserver). Records
+     * of other models, and anything saved after the callback returns or
      * throws, never see it.
      *
      * @template TReturn

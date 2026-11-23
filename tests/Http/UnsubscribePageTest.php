@@ -9,6 +9,7 @@ use Illuminate\Session\Middleware\StartSession;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Route;
+use Mozex\Campaigns\Actions\ForgetSubscriberAction;
 use Mozex\Campaigns\Enums\BlockReason;
 use Mozex\Campaigns\Enums\ConsentAction;
 use Mozex\Campaigns\Enums\ConsentBasis;
@@ -221,6 +222,21 @@ it('never lets an old, forgotten or blocked address sign the person back up', fu
         null,
     ],
 ]);
+
+it('answers a one-click from mail whose person was forgotten, changing nothing', function (): void {
+    [$message, $token] = sentMessage();
+    $subscriber = $message->subscriber;
+    $subscriber?->forceFill(['blocked_at' => now()])->save();
+    app(ForgetSubscriberAction::class)->execute($subscriber);
+
+    $this->post("/campaigns/u/{$token}", ['List-Unsubscribe' => 'One-Click'])->assertOk();
+
+    expect($subscriber?->fresh())
+        ->blocked_at->not->toBeNull()
+        ->opted_out_at->toBeNull()
+        ->and(ConsentRecord::query()->count())->toBe(0)
+        ->and($message->fresh()?->unsubscribed_at)->toBeNull();
+});
 
 it('queues the stop-loss\'s check after an unsubscribe that counted, one per campaign at a time', function (): void {
     Queue::fake([EnforceStopLossJob::class]);

@@ -60,7 +60,7 @@ $user = User::withCampaignConsent(
 );
 ```
 
-`accepted: true` records consent with the IP and browser; `false` records the refusal and opts the person out; leave the context out when the person made no choice (the list's default basis, `soft_opt_in`, applies). The `source` is a short label of where the change came from (at most 125 characters).
+`accepted: true` records consent with the IP and browser; `false` records the refusal and opts the person out; leave `accepted` out for a note with no box (the basis, notice version and request are kept, an earlier opt-out stays). A record that isn't eligible when created (an unconfirmed account) gets no subscriber unless the context holds a choice: wrap the save that makes it eligible (`markEmailAsVerified()`) in `withCampaignConsent()` too, and it joins under that context; only a record that becomes eligible in that save takes it, never its `accepted` (record a box ticked then with `SubscribeAction` after the save); Fortify's or Breeze's verification route gets a middleware that runs the request inside `withCampaignConsent()`. Without one the record joins on the list's default basis (`soft_opt_in`) from source `staff` (created) or `sync`. The `source` is a short label of where the change came from (at most 125 characters).
 
 ## Static lists, newsletters and double opt-in
 
@@ -81,7 +81,7 @@ app(SendConfirmationAction::class)->execute($subscription);   // mails the link 
 
 Never build a subscriber with `Subscriber::firstOrCreate()`: it compares the raw address. `SubscribeAction` refuses a context with `accepted: false`; record an unticked box with `DeclineAction`. On a double opt-in list the person waits as `pending`: one confirmation email per address a day, nothing while sending is off (call `SendConfirmationAction` again for sign-ups made then), and an address change voids the link already sent. Agents' own additions to a double opt-in list are never mailed a confirmation.
 
-Other actions: `OptOutAction`, `OptInAction`, `BlockAction` (with a `BlockReason`), `UnblockAction`, `RemoveFromListAction` (static lists), `ChangeEmailAction`, `ForgetSubscriberAction` (an erasure request; a blocked or opted-out address keeps its row stripped to the address). `Subscriber::findByEmail()` and `Subscriber::findFor($record)` look people up.
+Other actions: `OptOutAction`, `OptInAction`, `BlockAction` (with a `BlockReason`), `UnblockAction`, `RemoveFromListAction` (static lists), `ChangeEmailAction`, `ForgetSubscriberAction` (an erasure request; a blocked or opted-out address keeps its row stripped to the address, with its consent records, and its sent mail is unlinked). `Subscriber::findByEmail()` and `Subscriber::findFor($record)` look people up.
 
 ## Imports from another service
 
@@ -110,7 +110,7 @@ An import never clears an opt-out or block, never changes an existing subscripti
 - `CAMPAIGNS_FROM_ADDRESS` on the marketing domain, `CAMPAIGNS_POSTAL_ADDRESS`, `CAMPAIGNS_PRIVACY_URL`, `CAMPAIGNS_ALERT_ADDRESS`, `CAMPAIGNS_TEST_ADDRESSES`.
 - Mailgun webhooks to `/campaigns/webhooks/mailgun` with `MAILGUN_WEBHOOK_SIGNING_KEY` (keep it set for a few days after switching drivers, so late events land); an account key in `CAMPAIGNS_MAILGUN_API_KEY` for logs, metrics and suppressions; `php artisan campaigns:import-provider-suppressions <domain>` before the first campaign.
 - A worker for the `campaigns` queue with `--timeout` above 300 seconds and the connection's `retry_after` above that; the scheduler running; `CAMPAIGNS_CACHE_STORE` on a store deploys don't flush.
-- `php artisan campaigns:token create <name> [--read-only]` for an agent's machine. For OAuth (claude.ai, ChatGPT): Passport with laravel/mcp's `Mcp::oauthRoutes()`, then `'guards' => ['campaigns', 'api']` under `campaigns.mcp` and the gate abilities `campaigns.read` and `campaigns.full`, which the package never defines.
+- `php artisan campaigns:token create <name> [--read-only]` for an agent's machine. For OAuth (claude.ai, ChatGPT): Passport with laravel/mcp's `Mcp::oauthRoutes()`, then `'guards' => ['campaigns', 'api']` under `campaigns.mcp` and the gate abilities `campaigns.read` and `campaigns.full`, which the package never defines. The abilities hold the app's own account checks (a ban), since the server's route runs none of the app's `web` or `api` middleware, only `campaigns.mcp.middleware`. An OAuth sign-in makes `api` the default guard, so with spatie/laravel-permission name the guard: `$user->can('manage campaigns', 'web')`. Under a token the request's user is an `ApiToken`: code an MCP call reaches (audiences, resources, listeners on the package's events) never asks the Gate about the request's user, since callbacks written for the app's user model throw on it, Spatie's and Filament Shield's included; use `Gate::forUser($user)` for a user it holds.
 - A CDN's bot or browser check off, and caching off, for the MCP path and its sub-paths, `/campaigns/` (the open pixel `/campaigns/o/` and tracked links `/campaigns/l/` among them: a cached or challenged pixel hides every open), `/oauth/` and `/.well-known/oauth-`.
 - `campaigns.mcp.instructions` for the app's own rules for agents: about 2,300 characters fit beside the package's.
 

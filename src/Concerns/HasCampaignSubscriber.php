@@ -53,6 +53,12 @@ trait HasCampaignSubscriber
      * without an address that can be mailed, or with one another record
      * holds, has nowhere to keep it.
      *
+     * A record that can't join its list when it's created (an account whose
+     * address must be confirmed first) joins later: wrap the save that makes
+     * it eligible too, and it joins under that context, its accepted left
+     * out, so a box ticked then is recorded with SubscribeAction after the
+     * save. Saves that don't make the record eligible for a list ignore it.
+     *
      * @template TReturn
      *
      * @param  Closure(): TReturn  $callback

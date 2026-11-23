@@ -126,7 +126,8 @@ class ChangeEmailAction
      * Mail sent to the old address stays the person's, keeping that address,
      * so its unsubscribe link still reaches them once the old row is
      * forgotten. A campaign that reached both rows keeps the old row's email
-     * where it is, since a campaign holds one email per subscriber.
+     * where it is, since a campaign holds one email per subscriber, and
+     * forgetting the old row takes its address and its link.
      */
     protected function moveMessages(Subscriber $from, Subscriber $to): void
     {
