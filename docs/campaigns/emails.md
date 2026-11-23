@@ -37,7 +37,7 @@ Placeholders are a fixed set, filled in one pass and never compiled, so a recipi
 | `{{first_name}}` | the recipient's first name; `{{first_name\|there}}` gives a fallback |
 | `{{name}}` | the recipient's full name |
 | `{{email}}` | the recipient's address |
-| `{{unsubscribe_url}}`, `{{preferences_url}}` | the page where they unsubscribe from everything, or subscribe again (one page) |
+| `{{unsubscribe_url}}`, `{{preferences_url}}` | the page where they unsubscribe from every campaign the app sends, or subscribe again (one page) |
 | `{{web_version_url}}` | the email as a web page |
 | `{{footer}}` | who the email went to, the unsubscribe and privacy links and the postal address |
 | `{{postal_address}}`, `{{privacy_url}}` | from `campaigns.postal_address` and `campaigns.privacy_url` |

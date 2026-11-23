@@ -97,7 +97,7 @@ Every email's links open pages the package serves, outside your `web` middleware
 | Double opt-in confirmation | `/campaigns/c/{token}` |
 | Web version | `/campaigns/v/{token}` |
 
-The unsubscribe page shows the person's state: subscribed people can unsubscribe from everything, opted-out people can subscribe again (from the address they still hold, never a blocked one), and a blocked or forgotten address has nothing to do. Mail apps' one-click unsubscribe (the `List-Unsubscribe` header, RFC 8058) posts to the same address and gets a plain 200.
+The unsubscribe page shows the person's state: subscribed people can unsubscribe from every campaign the app sends, opted-out people can subscribe again (from the address they still hold, never a blocked one), and a blocked or forgotten address has nothing to do. Mail apps' one-click unsubscribe (the `List-Unsubscribe` header, RFC 8058) posts to the same address and gets a plain 200.
 
 A link shows the address its email went to, never the person's current one, so whoever reads an old address can't learn the new one.
 

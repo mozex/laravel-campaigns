@@ -40,7 +40,7 @@ class Placeholders
         'first_name' => 'The recipient\'s first name. Give a fallback for anyone without one: {{first_name|there}}.',
         'name' => 'The recipient\'s full name.',
         'email' => 'The recipient\'s email address.',
-        'unsubscribe_url' => 'The page where the recipient unsubscribes from all of this app\'s email, or subscribes again.',
+        'unsubscribe_url' => 'The page where the recipient unsubscribes from every campaign this app sends, or subscribes again.',
         'preferences_url' => 'The same page as unsubscribe_url.',
         'web_version_url' => 'The email as a web page, for a "view in your browser" link.',
         'footer' => 'Who the email went to, the unsubscribe and privacy links and the postal address, in the email\'s language where the app has the package\'s strings in it, else in the app\'s language.',
