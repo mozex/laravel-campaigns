@@ -63,6 +63,7 @@ function applyHits(): void
 }
 
 it('answers the pixel with a GIF nothing caches or keeps, and records an open of its email', function (): void {
+    $this->freezeTime();
     [$message, $token] = trackedEmail();
 
     $pixel = $this->get(Links::open($token), ['User-Agent' => DESKTOP_CHROME]);
@@ -143,6 +144,7 @@ it('counts what came as the email arrived as a machine\'s, an open within second
 });
 
 it('redirects a tracked link to its address and records the click with that address', function (): void {
+    $this->freezeTime();
     [$message, $token, $link] = trackedEmail();
 
     $click = $this->get(Links::click($link->key, $token), ['User-Agent' => DESKTOP_CHROME]);
