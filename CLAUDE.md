@@ -30,7 +30,7 @@ vendor/bin/pest --filter="test name here"   # one test
 - `src/Reports/`: the campaign report and the cut summaries tools answer with.
 - `src/Mcp/`: `CampaignsServer`, `Principal`, `Tools/` (48 tools on `CampaignsTool`, shared answer shapes in `Schemas`), `Resources/` (the guide and the app's resources). `routes/mcp.php`: the server, and the signed upload and download links (`Http\Controllers\AgentFileController`) under its path.
 - `routes/campaigns.php`, `src/Http/`: the pages an email's links open (`/campaigns/u/`, `/c/`, `/v/`), the open pixel and tracked links (`/campaigns/o/`, `/l/`, `TrackingController`), the signed preview page and the webhook route per driver (`/campaigns/webhooks/{driver}`). Views and English strings in `resources/`.
-- `src/Contracts/`: `ListSource`, `Audience`, `AgentResource`, `CampaignDriver` and `Drivers\` (`ReceivesWebhooks`, `ReadsEvents`, `ReadsSuppressions`, `ReadsMetrics`). `src/Campaigns.php` (facade `Facades\Campaigns`) resolves them and the consent context. `src/Events/`, `src/Listeners/`, `src/Mail/`: events, the alert mail, the confirmation mail.
+- `src/Contracts/`: `ListSource`, `Audience`, `AgentResource`, `HasCampaignRights`, `CampaignDriver` and `Drivers\` (`ReceivesWebhooks`, `ReadsEvents`, `ReadsSuppressions`, `ReadsMetrics`). `src/Campaigns.php` (facade `Facades\Campaigns`) resolves them and the consent context. `src/Events/`, `src/Listeners/`, `src/Mail/`: events, the alert mail, the confirmation mail.
 - `src/Support/`: tokens, links, the sender, keys, text values (`TextValue`, `ShownText`), the consent context, address cleaning (`EmailAddress`), engagement, the hit classifier (`HitClassifier`), race-safe `Rows::firstOrCreate()`, after-commit dispatch.
 
 ## Key design decisions
@@ -132,8 +132,8 @@ Each class's docblock gives the reasons for its own behaviour; read it before ch
 
 - The server loads from the package's own route file, outside `web`, at `mcp/campaigns` by default (never `mcp`; an empty path falls back).
 - Signing in is `AuthenticateAgent`, never `auth`: it tries each guard in order, putting `Authorization` back before each (Passport blanks it), answers 401 itself (so laravel/mcp's `WWW-Authenticate` follows) and 403 before listing for a principal with neither right.
-- Nothing asks the Gate about the default user (a token is an `ApiToken`). A token shares Laravel's `throttle` bucket with the app's user of the same id.
-- Rights: a token's own `read` or `full`; anyone else by the app's `campaigns.full` then `campaigns.read` abilities, which the package never defines.
+- The package asks Laravel's Gate nothing (`ArchTest`), so an app's `Gate::before()` or a permission package's super-admin hook grants no rights; under a token the default user is an `ApiToken`. A token shares Laravel's `throttle` bucket with the app's user of the same id.
+- Rights are what the principal's model answers through `HasCampaignRights::campaignRights()` (`ApiToken` its own column, an app's user model its own checks); a model without the contract has none. The middleware's check goes through `Principal::current()`, so the tools reuse it and the method is read once a request.
 - A tool is a read tool exactly when it carries `#[IsReadOnly]`; one a principal can't use isn't listed. `RegistryTest` holds every tool's hints, schema and the approval set.
 - A refusal is a tool error with `error` in its structured content; every output schema requires nothing at the top level.
 - A blank argument is dropped, as if not given, never made null, which an update tool reads as "clear it" (`CampaignsTool::handle()`: laravel/mcp reads the raw body, past `ConvertEmptyStringsToNull`); every `page` takes `PAGE_RULES`, bounded so an offset never overflows. `Principal::current()` is worked out once a request.
@@ -158,7 +158,7 @@ Each class's docblock gives the reasons for its own behaviour; read it before ch
 - `Audience` (`campaigns.audiences`) and `AgentResource` (`campaigns.resources`).
 - `ImportContactsAction` for an app's own imports; `SendConfirmationAction` after a pending double opt-in subscribe.
 - The views and strings publish; the actions and `CampaignsServer` resolve through the container.
-- `campaigns.mcp.guards`, the `campaigns.read` and `campaigns.full` abilities, `campaigns.mcp.instructions` and `middleware`.
+- `campaigns.mcp.guards`, `HasCampaignRights` on the app's user model, `campaigns.mcp.instructions` and `middleware`.
 - `Fetching\StaticHostResolver` for apps' tests. The events in `src/Events/`.
 
 ## Testing
@@ -169,7 +169,7 @@ Each class's docblock gives the reasons for its own behaviour; read it before ch
 - `TestCase` sets the `fake` driver. Fake only `SendMessageJob`, so a started campaign still freezes; travel to UTC instants. Run `ProcessFeedbackJob` through `app()->call([$job, 'handle'])`.
 - `tests/Fixtures/Mailgun/` holds Mailgun's documented payloads; reads run under `Http::preventStrayRequests()`. The driver's tests swap a `MailgunApiTransport` over `MockHttpClient`; never test a refused transport against a real one. The SMTP driver talks to a real `EsmtpTransport` over `tests/Fixtures/Smtp/ScriptedStream` (Symfony's `SocketStream` is final, so it extends `AbstractStream` over memory streams, keeping Symfony's own reads, writes and debug log), never a server; it answers NOOP, RSET and QUIT unless a step names them. `tests/Fixtures/Ses/` holds SES's documented event records in EventBridge's envelope; the SES driver's tests give the campaigns mailer's client the SDK's `MockHandler` (its `handler` setting), never a real call, and skip with a reason when the SDK isn't installed. No dataset may build an SDK class at load time, since the suite must run without the SDK.
 - `tests/Fixtures/Mcp/FixtureServer` proves the shared tool rules over HTTP; `Server::actingAs()` skips the route's middleware, so sign-in is tested over HTTP only. Tests reading an error's text set `app.debug` off.
-- `tests/Fixtures/Member`, `MemberList`, `MembersInCountry`, `RecentContacts` and `MemberDirectory` stand in for an app's accounts, list source, audiences and a resource.
+- `tests/Fixtures/Member`, `MemberList`, `MembersInCountry`, `RecentContacts` and `MemberDirectory` stand in for an app's accounts, list source, audiences and a resource; `Person` for a user model signed in through an app's guard, counting how often its rights are read.
 - Compare stored JSON maps with `toEqual()`. Fake the asset disk with an https `url`.
 - Laravel skips its CSRF check under unit tests, so the one-click test binds the kernel's CSRF class (`ValidateCsrfToken` on 12, `PreventRequestForgery` on 13) to a subclass that checks anyway; `Route::middlewareGroup()` in a test changes nothing, since the kernel puts its groups back on every request.
 - The install tests delete what they publish into Testbench's app, before and after each test.

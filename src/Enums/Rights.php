@@ -6,8 +6,8 @@ namespace Mozex\Campaigns\Enums;
 
 /**
  * What an agent signed in to the MCP server may do: a token carries its own,
- * and a person signed in through the app's own guard gets theirs from the
- * campaigns.read and campaigns.full gate abilities.
+ * and a person signed in through the app's own guard gets what the app's
+ * user model answers through HasCampaignRights.
  */
 enum Rights: string
 {
@@ -20,13 +20,5 @@ enum Rights: string
     public function allows(self $needed): bool
     {
         return $this === self::Full || $needed === self::Read;
-    }
-
-    /**
-     * The gate ability that grants these rights to a person.
-     */
-    public function ability(): string
-    {
-        return 'campaigns.'.$this->value;
     }
 }

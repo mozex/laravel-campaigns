@@ -21,8 +21,8 @@ use Symfony\Component\HttpFoundation\Response;
  * its own `mcp/*` paths its own way, and a client that doesn't ask for JSON
  * would be redirected to a login page. A 401 here always reaches laravel/mcp's
  * WWW-Authenticate header, which tells a client how to sign in, and a
- * principal with neither right gets a 403 before any tool or resource is
- * listed.
+ * principal with no rights (its model doesn't implement HasCampaignRights,
+ * or answers null) gets a 403 before any tool or resource is listed.
  */
 class AuthenticateAgent
 {
@@ -56,8 +56,10 @@ class AuthenticateAgent
                 $user->touchLastUsed();
             }
 
-            if (Principal::for($user)->rights === null) {
-                return response()->json(['message' => 'This account may not use the campaigns server: the app grants it through the campaigns.read or campaigns.full gate ability.'], 403);
+            // The request's principal, which the tools read again rather
+            // than asking the app twice.
+            if (Principal::current()?->rights === null) {
+                return response()->json(['message' => 'This account may not use the campaigns server: the app grants it through campaignRights() on its user model.'], 403);
             }
 
             return $next($request);

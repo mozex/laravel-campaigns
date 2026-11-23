@@ -18,6 +18,7 @@ use Mozex\Campaigns\Tests\Fixtures\Mcp\FixtureServer;
 use Mozex\Campaigns\Tests\Fixtures\Mcp\FixtureWriteTool;
 use Mozex\Campaigns\Tests\Fixtures\Member;
 use Mozex\Campaigns\Tests\Fixtures\MemberDirectory;
+use Mozex\Campaigns\Tests\Fixtures\Person;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
@@ -65,16 +66,16 @@ beforeEach(function (): void {
 
     $this->app->bind(CampaignsServer::class, FixtureServer::class);
 
-    // A stand-in for an app's OAuth guard: a person per bearer token.
-    Auth::viaRequest('people', fn (Request $request): ?GenericUser => match ($request->bearerToken()) {
-        'person-full' => new GenericUser(['id' => 1, 'rights' => 'full']),
-        'person-read' => new GenericUser(['id' => 2, 'rights' => 'read']),
-        'person-none' => new GenericUser(['id' => 3, 'rights' => null]),
-        default => null,
-    });
+    // A stand-in for an app's OAuth guard: a person per bearer token, the
+    // last one of a model that doesn't implement HasCampaignRights.
+    $this->people = [
+        'person-full' => new Person(['id' => 1, 'rights' => 'full']),
+        'person-read' => new Person(['id' => 2, 'rights' => 'read']),
+        'person-none' => new Person(['id' => 3, 'rights' => null]),
+        'person-plain' => new GenericUser(['id' => 4]),
+    ];
 
-    Gate::define('campaigns.full', fn (GenericUser $user): bool => $user->rights === 'full');
-    Gate::define('campaigns.read', fn (GenericUser $user): bool => $user->rights === 'read');
+    Auth::viaRequest('people', fn (Request $request): ?GenericUser => $this->people[(string) $request->bearerToken()] ?? null);
 });
 
 it('turns away a missing or unknown token with a 401 that tells the client how to sign in', function (): void {
@@ -109,14 +110,39 @@ it('points a refused client at the OAuth metadata once the app serves it', funct
         ->assertJsonPath('resource', url('/mcp/campaigns'));
 });
 
-it('refuses everything to a person with neither ability', function (): void {
-    foreach (['initialize', 'tools/list', 'resources/list'] as $method) {
-        mcp($method, token: 'person-none')
-            ->assertForbidden()
-            ->assertJsonPath('message', 'This account may not use the campaigns server: the app grants it through the campaigns.read or campaigns.full gate ability.');
+it('refuses everything to a person whose model answers no rights or doesn\'t answer at all', function (): void {
+    foreach (['person-none', 'person-plain'] as $token) {
+        foreach (['initialize', 'tools/list', 'resources/list'] as $method) {
+            mcp($method, token: $token)
+                ->assertForbidden()
+                ->assertJsonPath('message', 'This account may not use the campaigns server: the app grants it through campaignRights() on its user model.');
+        }
+
+        mcp('tools/call', ['name' => 'get_overview', 'arguments' => (object) []], $token)->assertForbidden();
+    }
+});
+
+it('grants nothing through the app\'s gate, whatever its hooks allow', function (): void {
+    ApiToken::factory()->readOnly()->withToken('read-token')->create();
+    ApiToken::factory()->withToken('full-token')->create();
+
+    // A super-admin hook, as permission packages add, and the abilities
+    // earlier versions read.
+    Gate::before(fn (): bool => true);
+    Gate::define('campaigns.full', fn (): bool => true);
+    Gate::define('campaigns.read', fn (): bool => true);
+
+    foreach (['person-none', 'person-plain'] as $token) {
+        mcp('tools/list', token: $token)->assertForbidden();
     }
 
-    mcp('tools/call', ['name' => 'get_overview', 'arguments' => (object) []], 'person-none')->assertForbidden();
+    foreach (['person-read', 'read-token'] as $token) {
+        expect(listedTools($token))->toBe(['get_overview', 'fixture_read']);
+    }
+
+    foreach (['person-full', 'full-token'] as $token) {
+        expect(listedTools($token))->toBe(['get_overview', 'fixture_read', 'fixture_write']);
+    }
 });
 
 it('shows read-only principals only the read tools and refuses the rest', function (): void {
@@ -167,18 +193,17 @@ it('serves the app\'s own resources to readers, their first page and the rest th
     mcp('resources/list', token: 'person-none')->assertForbidden();
 });
 
-it('asks the app\'s gate about a person once a request, however many tools it lists', function (): void {
-    $asked = 0;
-    Gate::after(function () use (&$asked): void {
-        $asked++;
-    });
-
+it('asks a person\'s model for its rights once a request, however many tools it lists', function (): void {
     $tools = mcp('tools/list', token: 'person-read')->assertOk()->json('result.tools');
 
-    // The middleware's check, then one Principal for every tool and
-    // resource, each asking full, then read: never once per tool.
+    // The middleware's check, which every tool and resource then reads
+    // again: never once per tool.
     expect(count($tools))->toBeGreaterThan(0)
-        ->and($asked)->toBe(4);
+        ->and($this->people['person-read']->asked)->toBe(1);
+
+    mcp('tools/list', token: 'person-read')->assertOk();
+
+    expect($this->people['person-read']->asked)->toBe(2);
 });
 
 it('lets a full token and a person with full rights call every tool, sending switched off or not', function (): void {

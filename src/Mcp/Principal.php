@@ -5,15 +5,15 @@ declare(strict_types=1);
 namespace Mozex\Campaigns\Mcp;
 
 use Illuminate\Contracts\Auth\Authenticatable;
-use Illuminate\Support\Facades\Gate;
+use Mozex\Campaigns\Contracts\HasCampaignRights;
 use Mozex\Campaigns\Enums\Rights;
 use Mozex\Campaigns\Models\ApiToken;
 
 /**
- * Who is calling the MCP server, and what they may do: a package token with
- * its own rights, or a person signed in through one of the app's guards,
- * whose rights are the gate abilities the app defines (campaigns.full, then
- * campaigns.read). Anyone else has none and sees nothing.
+ * Who is calling the MCP server, and what they may do: whatever their model
+ * answers through HasCampaignRights, which a package token implements with
+ * its own rights and an app's user model with the app's own checks. Anyone
+ * else has none and sees nothing.
  */
 class Principal
 {
@@ -36,8 +36,7 @@ class Principal
         }
 
         // Worked out once a request: every one of the server's tools asks
-        // before it is listed, and a person's rights cost the app's Gate two
-        // checks each time.
+        // before it is listed, and an app's answer may query its database.
         $known = request()->attributes->get(self::class);
 
         if ($known instanceof self && $known->user === $user) {
@@ -52,19 +51,7 @@ class Principal
 
     public static function for(Authenticatable $user): self
     {
-        if ($user instanceof ApiToken) {
-            return new self($user, $user->rights);
-        }
-
-        $gate = Gate::forUser($user);
-
-        $rights = match (true) {
-            $gate->allows(Rights::Full->ability()) => Rights::Full,
-            $gate->allows(Rights::Read->ability()) => Rights::Read,
-            default => null,
-        };
-
-        return new self($user, $rights);
+        return new self($user, $user instanceof HasCampaignRights ? $user->campaignRights() : null);
     }
 
     public function allows(Rights $needed): bool

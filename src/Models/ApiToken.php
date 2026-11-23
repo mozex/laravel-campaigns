@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Attributes\UseFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
+use Mozex\Campaigns\Contracts\HasCampaignRights;
 use Mozex\Campaigns\Database\Factories\ApiTokenFactory;
 use Mozex\Campaigns\Enums\Rights;
 use Mozex\Campaigns\Support\Token;
@@ -20,7 +21,7 @@ use Mozex\Campaigns\Support\Token;
  * It is the authenticated user while its request runs, so it implements
  * Authenticatable itself: the framework's trait reads password and
  * remember-token columns this table doesn't have, which strict models
- * refuse.
+ * refuse. Its rights are its own column.
  *
  * @property int $id
  * @property string $name
@@ -31,7 +32,7 @@ use Mozex\Campaigns\Support\Token;
  * @property ?Carbon $updated_at
  */
 #[UseFactory(ApiTokenFactory::class)]
-class ApiToken extends Model implements Authenticatable
+class ApiToken extends Model implements Authenticatable, HasCampaignRights
 {
     /** @use HasFactory<ApiTokenFactory> */
     use HasFactory;
@@ -91,6 +92,11 @@ class ApiToken extends Model implements Authenticatable
 
         $this->last_used_at = $now;
         $this->syncOriginalAttribute('last_used_at');
+    }
+
+    public function campaignRights(): Rights
+    {
+        return $this->rights;
     }
 
     public function getAuthIdentifierName(): string

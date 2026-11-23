@@ -46,26 +46,47 @@ Chat apps such as claude.ai and ChatGPT can't send a fixed header; they sign a p
 
 The guards are tried in order. Passport's guard blanks the `Authorization` header when the bearer isn't one of its tokens, so the package puts the header back before each guard.
 
-Signing in isn't enough: a person needs one of two gate abilities, which your app defines and the package never does:
+Signing in isn't enough: your user model decides what each person may do, by implementing `HasCampaignRights`:
 
 ```php
-use Illuminate\Support\Facades\Gate;
+use Mozex\Campaigns\Contracts\HasCampaignRights;
+use Mozex\Campaigns\Enums\Rights;
 
-Gate::define('campaigns.read', fn (User $user): bool => ! $user->isBanned() && $user->isStaff());
-Gate::define('campaigns.full', fn (User $user): bool => ! $user->isBanned() && $user->isAdmin());
+class User extends Authenticatable implements HasCampaignRights
+{
+    public function campaignRights(): ?Rights
+    {
+        return match (true) {
+            $this->isBanned() => null,
+            $this->isAdmin() => Rights::Full,
+            $this->isStaff() => Rights::Read,
+            default => null,
+        };
+    }
+}
 ```
 
-`campaigns.full` reaches every tool, `campaigns.read` only the ones that change nothing. Someone signed in with neither is refused with a 403 before any tool is listed. A request with no valid token or sign-in gets a 401 whose `WWW-Authenticate` header points at your OAuth metadata once your app serves it, which is how a client knows to start the sign-in.
+`Rights::Full` reaches every tool, `Rights::Read` only the ones that change nothing. Someone whose model answers `null`, or doesn't implement the contract, is refused with a 403 before any tool is listed. The method is read once a request. A request with no valid token or sign-in gets a 401 whose `WWW-Authenticate` header points at your OAuth metadata once your app serves it, which is how a client knows to start the sign-in.
 
-The server's route runs none of your app's `web` or `api` middleware, only what you list in `campaigns.mcp.middleware` (below), so the abilities are the place for your account checks, as the ban above: a chat app connected before the ban can keep refreshing its token.
+The package asks Laravel's gate nothing, so a `Gate::before()` that lets your admins do anything, or a permissions package's super-admin role, opens nothing here unless your method says so. Calling `$this->can()` inside the method runs your gate as usual, those hooks included: that's your choice to make.
+
+The server's route runs none of your app's `web` or `api` middleware, only what you list in `campaigns.mcp.middleware` (below), so the method is the place for your account checks, as the ban above: a chat app connected before the ban can keep refreshing its token.
 
 Once someone signs in through OAuth, the guard that knew them (`api`) becomes the request's default guard, since the tools read the default. A permissions package that picks its guard from that default then looks for an `api` permission. With spatie/laravel-permission, whose permissions usually belong to the `web` guard, name the guard in the check:
 
 ```php
-Gate::define('campaigns.full', fn (User $user): bool => ! $user->isBanned() && $user->can('manage campaigns', 'web'));
+public function campaignRights(): ?Rights
+{
+    return match (true) {
+        $this->isBanned() => null,
+        $this->can('manage campaigns', 'web') => Rights::Full,
+        $this->can('read campaigns', 'web') => Rights::Read,
+        default => null,
+    };
+}
 ```
 
-Under a token, the request's user is the token (`Mozex\Campaigns\Models\ApiToken`), not one of your users. The package never asks your gate about it, and nothing of yours that an MCP call runs may either: your audiences, resources and the listeners on the package's events. A gate check about the request's user (`Gate::allows()`, `@can`) runs every gate callback against the token, and one written for your own user model throws there. spatie/laravel-permission's callback does, and so does Filament Shield's super-admin callback, since a gate's `before` and `after` callbacks run for every ability. `$request->user()->can()` throws too, since a token has no `can()`. To check a user you already hold, ask `Gate::forUser($user)`.
+Under a token, the request's user is the token (`Mozex\Campaigns\Models\ApiToken`), not one of your users. The package never asks your gate anything, and nothing of yours that an MCP call runs may ask it about the request's user either: your audiences, resources and the listeners on the package's events. A gate check about the request's user (`Gate::allows()`, `@can`) runs every gate callback against the token, and one written for your own user model throws there. spatie/laravel-permission's callback does, and so does Filament Shield's super-admin callback, since a gate's `before` and `after` callbacks run for every ability. `$request->user()->can()` throws too, since a token has no `can()`. To check a user you already hold, ask `Gate::forUser($user)`.
 
 ## What agents can do
 

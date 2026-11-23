@@ -53,7 +53,7 @@ Business sponsors get logo placement in package READMEs. [**See sponsorship tier
 
 ## What You Get
 
-**Agents do the work, you approve it.** An MCP server with 48 tools lets an agent write, upload, preview and test an email, count its audience, and start, pace, pause and report on a campaign. Read-only and full tokens, or your own OAuth sign-in, decide who can do what, and the risky calls (starting, resuming or speeding up a campaign, a test email, archiving a list or template, unblocking an address, running an import) ask the person first in Claude Code.
+**Agents do the work, you approve it.** An MCP server with 48 tools lets an agent write, upload, preview and test an email, count its audience, and start, pace, pause and report on a campaign. Read-only and full tokens, or your own OAuth sign-in with the rights one method on your user model gives, decide who can do what, and the risky calls (starting, resuming or speeding up a campaign, a test email, archiving a list or template, unblocking an address, running an import) ask the person first in Claude Code.
 
 **Lists that are your users.** A dynamic list follows one of your models, so sign-ups, address changes, bans and deletions reach it as they happen. Static lists hold everyone else: newsletter sign-ups, imports from another service.
 

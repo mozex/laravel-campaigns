@@ -3,11 +3,9 @@
 declare(strict_types=1);
 
 use Carbon\CarbonInterface;
-use Illuminate\Auth\GenericUser;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
@@ -40,6 +38,7 @@ use Mozex\Campaigns\Sending\Drivers\FakeDriver;
 use Mozex\Campaigns\Sending\OutgoingMessage;
 use Mozex\Campaigns\Sending\SendFailed;
 use Mozex\Campaigns\Support\Token;
+use Mozex\Campaigns\Tests\Fixtures\Person;
 use Mozex\Campaigns\Tests\Fixtures\Smtp\ScriptedStream;
 use Mozex\Campaigns\Tests\TestCase;
 use Symfony\Component\Mailer\Transport\Smtp\EsmtpTransport;
@@ -156,7 +155,7 @@ function structuredContent(McpTestResponse $response): array
  * The campaigns server as an agent signed in with these rights: a package
  * token ("laptop" with full rights, "reader" with read), or a person named
  * "Ann Agent" signed in through a stand-in for an app's own guard, whose
- * rights are the gate abilities.
+ * model answers these rights.
  */
 function agent(Rights $rights = Rights::Full, bool $person = false): PendingTestResponse
 {
@@ -168,11 +167,9 @@ function agent(Rights $rights = Rights::Full, bool $person = false): PendingTest
     }
 
     config(['auth.guards.people' => ['driver' => 'people']]);
-    Auth::viaRequest('people', fn (): ?GenericUser => null);
-    Gate::define(Rights::Full->ability(), fn (GenericUser $user): bool => $user->rights === Rights::Full->value);
-    Gate::define(Rights::Read->ability(), fn (GenericUser $user): bool => $user->rights === Rights::Read->value);
+    Auth::viaRequest('people', fn (): ?Person => null);
 
-    return CampaignsServer::actingAs(new GenericUser(['id' => 7, 'name' => 'Ann Agent', 'rights' => $rights->value]), 'people');
+    return CampaignsServer::actingAs(new Person(['id' => 7, 'name' => 'Ann Agent', 'rights' => $rights->value]), 'people');
 }
 
 /**

@@ -9,3 +9,7 @@ arch('it will not use debugging functions')
 arch('it uses strict types')
     ->expect('Mozex\Campaigns')
     ->toUseStrictTypes();
+
+arch('it asks Laravel\'s gate nothing, so an app\'s gate hooks grant no rights')
+    ->expect('Mozex\Campaigns')
+    ->not->toUse(['Illuminate\Support\Facades\Gate', 'Illuminate\Contracts\Auth\Access\Gate', 'Illuminate\Contracts\Auth\Access\Authorizable']);

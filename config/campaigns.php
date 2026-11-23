@@ -237,9 +237,10 @@ return [
      * "campaigns" is the package's own tokens
      * (`php artisan campaigns:token create <name>`), which carry read or
      * full rights. Add your OAuth guard after it (such as Passport's "api")
-     * to let people sign in, and define the gate abilities campaigns.read
-     * and campaigns.full for the people who may; anyone signed in with
-     * neither is refused (403). "middleware" runs after sign-in.
+     * to let people sign in, and implement
+     * Mozex\Campaigns\Contracts\HasCampaignRights on your user model to say
+     * who may; anyone it gives no rights is refused (403). The package asks
+     * Laravel's gate nothing. "middleware" runs after sign-in.
      * "instructions" is your own text for agents, added after the package's
      * (both together stay under 4,096 characters, which is what Claude Code
      * keeps). Default path: mcp/campaigns.

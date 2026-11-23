@@ -7,7 +7,7 @@ The server has 48 tools. Each one calls a package action and holds no logic of i
 
 ## Rights
 
-A tool is read-only (R below) or a write (W). A read-only token, or a person allowed only `campaigns.read`, sees just the read-only tools; a write they can't use isn't listed, and calling it answers "not found". A full token or a person allowed `campaigns.full` sees all of them.
+A tool is read-only (R below) or a write (W). A read-only token, or a person whose user model answers `Rights::Read`, sees just the read-only tools; a write they can't use isn't listed, and calling it answers "not found". A full token or a person answered `Rights::Full` sees all of them.
 
 Tools marked "asks" carry the `anthropic/requiresUserInteraction` flag, so Claude Code asks the person before every call, even when it otherwise runs without prompts. Other clients ignore the flag, and the server's guidance tells every agent to get the person's approval for them anyway.
 
