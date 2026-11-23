@@ -46,8 +46,8 @@ describe('changing a list', function (): void {
         app(UpdateListAction::class)->execute($list, ['description' => null]);
 
         expect($list->fresh())->key->toBe('readers')->name->toBe('Weekly readers')->description->toBeNull()
-            ->and(fn () => app(UpdateListAction::class)->execute($list, ['key' => 'other']))->toThrow(CampaignsException::class, 'can only be to name, description, not key')
-            ->and(fn () => app(UpdateListAction::class)->execute($list, []))->toThrow(CampaignsException::class, 'can only be to name, description.');
+            ->and(fn () => app(UpdateListAction::class)->execute($list, ['key' => 'other']))->toThrow(CampaignsException::class, 'can only be to name, description, is_default, not key')
+            ->and(fn () => app(UpdateListAction::class)->execute($list, []))->toThrow(CampaignsException::class, 'can only be to name, description, is_default.');
     });
 
     it('archives a static list and restores it, once each', function (): void {
@@ -63,11 +63,53 @@ describe('changing a list', function (): void {
             ->and(app(ArchiveListAction::class)->execute($list, archived: false))->toBeFalse();
     });
 
-    it('leaves a dynamic list to the app', function (): void {
+    it('leaves a dynamic list to the app, all but its mark as a default list', function (): void {
         $list = CampaignList::factory()->dynamic()->create(['key' => 'members', 'name' => 'Members']);
 
-        expect(fn () => app(UpdateListAction::class)->execute($list, ['name' => 'Accounts']))->toThrow(CampaignsException::class, 'can\'t be renamed or archived')
-            ->and(fn () => app(ArchiveListAction::class)->execute($list))->toThrow(CampaignsException::class, 'can\'t be renamed or archived')
-            ->and($list->fresh())->name->toBe('Members')->archived_at->toBeNull();
+        expect(fn () => app(UpdateListAction::class)->execute($list, ['name' => 'Accounts']))->toThrow(CampaignsException::class, 'can\'t be renamed, described or archived here, only marked default or not')
+            ->and(fn () => app(UpdateListAction::class)->execute($list, ['description' => 'Everyone', 'is_default' => true]))->toThrow(CampaignsException::class, 'can\'t be renamed, described or archived')
+            ->and(fn () => app(ArchiveListAction::class)->execute($list))->toThrow(CampaignsException::class, 'can\'t be renamed, described or archived')
+            ->and($list->fresh())->name->toBe('Members')->description->toBeNull()->is_default->toBeFalse()->archived_at->toBeNull()
+            ->and(app(UpdateListAction::class)->execute($list, ['is_default' => true])->is_default)->toBeTrue()
+            ->and($list->fresh()->is_default)->toBeTrue();
+    });
+});
+
+describe('default lists', function (): void {
+    it('makes a list default when it is created, or later, and takes the mark away', function (): void {
+        $made = app(CreateListAction::class)->execute('news', 'News', isDefault: true);
+        $list = CampaignList::factory()->create(['key' => 'readers', 'name' => 'Readers']);
+
+        expect($made->is_default)->toBeTrue()
+            ->and($made->fresh()->is_default)->toBeTrue()
+            ->and(app(CreateListAction::class)->execute('events', 'Events')->is_default)->toBeFalse()
+            ->and(app(UpdateListAction::class)->execute($list, ['name' => 'Weekly readers', 'is_default' => true]))->name->toBe('Weekly readers')->is_default->toBeTrue()
+            ->and($list->fresh())->name->toBe('Weekly readers')->is_default->toBeTrue()
+            ->and(app(UpdateListAction::class)->execute($list, ['is_default' => false])->is_default)->toBeFalse()
+            ->and($list->fresh()->is_default)->toBeFalse()
+            ->and(fn () => app(UpdateListAction::class)->execute($list, ['is_default' => 'yes']))->toThrow(CampaignsException::class, 'The is_default must be true or false.')
+            ->and(CampaignList::defaultKeys())->toBe(['news']);
+    });
+
+    it('takes the mark away when a list is archived, never puts it back, and gives it to no archived list', function (): void {
+        $list = CampaignList::factory()->asDefault()->create(['key' => 'readers', 'name' => 'Readers']);
+
+        app(ArchiveListAction::class)->execute($list);
+        $whileArchived = [$list->is_default, $list->fresh()->is_default];
+        app(ArchiveListAction::class)->execute($list, archived: false);
+
+        expect($whileArchived)->toBe([false, false])
+            ->and($list->fresh()->is_default)->toBeFalse();
+
+        app(ArchiveListAction::class)->execute($list);
+
+        expect(fn () => app(UpdateListAction::class)->execute($list, ['name' => 'Old readers', 'is_default' => true]))->toThrow(CampaignsException::class, 'The list "readers" is archived, so it can\'t be a default list: restore it first.')
+            ->and($list->fresh())->name->toBe('Readers')->is_default->toBeFalse()
+            ->and(app(UpdateListAction::class)->execute($list, ['is_default' => false])->is_default)->toBeFalse();
+
+        // A mark an archive raced past still reaches no campaign.
+        CampaignList::query()->whereKey($list->id)->update(['is_default' => true]);
+
+        expect(CampaignList::defaultKeys())->toBe([]);
     });
 });

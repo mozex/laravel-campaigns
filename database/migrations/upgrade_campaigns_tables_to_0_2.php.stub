@@ -1,0 +1,24 @@
+<?php
+
+declare(strict_types=1);
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+/*
+ * What 0.2 adds to the tables create_campaigns_tables made. Published
+ * migrations already ran, so each version's changes come as a migration of
+ * their own.
+ */
+return new class extends Migration
+{
+    public function up(): void
+    {
+        Schema::table('campaign_lists', function (Blueprint $table): void {
+            // A default list receives every campaign created without lists
+            // of its own; an archived list is never one.
+            $table->boolean('is_default')->default(false);
+        });
+    }
+};

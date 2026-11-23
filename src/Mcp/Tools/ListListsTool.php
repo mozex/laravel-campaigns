@@ -22,7 +22,7 @@ use Mozex\Campaigns\Reports\ListSummary;
 
 #[Name('list_lists')]
 #[Title('List lists')]
-#[Description('Every list by key, 25 a page, with its counts (by status, how many may be mailed, and by engagement tier), its description, kind and default consent basis. Archived lists only when include_archived is true.')]
+#[Description('Every list, the default lists first, then by key, 25 a page, with its counts (by status, how many may be mailed, and by engagement tier), its description, kind, default consent basis and whether it is a default list. Archived lists only when include_archived is true.')]
 #[IsReadOnly]
 #[IsIdempotent]
 #[IsOpenWorld(false)]
@@ -66,7 +66,7 @@ class ListListsTool extends CampaignsTool
         $total = (clone $query)->count();
 
         return Response::structured([
-            'lists' => ListSummary::rows($query->orderBy('key')->forPage($page, static::PER_PAGE)->get(), details: true),
+            'lists' => ListSummary::rows($query->orderByDesc('is_default')->orderBy('key')->forPage($page, static::PER_PAGE)->get(), details: true),
             'page' => $page,
             'pages' => max(1, (int) ceil($total / static::PER_PAGE)),
             'total' => $total,

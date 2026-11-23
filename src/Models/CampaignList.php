@@ -26,6 +26,7 @@ use Mozex\Campaigns\Enums\SubscriptionStatus;
  * @property bool $double_opt_in
  * @property SubscriptionStatus $default_status
  * @property ConsentBasis $default_basis
+ * @property bool $is_default
  * @property ?Carbon $archived_at
  * @property ?Carbon $created_at
  * @property ?Carbon $updated_at
@@ -46,11 +47,12 @@ class CampaignList extends Model
         'double_opt_in',
         'default_status',
         'default_basis',
+        'is_default',
         'archived_at',
     ];
 
     /**
-     * @return array{kind: class-string<ListKind>, double_opt_in: 'boolean', default_status: class-string<SubscriptionStatus>, default_basis: class-string<ConsentBasis>, archived_at: 'datetime'}
+     * @return array{kind: class-string<ListKind>, double_opt_in: 'boolean', default_status: class-string<SubscriptionStatus>, default_basis: class-string<ConsentBasis>, is_default: 'boolean', archived_at: 'datetime'}
      */
     protected function casts(): array
     {
@@ -59,6 +61,7 @@ class CampaignList extends Model
             'double_opt_in' => 'boolean',
             'default_status' => SubscriptionStatus::class,
             'default_basis' => ConsentBasis::class,
+            'is_default' => 'boolean',
             'archived_at' => 'datetime',
         ];
     }
@@ -79,6 +82,29 @@ class CampaignList extends Model
     public function scopeActive(Builder $query): void
     {
         $query->whereNull('archived_at');
+    }
+
+    /**
+     * The default lists, which a campaign created without lists of its own
+     * goes to. Archiving takes the mark away, and an archived list never
+     * counts even when a write raced the archive.
+     *
+     * @param  Builder<self>  $query
+     */
+    public function scopeDefaults(Builder $query): void
+    {
+        $query->active()->where('is_default', true);
+    }
+
+    /**
+     * The default lists' keys, in key order.
+     *
+     * @return list<string>
+     */
+    public static function defaultKeys(): array
+    {
+        /** @var list<string> */
+        return static::query()->defaults()->orderBy('key')->pluck('key')->all();
     }
 
     /** @return HasMany<Subscription, $this> */

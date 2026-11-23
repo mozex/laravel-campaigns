@@ -74,6 +74,19 @@ class User extends Authenticatable
 
 The key is how campaigns and audiences name the list, so it takes lower-case letters, digits, dots, dashes and underscores. The list itself is created the first time it's needed, named by `name()`. Its people join on `soft_opt_in` (existing customers) unless you record their own choice.
 
+## A default list
+
+When most campaigns should reach your accounts, make the list a default list: a campaign created without lists of its own then goes to it ([Default lists](../campaigns/audiences.md#default-lists)). An agent with full rights does it with `update_list` and `is_default: true`. From your own code, in a seeder or a deploy command:
+
+```php
+use Mozex\Campaigns\Actions\UpdateListAction;
+use Mozex\Campaigns\Facades\Campaigns;
+
+app(UpdateListAction::class)->execute(Campaigns::list('accounts'), ['is_default' => true]);
+```
+
+`Campaigns::list()` creates the list if no record has needed it yet. Your records keep the list filled; marking it changes who new campaigns go to, never who is on it.
+
 ## Bring in the records you have
 
 The trait syncs records from now on. Records that already exist come in once, by hand:

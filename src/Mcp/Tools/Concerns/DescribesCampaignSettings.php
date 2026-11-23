@@ -23,7 +23,7 @@ trait DescribesCampaignSettings
             'from_name' => $schema->string()->description('The sender\'s name; null for none.'),
             'from_email' => $schema->string()->description('An address on the sending domain the overview names.'),
             'reply_to' => $schema->string()->description('Where replies go; null for none.'),
-            'lists' => $schema->array()->items($schema->string())->description('The target lists\' keys: everyone subscribed on any of them, once each.'),
+            'lists' => $schema->array()->items($schema->string())->description('The target lists\' keys: everyone subscribed on any of them, once each. They replace the lists it has; a campaign created without them goes to the default lists, and a list not marked default only to a campaign that names it.'),
             'audience' => $schema->object()->description(Schemas::AUDIENCE),
             'track_opens' => $schema->boolean(),
             'track_clicks' => $schema->boolean(),

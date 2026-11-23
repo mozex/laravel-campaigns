@@ -21,7 +21,7 @@ use Mozex\Campaigns\Reports\ListSummary;
 
 #[Name('archive_list')]
 #[Title('Archive or restore a list')]
-#[Description('Archives a static list, or restores it with archived false. An archived list is hidden from the lists to pick from and takes no more contacts from agents; nothing is deleted, its people stay on it, and campaigns that target it go on.')]
+#[Description('Archives a static list, or restores it with archived false. An archived list is hidden from the lists to pick from and takes no more contacts from agents; nothing is deleted, its people stay on it, and campaigns that target it go on. Archiving takes away its mark as a default list, and restoring it doesn\'t put the mark back.')]
 #[IsIdempotent]
 #[IsOpenWorld(false)]
 #[IsDestructive]

@@ -9,6 +9,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Database\Schema\Builder;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Schema;
+use Mozex\Campaigns\CampaignsServiceProvider;
 use Mozex\Campaigns\Tests\Fixtures\MemberList;
 use Orchestra\Testbench\Concerns\WithWorkbench;
 use Orchestra\Testbench\TestCase as Orchestra;
@@ -51,12 +52,14 @@ class TestCase extends Orchestra
     }
 
     /**
-     * The migrations ship as a stub the app publishes, so they run from the
-     * stub here, exactly as an app would get them.
+     * The migrations ship as stubs the app publishes, so they run from the
+     * stubs here, in order, exactly as an app would get them.
      */
     public static function runMigrations(): void
     {
-        (require __DIR__.'/../database/migrations/create_campaigns_tables.php.stub')->up();
+        foreach (CampaignsServiceProvider::MIGRATIONS as $migration) {
+            (require __DIR__."/../database/migrations/{$migration}.php.stub")->up();
+        }
 
         // The app's own accounts, behind the members list.
         Schema::create('members', function (Blueprint $table): void {

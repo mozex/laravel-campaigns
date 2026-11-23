@@ -20,8 +20,8 @@ use Mozex\Campaigns\Models\CampaignList;
 use Mozex\Campaigns\Reports\ListSummary;
 
 #[Name('update_list')]
-#[Title('Rename or describe a list')]
-#[Description('Changes a static list\'s name or description (null clears it). Its key never changes; a dynamic list\'s name comes from the app.')]
+#[Title('Change a list')]
+#[Description('Changes a static list\'s name or description (null clears it), and whether any list, a dynamic one included, is a default list (is_default): a campaign created without lists of its own goes to the default lists, while a list not marked default gets only the campaigns that name it. Marking or unmarking a list changes no campaign that already exists. An archived list can\'t be marked default. Its key never changes; a dynamic list\'s name and description come from the app.')]
 #[IsIdempotent]
 #[IsOpenWorld(false)]
 #[IsDestructive]
@@ -33,6 +33,7 @@ class UpdateListTool extends CampaignsTool
             'key' => $schema->string()->required(),
             'name' => $schema->string(),
             'description' => $schema->string()->nullable(),
+            'is_default' => $schema->boolean()->description('True makes it a default list, false takes the mark away.'),
         ];
     }
 
@@ -47,6 +48,7 @@ class UpdateListTool extends CampaignsTool
             'key' => ['required', 'string'],
             'name' => ['sometimes', 'string'],
             'description' => ['sometimes', 'nullable', 'string'],
+            'is_default' => ['sometimes', 'required', 'boolean'],
         ]);
 
         $list = $update->execute(CampaignList::forKey($input['key']), array_intersect_key($input, array_flip(UpdateListAction::FIELDS)));

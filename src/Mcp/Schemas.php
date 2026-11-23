@@ -37,6 +37,11 @@ class Schemas
     public const AUDIENCE = 'Who it goes to within its lists; every part given narrows (AND), and with none it goes to everyone subscribed on them: audience ({"name": a named audience from list_audiences, "parameters": {...}}), saved_audience (a key), filters (the built-in filters: '.self::FILTERS.'), subscribers (ids) and emails (addresses), one set of people, and records ({"<dynamic list key>": [app record ids]}). Each names at most 10,000. Opted-out, blocked and sunset people are never mailed whatever it says.';
 
     /**
+     * What a list's is_default says, wherever a list is answered.
+     */
+    public const DEFAULT_LIST = 'Whether it is a default list: a campaign created without lists of its own goes to the default lists.';
+
+    /**
      * A campaign's pace settings, as the drafting and pace tools take them.
      */
     public const PACE = 'Any of first_day, daily_growth, daily_cap, per_minute, sending_hours, timezone: first_day (sends on day 1), daily_growth (each day\'s growth, a percentage from 0 to 1000), daily_cap (most a day; null for none), per_minute, sending_hours (["09:00", "17:00"]; null for any time), timezone (like Europe/Paris). Left out, a value follows the app\'s config.';
@@ -63,6 +68,7 @@ class Schemas
             'name' => $schema->string()->required(),
             'description' => $schema->string()->nullable()->required()->description('Cut to '.ListSummary::DESCRIPTION_LENGTH.' characters.'),
             'kind' => $schema->string()->enum(array_column(ListKind::cases(), 'value'))->required()->description('dynamic: kept in step with the app\'s records, never changed by hand; static: contacts added by agents, imports or the app.'),
+            'is_default' => $schema->boolean()->required()->description(static::DEFAULT_LIST),
             'double_opt_in' => $schema->boolean()->required()->description('Whether someone added waits to confirm by email before they are mailed.'),
             'default_basis' => $schema->string()->enum(array_column(ConsentBasis::cases(), 'value'))->required(),
             ...$statusCounts,

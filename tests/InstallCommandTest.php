@@ -23,8 +23,10 @@ function removePublishedFiles(): void
 {
     @unlink(app()->configPath('campaigns.php'));
 
-    foreach (glob(app()->databasePath('migrations/*_create_campaigns_tables.php')) ?: [] as $migration) {
-        unlink($migration);
+    foreach (CampaignsServiceProvider::MIGRATIONS as $name) {
+        foreach (glob(app()->databasePath("migrations/*_{$name}.php")) ?: [] as $migration) {
+            unlink($migration);
+        }
     }
 }
 
@@ -44,15 +46,41 @@ it('publishes the config file', function (): void {
         ->toBe(file_get_contents(__DIR__.'/../config/campaigns.php'));
 });
 
-it('publishes the migration once', function (): void {
+it('publishes each migration once, in the order they run', function (): void {
     $this->artisan('campaigns:install')->expectsConfirmation(STAR_QUESTION, 'no')->assertSuccessful();
     $this->artisan('campaigns:install')->expectsConfirmation(STAR_QUESTION, 'no')->assertSuccessful();
 
-    $published = glob($this->app->databasePath('migrations/*_create_campaigns_tables.php'));
+    $published = array_map(
+        fn (string $name): array => glob($this->app->databasePath("migrations/*_{$name}.php")) ?: [],
+        CampaignsServiceProvider::MIGRATIONS,
+    );
 
-    expect($published)->toHaveCount(1)
-        ->and(file_get_contents($published[0]))
-        ->toBe(file_get_contents(__DIR__.'/../database/migrations/create_campaigns_tables.php.stub'));
+    expect(CampaignsServiceProvider::MIGRATIONS)->toBe(['create_campaigns_tables', 'upgrade_campaigns_tables_to_0_2']);
+
+    foreach (CampaignsServiceProvider::MIGRATIONS as $index => $name) {
+        expect($published[$index])->toHaveCount(1)
+            ->and(file_get_contents($published[$index][0]))
+            ->toBe(file_get_contents(__DIR__."/../database/migrations/{$name}.php.stub"));
+    }
+
+    // The timestamp prefix sets the order an app's migrator runs them in.
+    expect(strcmp(basename($published[0][0]), basename($published[1][0])))->toBeLessThan(0);
+});
+
+it('publishes only the new migration beside the one an earlier version published', function (): void {
+    $earlier = app()->databasePath('migrations/2026_01_01_000000_create_campaigns_tables.php');
+    file_put_contents($earlier, '<?php // published by an earlier version');
+
+    // The provider reads the app's migrations when it boots.
+    $this->refreshApplication();
+    $this->artisan('campaigns:install')->expectsConfirmation(STAR_QUESTION, 'no')->assertSuccessful();
+
+    $upgrade = glob($this->app->databasePath('migrations/*_upgrade_campaigns_tables_to_0_2.php')) ?: [];
+
+    expect(glob($this->app->databasePath('migrations/*_create_campaigns_tables.php')))->toBe([$earlier])
+        ->and(file_get_contents($earlier))->toBe('<?php // published by an earlier version')
+        ->and($upgrade)->toHaveCount(1)
+        ->and(strcmp(basename($earlier), basename($upgrade[0])))->toBeLessThan(0);
 });
 
 it('leaves an existing config file alone', function (): void {

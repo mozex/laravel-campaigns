@@ -6,6 +6,7 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 use Mozex\Campaigns\Actions\AddRevisionAction;
 use Mozex\Campaigns\Actions\CreateCampaignAction;
+use Mozex\Campaigns\Actions\CreateListAction;
 use Mozex\Campaigns\Actions\CreateTemplateAction;
 use Mozex\Campaigns\Actions\CreateUploadAction;
 use Mozex\Campaigns\Actions\DuplicateCampaignAction;
@@ -14,11 +15,13 @@ use Mozex\Campaigns\Actions\SaveAudienceAction;
 use Mozex\Campaigns\Actions\SetCustomFieldsAction;
 use Mozex\Campaigns\Actions\StartCampaignAction;
 use Mozex\Campaigns\Actions\UpdateCampaignAction;
+use Mozex\Campaigns\Actions\UpdateListAction;
 use Mozex\Campaigns\Audiences\CampaignAudience;
 use Mozex\Campaigns\CampaignsException;
 use Mozex\Campaigns\Content\EmailSource;
 use Mozex\Campaigns\Enums\CampaignStatus;
 use Mozex\Campaigns\Enums\UploadPurpose;
+use Mozex\Campaigns\Facades\Campaigns;
 use Mozex\Campaigns\Models\Campaign;
 use Mozex\Campaigns\Models\CampaignList;
 use Mozex\Campaigns\Models\Revision;
@@ -181,6 +184,56 @@ describe('creating a campaign', function (): void {
             ->and(json_encode($campaign->audience))->not->toContain('@')
             ->and($nobody->audience)->toBe(['subscribers' => [], 'unmatched_emails' => 1])
             ->and(CampaignAudience::for($nobody)->preview()->recipients)->toBe(0);
+    });
+});
+
+describe('default lists', function (): void {
+    it('sends a campaign created without lists to exactly the default lists, a dynamic one among them, and one with lists to those', function (string $driver): void {
+        useDatabase($driver);
+        // As an app's own code marks its dynamic list, before or after the list exists.
+        app(UpdateListAction::class)->execute(Campaigns::list('members'), ['is_default' => true]);
+        $members = CampaignList::forKey('members');
+        $news = app(CreateListAction::class)->execute('news', 'News', isDefault: true);
+        $events = CampaignList::factory()->create(['key' => 'events']);
+        CampaignList::factory()->create(['key' => 'aaa']);
+        CampaignList::factory()->archived()->asDefault()->create(['key' => 'old']);
+        subscriberOn([$members], ['locale' => 'fr']);
+        subscriberOn([$news, $events], ['locale' => 'fr']);
+        subscriberOn([$news], ['locale' => 'en']);
+        subscriberOn([$events], ['locale' => 'fr']);
+
+        $create = fn (string $key, array $settings = []): Campaign => app(CreateCampaignAction::class)->execute($key, 'News', EmailSource::contents([campaignEmail()]), $settings)->campaign;
+        $defaulted = $create('defaulted', ['audience' => ['filters' => ['locales' => ['fr']]]]);
+        $named = $create('named', ['lists' => ['events']]);
+
+        expect($defaulted->target_lists)->toBe([$members->id, $news->id])
+            ->and(CampaignAudience::for($defaulted)->preview()->recipients)->toBe(2)
+            ->and($named->target_lists)->toBe([$events->id])
+            ->and(CampaignAudience::for($named)->preview()->recipients)->toBe(2);
+    })->with('databases');
+
+    it('keeps the lists a campaign was given, whatever is marked later, and a duplicate keeps the original\'s', function (): void {
+        $news = CampaignList::factory()->asDefault()->create(['key' => 'news']);
+        $events = CampaignList::factory()->create(['key' => 'events']);
+        $first = app(CreateCampaignAction::class)->execute('first', 'First', EmailSource::contents([campaignEmail()]))->campaign;
+
+        app(UpdateListAction::class)->execute($news, ['is_default' => false]);
+        app(UpdateListAction::class)->execute($events, ['is_default' => true]);
+
+        expect($first->fresh()->target_lists)->toBe([$news->id])
+            ->and(app(DuplicateCampaignAction::class)->execute($first, 'second', 'Second')->target_lists)->toBe([$news->id])
+            ->and(app(CreateCampaignAction::class)->execute('third', 'Third', EmailSource::contents([campaignEmail()]))->campaign->target_lists)->toBe([$events->id]);
+    });
+
+    it('leaves a campaign without lists when none is default, refused at preview as before', function (): void {
+        CampaignList::factory()->create(['key' => 'readers']);
+        $campaign = app(CreateCampaignAction::class)->execute('lonely', 'Lonely', EmailSource::contents([campaignEmail()]))->campaign;
+
+        CampaignList::factory()->asDefault()->create(['key' => 'news']);
+
+        expect($campaign->target_lists)->toBeNull()
+            ->and(fn () => CampaignAudience::for($campaign)->preview())->toThrow(CampaignsException::class, 'The campaign has no target lists')
+            ->and(fn () => app(CreateCampaignAction::class)->execute('empty', 'Empty', EmailSource::contents([campaignEmail()]), ['lists' => []]))->toThrow(CampaignsException::class, 'one or more list keys');
     });
 });
 

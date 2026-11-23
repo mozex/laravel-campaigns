@@ -46,7 +46,7 @@ The legal bases are `consent` (they asked), `soft_opt_in` (an existing customer,
 
 ## A newsletter form
 
-A static list holds contacts that aren't records of yours. Agents create them with `create_list`, or your code can with `CreateListAction` (`key`, `name`, `description`, `doubleOptIn`, `basis`). A sign-up form puts the visitor on one:
+A static list holds contacts that aren't records of yours. Agents create them with `create_list`, or your code can with `CreateListAction` (`key`, `name`, `description`, `doubleOptIn`, `basis`, `isDefault`). Your form keeps the list filled, one sign-up at a time, so no agent has to add anyone. Make it a default list (`isDefault: true` here, or `UpdateListAction` with `['is_default' => true]` later) when every newsletter should reach it, since a campaign created without lists goes to the [default lists](../campaigns/audiences.md#default-lists). A sign-up form puts the visitor on the list:
 
 ```php
 use Mozex\Campaigns\Actions\SendConfirmationAction;

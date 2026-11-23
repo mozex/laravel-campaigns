@@ -482,7 +482,12 @@ class CampaignsException extends RuntimeException
 
     public static function dynamicListFixed(string $key): self
     {
-        return new self("The list \"{$key}\" follows the app's records and config (campaigns.list_sources), so it can't be renamed or archived here.");
+        return new self("The list \"{$key}\" follows the app's records and config (campaigns.list_sources), so it can't be renamed, described or archived here, only marked default or not.");
+    }
+
+    public static function archivedListDefault(string $key): self
+    {
+        return new self("The list \"{$key}\" is archived, so it can't be a default list: restore it first.");
     }
 
     public static function listSourceKey(string $key): self

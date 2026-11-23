@@ -7,7 +7,7 @@ Every command that changes data you'd have to repair by hand is a dry run unless
 
 | Command | What it does |
 |---|---|
-| `campaigns:install` | publishes the config file and the migration |
+| `campaigns:install` | publishes the config file and the migrations |
 | `campaigns:token create <name> [--read-only]` | makes a token for the MCP server and prints it once |
 | `campaigns:token list` | the tokens, their rights and when each was last used |
 | `campaigns:token revoke <name>` | deletes a token |

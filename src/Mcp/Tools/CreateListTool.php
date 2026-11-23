@@ -20,7 +20,7 @@ use Mozex\Campaigns\Reports\ListSummary;
 
 #[Name('create_list')]
 #[Title('Create a list')]
-#[Description('Creates a static list for contacts added by hand or imported. Its key never changes. On a double opt-in list, someone added waits to confirm by email before they are mailed.')]
+#[Description('Creates a static list for contacts added by hand or imported. Its key never changes. On a double opt-in list, someone added waits to confirm by email before they are mailed. A default list (is_default) receives every campaign created without lists of its own.')]
 #[IsOpenWorld(false)]
 #[IsDestructive(false)]
 class CreateListTool extends CampaignsTool
@@ -35,6 +35,7 @@ class CreateListTool extends CampaignsTool
             'description' => $schema->string()->description('What the list is for and who is on it.'),
             'double_opt_in' => $schema->boolean()->description('Default false.'),
             'basis' => $schema->string()->enum(array_column(static::BASES, 'value'))->description('Why the app may email people on it, when whoever adds someone names no basis: consent (they asked; the default), soft_opt_in (customers offered a way out), imported (from another system).'),
+            'is_default' => $schema->boolean()->description('Make it a default list: a campaign created without lists of its own goes to the default lists. Default false.'),
         ];
     }
 
@@ -51,6 +52,7 @@ class CreateListTool extends CampaignsTool
             'description' => ['nullable', 'string'],
             'double_opt_in' => ['nullable', 'boolean'],
             'basis' => ['nullable', 'string', 'in:'.implode(',', array_column(static::BASES, 'value'))],
+            'is_default' => ['nullable', 'boolean'],
         ]);
 
         $list = $create->execute(
@@ -59,6 +61,7 @@ class CreateListTool extends CampaignsTool
             description: $input['description'] ?? null,
             doubleOptIn: (bool) ($input['double_opt_in'] ?? false),
             basis: ConsentBasis::from($input['basis'] ?? ConsentBasis::Consent->value),
+            isDefault: (bool) ($input['is_default'] ?? false),
         );
 
         return Response::structured(['list' => ListSummary::rows([$list], details: true)[0]]);

@@ -168,14 +168,14 @@ class Overview
     }
 
     /**
-     * The lists in use with their counts; archived ones only through the
-     * list tool.
+     * The lists in use with their counts, the default lists first; archived
+     * ones only through the list tool.
      *
      * @return list<array<string, mixed>>
      */
     protected static function lists(): array
     {
-        return ListSummary::rows(CampaignList::query()->active()->orderBy('key')->limit(static::LIMIT)->get(), nameLength: static::NAME_LENGTH);
+        return ListSummary::rows(CampaignList::query()->active()->orderByDesc('is_default')->orderBy('key')->limit(static::LIMIT)->get(), nameLength: static::NAME_LENGTH);
     }
 
     /**

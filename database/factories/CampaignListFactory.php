@@ -30,6 +30,7 @@ class CampaignListFactory extends Factory
             'double_opt_in' => false,
             'default_status' => SubscriptionStatus::Subscribed,
             'default_basis' => ConsentBasis::Consent,
+            'is_default' => false,
         ];
     }
 
@@ -39,6 +40,11 @@ class CampaignListFactory extends Factory
             'kind' => ListKind::Dynamic,
             'default_basis' => ConsentBasis::SoftOptIn,
         ]);
+    }
+
+    public function asDefault(): static
+    {
+        return $this->state(['is_default' => true]);
     }
 
     public function archived(): static

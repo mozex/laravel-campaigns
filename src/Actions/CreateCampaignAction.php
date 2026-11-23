@@ -13,6 +13,7 @@ use Mozex\Campaigns\Content\EmailContent;
 use Mozex\Campaigns\Content\EmailSource;
 use Mozex\Campaigns\Enums\CampaignStatus;
 use Mozex\Campaigns\Models\Campaign;
+use Mozex\Campaigns\Models\CampaignList;
 use Mozex\Campaigns\Models\Template;
 use Mozex\Campaigns\Models\TestSend;
 use Mozex\Campaigns\Support\CampaignSettings;
@@ -27,6 +28,10 @@ use Mozex\Campaigns\Templates\StarterTemplates;
  * settings name another address on the sending domain, and its one tag is
  * its key. Everything else is checked before an upload is read, since
  * reading uses the upload up.
+ *
+ * Settings that name no lists take the default lists as they are now, and
+ * they stay the campaign's own: marking a list later changes no campaign
+ * already made, so what the preview counts is what the start approves.
  */
 class CreateCampaignAction
 {
@@ -61,6 +66,16 @@ class CreateCampaignAction
 
         if (Campaign::query()->where('key', $key)->exists()) {
             throw CampaignsException::keyTaken('campaign', $key);
+        }
+
+        // Resolved before the settings are checked, so an audience given
+        // without lists is checked against the lists it will go to.
+        if (! array_key_exists('lists', $settings)) {
+            $defaults = CampaignList::defaultKeys();
+
+            if ($defaults !== []) {
+                $settings['lists'] = $defaults;
+            }
         }
 
         $columns = [

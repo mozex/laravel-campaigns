@@ -24,7 +24,7 @@ use Mozex\Campaigns\Support\Keys;
 
 #[Name('create_campaign')]
 #[Title('Create a campaign')]
-#[Description('A new draft campaign with its first email, from one of: template (a template\'s key or a starter\'s, whose current email it copies), upload_id (an email sent through an email upload link, with subjects and preheaders by language) or contents (the email inline). Settings (its lists, audience, sender, tracking, UTM tags, pace and limits) can come now or later through update_campaign. It comes from the app\'s sender unless from_email names another address on the sending domain. A refused upload is used up: send it again through a new link. Nothing is sent: test it with send_test and look at it with get_preview_link.')]
+#[Description('A new draft campaign with its first email, from one of: template (a template\'s key or a starter\'s, whose current email it copies), upload_id (an email sent through an email upload link, with subjects and preheaders by language) or contents (the email inline). Settings (its lists, audience, sender, tracking, UTM tags, pace and limits) can come now or later through update_campaign. Settings without lists send it to the default lists (is_default in list_lists), which its answer\'s lists name; naming lists replaces the defaults, so name them too when adding a list to them, and with no default list it has no lists until update_campaign names some. It comes from the app\'s sender unless from_email names another address on the sending domain. A refused upload is used up: send it again through a new link. Nothing is sent: test it with send_test and look at it with get_preview_link.')]
 #[IsOpenWorld(false)]
 #[IsDestructive(false)]
 class CreateCampaignTool extends CampaignsTool

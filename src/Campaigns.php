@@ -164,6 +164,7 @@ class Campaigns
             'double_opt_in' => false,
             'default_status' => SubscriptionStatus::Subscribed,
             'default_basis' => ConsentBasis::SoftOptIn,
+            'is_default' => false,
         ]);
 
         if ($list->kind !== ListKind::Dynamic) {

@@ -9,7 +9,7 @@ Call `get_overview` first. It tells you:
 - whether sending is switched on, which driver (the sending service), mailer and domain send, what the driver reads back besides sending (`sending.driver.abilities`), who emails come from, and what is switched off or missing (`sending.notes`, in words, including what a driver without an ability can't tell you);
 - the addresses a test email may go to;
 - the sending domain's standing (`domain`): its last 24 hours from the app's own records (sends, hard bounces, spam reports and unsubscribes, with their rates per send), its daily cap and what is left of it, and the provider's own counts for its last 30 days;
-- every list in use with its counts: `subscribed`, `pending` (waiting for a double opt-in), `unsubscribed`, `mailable` (subscribed people who aren't opted out, blocked or sunset) and the subscribed people by engagement tier;
+- every list in use, the default lists first, with its counts: `subscribed`, `pending` (waiting for a double opt-in), `unsubscribed`, `mailable` (subscribed people who aren't opted out, blocked or sunset) and the subscribed people by engagement tier;
 - the campaigns that are starting, scheduled, sending or paused;
 - the placeholders an email may hold, with this app's values.
 
@@ -29,7 +29,7 @@ Call `get_overview` first. It tells you:
 2. Upload it as a template or a campaign's email (`create_upload_link`, then `create_template`, `create_campaign` or `add_revision`).
 3. Open it in a browser (`get_preview_link`) after every new revision.
 4. Send a test (`send_test`) and read whether it went (`get_test_sends`).
-5. Set the campaign's lists, audience, sender and pace (`create_campaign`, `update_campaign`), and count who it reaches (`preview_audience`).
+5. Set the campaign's lists (left out, the default lists), audience, sender and pace (`create_campaign`, `update_campaign`), and count who it reaches (`preview_audience`).
 6. Run the pre-send checks (`run_checks`, then `get_check_results`).
 7. Read the sending domain's standing (`get_overview`).
 8. Ask the person to approve the recipient count and the pace, with the checks' results and the domain's numbers in hand.
@@ -39,7 +39,8 @@ Call `get_overview` first. It tells you:
 ## Lists and people
 
 - `list_lists` shows the lists (archived ones only when asked); `list_subscribers` pages through people with filters; `get_subscriber` shows one person, their lists and their latest consent records.
-- `create_list`, `update_list` and `archive_list` work on static lists only. A dynamic list comes from the app's own records and config, which decide who is on it. An archived list is hidden from the list tools and the overview and closed to additions here, while its people stay on it, the app's own sign-ups may still join it, and campaigns, filters and saved audiences that name it go on. `archive_list` with `archived: false` restores it.
+- `create_list` makes a static list; `update_list` renames or describes a static list; `archive_list` works on static lists only. A dynamic list comes from the app's own records and config, which decide who is on it; the app's own code keeps its lists filled, its records and its sign-up forms alike. An archived list is hidden from the list tools and the overview and closed to additions here, while its people stay on it, the app's own sign-ups may still join it, and campaigns, filters and saved audiences that name it go on. `archive_list` with `archived: false` restores it.
+- A default list (`is_default`) receives every campaign created without lists of its own; a list not marked default gets only the campaigns that name it. `create_list` and `update_list` set the mark on any list, a dynamic one included. The defaults are read when the campaign is created and become its lists: marking or unmarking a list later changes no campaign that exists. Naming lists replaces the defaults, so to add a list to them, name the defaults too. Archiving a list takes its mark away, and an archived list can't be marked.
 - `add_contacts` adds up to 100 people to a static list, and you name the basis the app emails them on: `consent` (they asked), `soft_opt_in` (an existing customer, where the law allows it) or `imported` (from another system). The consent records keep it as the reason. Adding never clears someone's opt-out or block, and someone kept only so they are never mailed gains nothing.
 - On a double opt-in list, a contact you add waits as `pending` and no tool sends them the confirmation email: only the app's own sign-up does, so a list of addresses never mails people who didn't ask.
 - `remove_contacts` takes up to 100 people off a static list. Taking them off and adding them again starts afresh.
@@ -88,7 +89,7 @@ Call `get_overview` first. It tells you:
 - `create_campaign` makes a draft from a template (or a starter), an upload or inline content, with its settings now or later.
 - `update_campaign` changes a draft's settings: only those given change; null clears `from_name` or `reply_to`; `pace` and `thresholds` merge into what it has; `utm` is true for the default UTM tags, false for none, or the tags themselves. Once a campaign starts, only its pace changes, through the pace tools.
 - Its email changes through `add_revision` with `campaign`, while it is a draft. A start freezes it, its links carrying the UTM tags.
-- Its audience: the target `lists` (everyone subscribed on any of them, once each), narrowed by any of a named audience (`list_audiences` shows the app's, with their parameters as a JSON Schema, given as `{"audience": {"name": "...", "parameters": {...}}}`), a saved audience (a named set of filters, `save_audience`), the built-in filters, people by id or address, and app records by dynamic list. Replacing a saved audience changes every campaign that names it and hasn't started.
+- Its audience: the target `lists` (everyone subscribed on any of them, once each; the default lists when it was created without lists), narrowed by any of a named audience (`list_audiences` shows the app's, with their parameters as a JSON Schema, given as `{"audience": {"name": "...", "parameters": {...}}}`), a saved audience (a named set of filters, `save_audience`), the built-in filters, people by id or address, and app records by dynamic list. Replacing a saved audience changes every campaign that names it and hasn't started.
 - `preview_audience` counts who it reaches: the recipients, who was dropped and why (blocked, opted out, sunset), and the breakdown by list, language, engagement tier and mailbox provider. Opted-out, blocked and sunset people are never mailed, whatever the audience says.
 - `send_test` sends the email to the app's test addresses only (it asks the person first): one per address and language, at most 25 a call, in the default language unless you name others. A draft's test is its current email; a started campaign's is the frozen one it sends. Read whether each went with `get_test_sends`. Refused while sending is switched off.
 - `duplicate_campaign` copies a campaign's settings, audience and email into a new draft.

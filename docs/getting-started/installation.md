@@ -10,13 +10,15 @@ composer require mozex/laravel-campaigns
 php artisan campaigns:install
 ```
 
-The install command publishes `config/campaigns.php` and the migration. If your app keys polymorphic relations by UUID or ULID (`Schema::morphUsingUuids()` or `morphUsingUlids()`), call that in a service provider before you migrate: the link from a subscriber to one of your records follows it. Then run the migration:
+The install command publishes `config/campaigns.php` and the migrations. If your app keys polymorphic relations by UUID or ULID (`Schema::morphUsingUuids()` or `morphUsingUlids()`), call that in a service provider before you migrate: the link from a subscriber to one of your records follows it. Then run the migrations:
 
 ```bash
 php artisan migrate
 ```
 
 The tables work on MySQL, MariaDB, PostgreSQL and SQLite. SQL Server isn't supported, since its unique indexes allow only one `NULL`.
+
+A later version can add a migration. After updating, run `php artisan campaigns:install` again and migrate: it publishes only the migrations missing from `database/migrations` and leaves your config file as it is. If you keep migrations in another folder, copy just the new stub from the package's `database/migrations` instead, since the install command can't see that folder and would publish the first migration a second time.
 
 ## Add the campaigns mailer
 

@@ -53,6 +53,12 @@ use Throwable;
 
 class CampaignsServiceProvider extends PackageServiceProvider
 {
+    /**
+     * The migration stubs, oldest first. A published migration has already
+     * run, so a change to the tables after a release is a new stub here.
+     */
+    public const MIGRATIONS = ['create_campaigns_tables', 'upgrade_campaigns_tables_to_0_2'];
+
     protected string $repository = 'https://github.com/mozex/laravel-campaigns';
 
     public function configurePackage(Package $package): void
@@ -63,7 +69,7 @@ class CampaignsServiceProvider extends PackageServiceProvider
             ->hasViews()
             ->hasTranslations()
             ->hasRoutes(['campaigns', 'mcp'])
-            ->hasMigration('create_campaigns_tables')
+            ->hasMigrations(static::MIGRATIONS)
             ->hasCommands([
                 SyncListCommand::class,
                 PumpCommand::class,

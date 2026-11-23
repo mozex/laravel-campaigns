@@ -70,6 +70,7 @@ class ListSummary
                 'name' => ShownText::of($list->name, $nameLength),
                 ...$details ? ['description' => ShownText::of($list->description, static::DESCRIPTION_LENGTH)] : [],
                 'kind' => $list->kind->value,
+                'is_default' => $list->is_default,
                 'double_opt_in' => $list->double_opt_in,
                 ...$details ? ['default_basis' => $list->default_basis->value] : [],
                 ...$counts,

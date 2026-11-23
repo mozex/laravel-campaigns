@@ -17,15 +17,15 @@ Tools marked "asks" carry the `anthropic/requiresUserInteraction` flag, so Claud
 
 | Tool | | What it does |
 |---|---|---|
-| `get_overview` | R | how sending is set up and what's switched off, the sending domain's standing, every list with its counts, the campaigns running, and the placeholders an email may use |
+| `get_overview` | R | how sending is set up and what's switched off, the sending domain's standing, every list with its counts, the default lists first, the campaigns running, and the placeholders an email may use |
 | `get_guide` | R | the full workflow agents follow, and your app's own resources a page at a time |
 
 **Lists and people**
 
 | Tool | | What it does |
 |---|---|---|
-| `list_lists` | R | the lists with their counts (archived ones when asked) |
-| `create_list`, `update_list` | W | make or rename a static list |
+| `list_lists` | R | the lists with their counts, the default lists first (archived ones when asked) |
+| `create_list`, `update_list` | W | make or rename a static list, and mark any list a default list or not |
 | `archive_list` | W, asks | hide a static list and close it to additions, or restore it |
 | `add_contacts`, `remove_contacts` | W | up to 100 people on or off a static list |
 | `set_contact_fields` | W | a person's custom fields |
@@ -80,7 +80,7 @@ The server's instructions tell an agent to call `get_overview` first and read th
 2. Upload it and save it as a template or a campaign's email.
 3. Open the preview link after every new version.
 4. Send a test to the app's test addresses and check it went.
-5. Set the campaign's lists, audience, sender and pace, and count who it reaches.
+5. Set the campaign's lists (left out, the default lists), audience, sender and pace, and count who it reaches.
 6. Run the pre-send checks and read the results.
 7. Read the sending domain's standing.
 8. Ask the person to approve the exact recipient count and the pace, with the checks and the domain's numbers in hand.

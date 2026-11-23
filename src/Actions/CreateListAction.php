@@ -22,6 +22,7 @@ class CreateListAction
 {
     /**
      * @param  ConsentBasis  $basis  The basis a contact joins with when whoever adds them names none.
+     * @param  bool  $isDefault  Make it a default list, which every campaign created without lists goes to.
      *
      * @throws CampaignsException for a key that is invalid, taken, or a list source's
      */
@@ -31,6 +32,7 @@ class CreateListAction
         ?string $description = null,
         bool $doubleOptIn = false,
         ConsentBasis $basis = ConsentBasis::Consent,
+        bool $isDefault = false,
     ): CampaignList {
         if (! Keys::isValid($key)) {
             throw CampaignsException::invalidKey($key);
@@ -58,6 +60,7 @@ class CreateListAction
                 'double_opt_in' => $doubleOptIn,
                 'default_status' => $doubleOptIn ? SubscriptionStatus::Pending : SubscriptionStatus::Subscribed,
                 'default_basis' => $basis,
+                'is_default' => $isDefault,
             ]);
         } catch (UniqueConstraintViolationException) {
             throw CampaignsException::keyTaken('list', $key);

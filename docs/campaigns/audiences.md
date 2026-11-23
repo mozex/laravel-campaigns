@@ -18,6 +18,14 @@ A campaign goes to everyone subscribed on its target lists, once each, narrowed 
 
 Each part names at most 10,000 people or records. Addresses become subscriber ids when the audience is set, so a stored audience holds no addresses, only how many matched nobody. A list of people that names nobody reaches nobody, never everyone.
 
+## Default lists
+
+A campaign created without `lists` goes to the default lists: the ones marked `is_default`, which `list_lists` and `get_overview` show first. A list that isn't marked gets only the campaigns that name it, so a list made for one occasion never receives the regular newsletter by accident.
+
+The defaults are read when the campaign is created and become its own lists. Marking or unmarking a list later changes no campaign that already exists, and `duplicate_campaign` copies the original's lists. So the count the person approves at the start is the count that's frozen. Naming lists replaces the defaults: to send to the defaults and one more list, name all of them. With no list marked, a campaign created without lists has none, and its preview and start are refused until it names some.
+
+An agent with full rights marks a list with `create_list` or `update_list` (`is_default`), a dynamic list included. Your code does it with `UpdateListAction` ([Dynamic Lists](../lists-and-subscribers/dynamic-lists.md#a-default-list)). Archiving a list takes its mark away, and restoring it doesn't bring the mark back.
+
 ## Filters
 
 | Filter | What it matches |

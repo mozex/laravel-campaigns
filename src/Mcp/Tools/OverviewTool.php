@@ -19,6 +19,7 @@ use Mozex\Campaigns\Enums\CampaignStatus;
 use Mozex\Campaigns\Enums\EngagementTier;
 use Mozex\Campaigns\Enums\ListKind;
 use Mozex\Campaigns\Enums\SubscriptionStatus;
+use Mozex\Campaigns\Mcp\Schemas;
 use Mozex\Campaigns\Reports\DomainSummary;
 use Mozex\Campaigns\Reports\Overview;
 use Mozex\Campaigns\Sending\DomainMetrics;
@@ -26,7 +27,7 @@ use Mozex\Campaigns\Sending\Drivers\DriverManager;
 
 #[Name('get_overview')]
 #[Title('Get overview')]
-#[Description('Start here. How sending is set up and what is switched off, the addresses test emails may go to, the sending domain\'s standing (its last 24 hours from the app\'s own records, its daily cap and what is left of it, and the provider\'s counts for its last 30 days), every list in use with its counts (by status, how many may be mailed, and by engagement tier; archived lists through list_lists), the campaigns starting, scheduled, sending or paused, and the placeholders an email may hold with this app\'s values. At most 25 lists and 25 campaigns; lists_total and campaigns_total say how many there are.')]
+#[Description('Start here. How sending is set up and what is switched off, the addresses test emails may go to, the sending domain\'s standing (its last 24 hours from the app\'s own records, its daily cap and what is left of it, and the provider\'s counts for its last 30 days), every list in use with its counts (by status, how many may be mailed, and by engagement tier) and whether it is a default list, the default lists first (archived lists through list_lists), the campaigns starting, scheduled, sending or paused, and the placeholders an email may hold with this app\'s values. At most 25 lists and 25 campaigns; lists_total and campaigns_total say how many there are.')]
 #[IsReadOnly]
 #[IsIdempotent]
 #[IsOpenWorld]
@@ -93,6 +94,7 @@ class OverviewTool extends CampaignsTool
                 'key' => $schema->string()->required(),
                 'name' => $schema->string()->required(),
                 'kind' => $schema->string()->enum(array_column(ListKind::cases(), 'value'))->required(),
+                'is_default' => $schema->boolean()->required()->description(Schemas::DEFAULT_LIST),
                 'double_opt_in' => $schema->boolean()->required(),
                 ...$statusCounts,
                 'mailable' => $schema->integer()->required()->description('Subscribed people who aren\'t opted out, blocked or sunset.'),

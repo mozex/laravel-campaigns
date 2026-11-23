@@ -22,7 +22,7 @@ use Mozex\Campaigns\Reports\CampaignSummary;
 
 #[Name('update_campaign')]
 #[Title('Update a draft campaign')]
-#[Description('Changes a draft campaign\'s settings: only those given change (null clears from_name or reply_to), and pace and thresholds merge into what it has. Its lists and audience are checked together, a named audience\'s parameters included. Once started or scheduled only its pace changes, through the pace tools. Its email changes through add_revision with campaign.')]
+#[Description('Changes a draft campaign\'s settings: only those given change (null clears from_name or reply_to), and pace and thresholds merge into what it has. Its lists and audience are checked together, a named audience\'s parameters included. Lists given replace the ones it has, which are the default lists when it was created without lists: name those too to add one to them. Once started or scheduled only its pace changes, through the pace tools. Its email changes through add_revision with campaign.')]
 #[IsIdempotent]
 #[IsOpenWorld(false)]
 #[IsDestructive]

@@ -13,7 +13,9 @@ use Mozex\Campaigns\Models\CampaignList;
  * Archives a static list, or brings it back. An archived list is hidden
  * from the lists agents pick from and takes no more contacts from agents;
  * nothing is deleted: its people stay on it, and the app's own code and the
- * campaigns that target it go on as before.
+ * campaigns that target it go on as before. Archiving takes away its mark
+ * as a default list, so new campaigns stop going to a list nobody sees;
+ * bringing it back doesn't put the mark back.
  */
 class ArchiveListAction
 {
@@ -37,7 +39,11 @@ class ArchiveListAction
                 fn (Builder $query): Builder => $query->whereNull('archived_at'),
                 fn (Builder $query): Builder => $query->whereNotNull('archived_at'),
             )
-            ->update(['archived_at' => $archived ? $now : null, 'updated_at' => $now]);
+            ->update([
+                'archived_at' => $archived ? $now : null,
+                ...$archived ? ['is_default' => false] : [],
+                'updated_at' => $now,
+            ]);
 
         if ($changed === 0) {
             return false;
@@ -45,6 +51,11 @@ class ArchiveListAction
 
         $list->archived_at = $archived ? $now : null;
         $list->syncOriginalAttribute('archived_at');
+
+        if ($archived) {
+            $list->is_default = false;
+            $list->syncOriginalAttribute('is_default');
+        }
 
         return true;
     }
