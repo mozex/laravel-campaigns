@@ -111,12 +111,14 @@ class ProviderUsage
             return null;
         }
 
-        // Counted from what is left, so no sum of counts can overflow.
+        // Counted from what is left, and the one sum held to the largest
+        // integer, so nothing overflows into a float.
         $left = $allowance - $sent;
         $billed = ($reading['past_allowance'] ?? null) === 'billed';
 
         if (($reading['period'] ?? null) === Usage::MONTH) {
-            $toSend = $unsent + max(0, $others);
+            $others = max(0, $others);
+            $toSend = $unsent > PHP_INT_MAX - $others ? PHP_INT_MAX : $unsent + $others;
 
             if ($toSend <= $left) {
                 return null;

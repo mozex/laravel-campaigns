@@ -144,19 +144,27 @@ trait SendsCampaigns
     }
 
     /**
-     * The most the campaign's pace lets it send in the next 24 hours: its
-     * first day's volume before it starts, else the next pace day's (a
-     * window of 24 hours spans the rest of one pace day and the start of
-     * the next, and a day sends no fewer than the one before), held to
-     * per_minute through a whole day.
+     * The most the campaign's pace lets it send in the next 24 hours, held
+     * to per_minute through a whole day: its first pace day's volume before
+     * it starts (that day can't end within them), else what its current
+     * pace day has left and the whole next day's volume, since the pump
+     * sends a day's volume as fast as per_minute allows and the next day
+     * always starts within them (Allowance::for() counts the days alike).
      */
     protected static function nextDay(Campaign $campaign): int
     {
         $pace = Pace::resolve($campaign->pace);
         $started = $campaign->pace_started_at ?? $campaign->started_at;
-        $day = $started === null ? 1 : intdiv(max(0, now()->getTimestamp() - $started->getTimestamp()), Allowance::DAY) + 2;
 
-        return min(Pace::dayVolume($pace, $day), $pace['per_minute'] * 1440);
+        if ($started === null) {
+            $volume = Pace::dayVolume($pace, 1);
+        } else {
+            $day = intdiv(max(0, now()->getTimestamp() - $started->getTimestamp()), Allowance::DAY) + 1;
+            $dayStart = $started->copy()->addSeconds(($day - 1) * Allowance::DAY);
+            $volume = max(0, Pace::dayVolume($pace, $day) - Allowance::claimed([$campaign->id], $dayStart)) + Pace::dayVolume($pace, $day + 1);
+        }
+
+        return min($volume, $pace['per_minute'] * 1440);
     }
 
     /**

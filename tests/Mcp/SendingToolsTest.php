@@ -377,7 +377,36 @@ it('words a plan already passed, and warns of a quota only by what the pace can 
         ->and(ProviderUsage::warning($quota, 100, 100, 1_000_000))->toBeNull()
         ->and(ProviderUsage::warning($plan, 0, null))->toBeNull()
         ->and(ProviderUsage::warning($plan, null, null))->toBeNull()
-        ->and(ProviderUsage::warning([...$plan, 'allowance' => null], 4, null))->toBeNull();
+        ->and(ProviderUsage::warning([...$plan, 'allowance' => null], 4, null))->toBeNull()
+        // A sum past the largest integer stays an integer.
+        ->and(ProviderUsage::warning($plan, PHP_INT_MAX, null, 5))->toContain('this campaign\'s '.PHP_INT_MAX.' and the app\'s other open campaigns\' 5 still to send all pass it');
+});
+
+it('counts what the current pace day has left with the whole next day toward a quota', function (): void {
+    $this->travelTo(Carbon::parse('2026-11-23 08:00:00', 'UTC'));
+    Queue::fake([SendMessageJob::class]);
+    $campaign = sendingCampaign(8, ['first_day' => 3, 'daily_growth' => 0, 'per_minute' => 100], key: 'march');
+    CampaignMessage::query()->whereKey(CampaignMessage::query()->where('campaign_id', $campaign->id)->min('id'))->update(['status' => MessageStatus::Sent, 'claimed_at' => now(), 'sent_at' => now()]);
+
+    // Late in its first pace day: 2 of its 3 left today, 3 tomorrow, both
+    // within the next 24 hours; the next day's 3 alone would fit the 4 left.
+    $this->travel(22)->hours();
+    fakeDriver()->used(196, 200, Usage::DAY, enforced: true);
+
+    $answer = structuredContent(agent()->tool(SpeedUpCampaignTool::class, ['key' => 'march', 'pace' => ['per_minute' => 100]])->assertOk());
+
+    expect($answer['warnings'])->toBe(['The account may send 4 more of its 200 in 24 hours (it sent 196 in the last 24), while its pace lets it send 5 in the next 24 hours: what passes the quota the provider holds back, so its sending slows.']);
+
+    // Held to per_minute through a whole day; before it starts, its first
+    // pace day only.
+    $nextDay = fn (Campaign $campaign): int => (fn (): int => static::nextDay($campaign))->call(app(SpeedUpCampaignTool::class));
+    agent()->tool(SpeedUpCampaignTool::class, ['key' => 'march', 'pace' => ['first_day' => 2000]])->assertOk();
+    $fast = $nextDay(Campaign::forKey('march'));
+    agent()->tool(SlowDownCampaignTool::class, ['key' => 'march', 'pace' => ['per_minute' => 1]])->assertOk();
+
+    expect($fast)->toBe(1999 + 2000)
+        ->and($nextDay(Campaign::forKey('march')))->toBe(1440)
+        ->and($nextDay(draftFor(1, 'may')->forceFill(['pace' => ['first_day' => 7]])))->toBe(7);
 });
 
 it('answers a start whose readings can\'t be read, since the start is already made', function (): void {
