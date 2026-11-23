@@ -40,6 +40,8 @@ ConsentContext::fromRequest($request, 'newsletter-form', ConsentBasis::Consent, 
 new ConsentContext('staff', meta: ['by' => $admin->name]);
 ```
 
+The source is a short label of where the change came from, at most 125 characters. Agents see it: `list_lists` counts each list's joins of the last 30 days by source, so keep it to a few stable names (`registration`, `newsletter-form`, `checkout`) rather than one per page or per person.
+
 `accepted` is what the person chose when they chose: `true` when they asked for email, `false` when they left the box unticked, `null` when the app or an agent acted for them. **Only `true` clears an opt-out**, or a confirmed double opt-in: a sync, an import or an agent never brings back someone who left.
 
 The legal bases are `consent` (they asked), `soft_opt_in` (an existing customer, where the law allows marketing to them), `imported` (from another system) and `legacy` (on a list before consent was recorded).

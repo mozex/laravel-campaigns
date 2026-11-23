@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Database\Schema\Builder;
 use Illuminate\Database\UniqueConstraintViolationException;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Mozex\Campaigns\Enums\BlockReason;
 use Mozex\Campaigns\Enums\CampaignStatus;
@@ -234,4 +235,14 @@ it('writes a revision\'s link rows in chunks, hundreds of addresses across its l
         ->and(CampaignLink::query()->where('revision_id', $revision->id)->count())->toBe(261)
         ->and(array_unique(array_values($keys)))->toHaveCount(261)
         ->and(CampaignLink::writeFor($revision))->toEqual($keys);
+})->with('databases');
+
+it('indexes each list\'s consent records by action and time, which the lists tool counts its joins over', function (string $driver): void {
+    useDatabase($driver);
+
+    $columns = array_column(Schema::getIndexes('campaign_consent_records'), 'columns', 'name');
+
+    // Named, so an app's table prefix can't push it past MySQL's 64.
+    expect($columns)->toHaveKey('campaign_consent_records_list_joins_index')
+        ->and($columns['campaign_consent_records_list_joins_index'])->toBe(['list_id', 'action', 'occurred_at', 'source']);
 })->with('databases');

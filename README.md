@@ -55,7 +55,7 @@ Business sponsors get logo placement in package READMEs. [**See sponsorship tier
 
 **Agents do the work, you approve it.** An MCP server with 48 tools lets an agent write, upload, preview and test an email, count its audience, and start, pace, pause and report on a campaign. Read-only and full tokens, or your own OAuth sign-in with the rights one method on your user model gives, decide who can do what, and the risky calls (starting, resuming or speeding up a campaign, a test email, archiving a list or template, unblocking an address, running an import) ask the person first in Claude Code.
 
-**Lists that are your users.** A dynamic list follows one of your models, so sign-ups, address changes, bans and deletions reach it as they happen. Static lists hold everyone else: newsletter sign-ups, imports from another service. Mark the lists your newsletters usually reach as default lists, and a campaign that names no lists goes to them, while a list made for one occasion gets only the campaigns that name it.
+**Lists that are your users.** A dynamic list follows one of your models, so sign-ups, address changes, bans and deletions reach it as they happen. Static lists hold everyone else: newsletter sign-ups, imports from another service. Mark the lists your newsletters usually reach as default lists, and a campaign that names no lists goes to them, while a list made for one occasion gets only the campaigns that name it. Each list shows who joined it in the last 30 days and from where, and which campaign last used it.
 
 **Consent you can prove.** Every subscribe, opt-out, block and confirmation is an append-only record with its source and basis. One unsubscribe stops all your marketing to that person, and only the person can undo it.
 

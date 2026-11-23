@@ -22,14 +22,14 @@ use Mozex\Campaigns\Reports\ListSummary;
 
 #[Name('list_lists')]
 #[Title('List lists')]
-#[Description('Every list, the default lists first, then by key, 25 a page, with its counts (by status, how many may be mailed, and by engagement tier), its description, kind, default consent basis and whether it is a default list. Archived lists only when include_archived is true.')]
+#[Description('Every list, the default lists first, then by key, 10 a page, with its counts (by status, how many may be mailed, and by engagement tier), its description, kind, default consent basis and whether it is a default list, and how it fills and when it was used: the records a dynamic list follows, who joined in the last 30 days by where they came from, the last join, and the last campaign that started with it. Archived lists only when include_archived is true.')]
 #[IsReadOnly]
 #[IsIdempotent]
 #[IsOpenWorld(false)]
 #[IsDestructive(false)]
 class ListListsTool extends CampaignsTool
 {
-    public const PER_PAGE = 25;
+    public const PER_PAGE = 10;
 
     public function schema(JsonSchema $schema): array
     {
@@ -42,7 +42,7 @@ class ListListsTool extends CampaignsTool
     protected function output(JsonSchema $schema): array
     {
         return [
-            'lists' => $schema->array()->items(Schemas::list($schema)),
+            'lists' => $schema->array()->items(Schemas::list($schema, activity: true)),
             'page' => $schema->integer(),
             'pages' => $schema->integer(),
             'total' => $schema->integer(),
@@ -66,7 +66,7 @@ class ListListsTool extends CampaignsTool
         $total = (clone $query)->count();
 
         return Response::structured([
-            'lists' => ListSummary::rows($query->orderByDesc('is_default')->orderBy('key')->forPage($page, static::PER_PAGE)->get(), details: true),
+            'lists' => ListSummary::rows($query->orderByDesc('is_default')->orderBy('key')->forPage($page, static::PER_PAGE)->get(), details: true, activity: true),
             'page' => $page,
             'pages' => max(1, (int) ceil($total / static::PER_PAGE)),
             'total' => $total,

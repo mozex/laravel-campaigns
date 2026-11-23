@@ -20,5 +20,13 @@ return new class extends Migration
             // of its own; an archived list is never one.
             $table->boolean('is_default')->default(false);
         });
+
+        Schema::table('campaign_consent_records', function (Blueprint $table): void {
+            // The lists tool counts each list's recent joins by source and
+            // finds its last one: subscribe records on the list, by time,
+            // read from the index alone. A short name, since apps with a
+            // table prefix lengthen the generated one past MySQL's 64.
+            $table->index(['list_id', 'action', 'occurred_at', 'source'], 'campaign_consent_records_list_joins_index');
+        });
     }
 };

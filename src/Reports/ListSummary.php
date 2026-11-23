@@ -18,7 +18,8 @@ use Mozex\Campaigns\Support\ShownText;
  * Lists with their counts, as the overview and the list tools show them:
  * subscriptions by status, how many subscribed people may be mailed (not
  * opted out, blocked or sunset), and subscribed people by engagement tier.
- * A few grouped queries, whatever the number of lists.
+ * A few grouped queries, whatever the number of lists. The lists tool adds
+ * how each fills and when it was last used (ListActivity).
  */
 class ListSummary
 {
@@ -31,9 +32,10 @@ class ListSummary
      * @param  iterable<CampaignList>  $lists
      * @param  bool  $details  Add each list's description (cut to DESCRIPTION_LENGTH), its default basis, and when it was made and archived.
      * @param  ?int  $nameLength  Cut each name to this many characters.
+     * @param  bool  $activity  Add how each list fills and when it was last used (ListActivity).
      * @return list<array<string, mixed>>
      */
-    public static function rows(iterable $lists, bool $details = false, ?int $nameLength = null): array
+    public static function rows(iterable $lists, bool $details = false, ?int $nameLength = null, bool $activity = false): array
     {
         $lists = collect($lists)->values();
 
@@ -58,7 +60,9 @@ class ListSummary
             $tiers[$tier->value] = static::subscribedCounts($ids, fn (Builder $query): Builder => Engagement::whereTier($query, $tier));
         }
 
-        return $lists->map(function (CampaignList $list) use ($statuses, $mailable, $tiers, $details, $nameLength): array {
+        $activities = $activity ? ListActivity::of($lists) : [];
+
+        return $lists->map(function (CampaignList $list) use ($statuses, $mailable, $tiers, $details, $nameLength, $activities): array {
             $counts = [];
 
             foreach (SubscriptionStatus::cases() as $status) {
@@ -80,6 +84,7 @@ class ListSummary
                     'created_at' => $list->created_at?->toIso8601String(),
                     'archived_at' => $list->archived_at?->toIso8601String(),
                 ] : [],
+                ...$activities[$list->id] ?? [],
             ];
         })->all();
     }

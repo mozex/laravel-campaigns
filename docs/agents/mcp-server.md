@@ -24,7 +24,7 @@ Tools marked "asks" carry the `anthropic/requiresUserInteraction` flag, so Claud
 
 | Tool | | What it does |
 |---|---|---|
-| `list_lists` | R | the lists with their counts, the default lists first (archived ones when asked) |
+| `list_lists` | R | the lists with their counts, how each one fills (the records a dynamic list follows, the last 30 days' joins by source, the last join) and the campaign that last used it, the default lists first, 10 a page (archived ones when asked) |
 | `create_list`, `update_list` | W | make or rename a static list, and mark any list a default list or not |
 | `archive_list` | W, asks | hide a static list and close it to additions, or restore it |
 | `add_contacts`, `remove_contacts` | W | up to 100 people on or off a static list |

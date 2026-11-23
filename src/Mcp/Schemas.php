@@ -16,6 +16,7 @@ use Mozex\Campaigns\Enums\MessageStatus;
 use Mozex\Campaigns\Enums\SubscriptionStatus;
 use Mozex\Campaigns\Reports\AssetSummary;
 use Mozex\Campaigns\Reports\CampaignSummary;
+use Mozex\Campaigns\Reports\ListActivity;
 use Mozex\Campaigns\Reports\ListSummary;
 use Mozex\Campaigns\Reports\SubscriberSummary;
 
@@ -47,9 +48,10 @@ class Schemas
     public const PACE = 'Any of first_day, daily_growth, daily_cap, per_minute, sending_hours, timezone: first_day (sends on day 1), daily_growth (each day\'s growth, a percentage from 0 to 1000), daily_cap (most a day; null for none), per_minute, sending_hours (["09:00", "17:00"]; null for any time), timezone (like Europe/Paris). Left out, a value follows the app\'s config.';
 
     /**
-     * A list with its counts and details (ListSummary::rows() with details).
+     * A list with its counts and details (ListSummary::rows() with details),
+     * and with activity how it fills and when it was last used.
      */
-    public static function list(JsonSchema $schema): Type
+    public static function list(JsonSchema $schema, bool $activity = false): Type
     {
         $statusCounts = [];
 
@@ -76,6 +78,22 @@ class Schemas
             'tiers' => $schema->object($tierCounts)->required()->description('Subscribed people by engagement tier.'),
             'created_at' => $schema->string()->nullable()->required(),
             'archived_at' => $schema->string()->nullable()->required(),
+            ...$activity ? [
+                'records' => $schema->string()->nullable()->required()->description('A dynamic list: the type of the app\'s records that keep it filled. Null for a static list, which fills only through joins, and for a dynamic list whose source the app\'s config no longer names or can\'t load, so nothing keeps it filled now.'),
+                'recent_joins' => $schema->object([
+                    'total' => $schema->integer()->required(),
+                    'by_source' => $schema->array()->items($schema->object([
+                        'source' => $schema->string()->nullable()->required()->description('Cut to '.ListActivity::SOURCE_LENGTH.' characters.'),
+                        'count' => $schema->integer()->required(),
+                    ]))->required()->description('The '.ListActivity::SOURCES.' largest sources, the largest first.'),
+                    'other' => $schema->integer()->required()->description('Joins from the other sources.'),
+                ])->required()->description('Who joined in the last '.ListActivity::JOIN_DAYS.' days, by where they came from: the source the app\'s code or a contacts import named for the change (add_contacts writes agent). On a double opt-in list it includes people still waiting to confirm. A record coming back to a dynamic list isn\'t a join.'),
+                'last_joined_at' => $schema->string()->nullable()->required(),
+                'last_campaign' => $schema->object([
+                    'key' => $schema->string()->required(),
+                    'started_at' => $schema->string()->required(),
+                ])->nullable()->required()->description('The campaign that last started with this list among its lists; null when none has.'),
+            ] : [],
         ]);
     }
 
