@@ -3,9 +3,11 @@
 declare(strict_types=1);
 
 use Carbon\CarbonInterface;
+use GuzzleHttp\Promise\PromiseInterface;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
@@ -33,6 +35,8 @@ use Mozex\Campaigns\Models\ConsentRecord;
 use Mozex\Campaigns\Models\Subscriber;
 use Mozex\Campaigns\Models\Subscription;
 use Mozex\Campaigns\Models\Upload;
+use Mozex\Campaigns\Postmaster\Postmaster;
+use Mozex\Campaigns\Postmaster\ServiceAccount;
 use Mozex\Campaigns\Sending\Drivers\DriverManager;
 use Mozex\Campaigns\Sending\Drivers\FakeDriver;
 use Mozex\Campaigns\Sending\OutgoingMessage;
@@ -397,6 +401,103 @@ function mailgunWebhook(array $event, ?string $token = null, ?int $timestamp = n
 function campaignEmail(string $locale = 'en', string $html = '<p>Hello</p>{{footer}}', ?string $text = null): EmailContent
 {
     return new EmailContent(locale: $locale, subject: 'News', html: $html, text: $text);
+}
+
+/**
+ * A throwaway RSA key pair for a Google service account, made once a run
+ * (a key file in the repository would read as a leaked secret), with the
+ * fixture's OpenSSL configuration, since some systems have none for making
+ * keys.
+ *
+ * @return array{private: string, public: string}
+ */
+function googleKey(): array
+{
+    static $key = null;
+
+    if ($key === null) {
+        $options = ['config' => __DIR__.'/Fixtures/Google/openssl.cnf', 'private_key_bits' => 2048, 'private_key_type' => OPENSSL_KEYTYPE_RSA];
+        $pair = openssl_pkey_new($options);
+
+        if ($pair === false || ! openssl_pkey_export($pair, $private, null, $options)) {
+            throw new RuntimeException('OpenSSL couldn\'t make a test key.');
+        }
+
+        $key = ['private' => (string) $private, 'public' => (string) openssl_pkey_get_details($pair)['key']];
+    }
+
+    return $key;
+}
+
+/**
+ * A service account's JSON key file as campaigns.postmaster.credentials
+ * holds it, base64-encoded, with the given fields replaced. Its token_uri
+ * points away from Google, which the sign-in must ignore.
+ *
+ * @param  array<string, mixed>  $changes
+ */
+function googleCredentials(array $changes = []): string
+{
+    return base64_encode((string) json_encode([
+        'type' => 'service_account',
+        'project_id' => 'example-project',
+        'private_key_id' => 'test-key',
+        'private_key' => googleKey()['private'],
+        'client_email' => 'reader@example-project.iam.gserviceaccount.com',
+        'token_uri' => 'https://token.example.com/token',
+        ...$changes,
+    ], JSON_THROW_ON_ERROR));
+}
+
+/**
+ * Postmaster Tools' domainStats:query answer for the given values, by UTC
+ * date and the name each metric was asked by (GmailReading::METRICS): a
+ * float goes as floatValue, a string as intValue, as Google sends them.
+ *
+ * @param  array<string, array<string, float|string>>  $days
+ * @return array<string, mixed>
+ */
+function postmasterStats(array $days, ?string $next = null): array
+{
+    $stats = [];
+
+    foreach ($days as $date => $values) {
+        [$year, $month, $day] = array_map(intval(...), explode('-', $date));
+
+        foreach ($values as $name => $value) {
+            $stats[] = [
+                'name' => "domains/news.example.com/domainStats/{$date}/{$name}",
+                'metric' => $name,
+                'date' => ['year' => $year, 'month' => $month, 'day' => $day],
+                'value' => is_string($value) ? ['intValue' => $value] : ['floatValue' => $value],
+            ];
+        }
+    }
+
+    return array_filter(['domainStats' => $stats, 'nextPageToken' => $next]);
+}
+
+/**
+ * Fakes Google's sign-in and Postmaster Tools for the Gmail reading, under
+ * Http::preventStrayRequests(), with the key in the config. Each answer is
+ * an array (its JSON), a response, or a closure.
+ *
+ * @param  array<string, mixed>|PromiseInterface|Closure  $stats
+ * @param  array<string, mixed>|PromiseInterface|Closure|null  $compliance  the fixture's when null
+ * @param  array<string, mixed>|PromiseInterface|Closure|null  $token  a token's when null
+ */
+function fakeGoogle(array|PromiseInterface|Closure $stats = [], array|PromiseInterface|Closure|null $compliance = null, array|PromiseInterface|Closure|null $token = null): void
+{
+    config(['campaigns.postmaster.credentials' => googleCredentials()]);
+
+    $answer = fn (array|PromiseInterface|Closure $answer): PromiseInterface|Closure => is_array($answer) ? Http::response($answer) : $answer;
+
+    Http::preventStrayRequests();
+    Http::fake([
+        ServiceAccount::TOKEN_URL => $answer($token ?? ['access_token' => 'test-access-token', 'expires_in' => 3599, 'token_type' => 'Bearer']),
+        Postmaster::API.'domains/*/domainStats:query' => $answer($stats),
+        Postmaster::API.'domains/*/complianceStatus' => $answer($compliance ?? json_decode((string) file_get_contents(__DIR__.'/Fixtures/Google/compliance.json'), true, flags: JSON_THROW_ON_ERROR)),
+    ]);
 }
 
 /**

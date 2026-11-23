@@ -17,7 +17,7 @@ Tools marked "asks" carry the `anthropic/requiresUserInteraction` flag, so Claud
 
 | Tool | | What it does |
 |---|---|---|
-| `get_overview` | R | how sending is set up and what's switched off, the sending domain's standing, every list with its counts, the default lists first, the campaigns running, and the placeholders an email may use |
+| `get_overview` | R | how sending is set up and what's switched off, the sending domain's standing (Gmail's spam rate among it), every list with its counts, the default lists first, the campaigns running, and the placeholders an email may use |
 | `get_guide` | R | the full workflow agents follow, and your app's own resources a page at a time |
 
 **Lists and people**

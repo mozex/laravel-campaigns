@@ -192,6 +192,22 @@ return [
     ],
 
     /*
+     * Gmail's numbers for the sending domain, from Google Postmaster Tools:
+     * the user-reported spam rate, DKIM, SPF and DMARC success over the last
+     * 14 days and Google's bulk-sender checks, shown in get_overview.
+     * "credentials" is a Google service account's JSON key file,
+     * base64-encoded (a .env value can't hold its line breaks): turn on the
+     * Gmail Postmaster Tools API in the key's Google Cloud project and add
+     * the account's address as a user of the sending domain in Postmaster
+     * Tools. The package asks only for the read-only
+     * postmaster.traffic.readonly scope. A reading is kept in cache_store
+     * for an hour, a failed one for 5 minutes. Default: not read.
+     */
+    'postmaster' => [
+        'credentials' => env('CAMPAIGNS_POSTMASTER_CREDENTIALS'),
+    ],
+
+    /*
      * The UTM tags added to a campaign's links to your own sites when it
      * starts (a campaign may change or switch them off): utm_source and
      * utm_medium from here, utm_campaign the campaign's key. A link that
@@ -282,7 +298,7 @@ return [
      * one waiting stop-loss check per campaign, when the pump last ran, and
      * the marks that limit a misconfigured webhook's or an unreadable
      * provider's error report to one an hour and the stalled-queue alert to
-     * one every six hours. Point it at a store your deploys don't flush, so a
+     * one every six hours, and Gmail's latest reading. Point it at a store your deploys don't flush, so a
      * release can't free a lock a running pump still holds. Null uses the
      * app's default store.
      */

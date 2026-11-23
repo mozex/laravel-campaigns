@@ -1,0 +1,31 @@
+{
+    "name": "domains/news.example.com/complianceStatus",
+    "complianceData": {
+        "domainId": "example.com",
+        "rowData": [
+            {"requirement": "SPF_AND_DKIM", "status": {"status": "COMPLIANT"}},
+            {"requirement": "DMARC_ALIGNMENT", "status": {"status": "COMPLIANT"}},
+            {"requirement": "DMARC_POLICY", "status": {"status": "COMPLIANT"}},
+            {"requirement": "ENCRYPTION", "status": {"status": "COMPLIANT"}},
+            {"requirement": "USER_REPORTED_SPAM_RATE", "status": {"status": "COMPLIANT"}},
+            {"requirement": "DNS_RECORDS", "status": {"status": "COMPLIANT"}}
+        ],
+        "oneClickUnsubscribeVerdict": {"status": {"status": "COMPLIANT"}},
+        "honorUnsubscribeVerdict": {"status": {"status": "COMPLIANT"}},
+        "deliverabilityStatusVerdict": {"state": {"status": "COMPLIANT"}, "reason": "USER_FEEDBACK_LOW"}
+    },
+    "subdomainComplianceData": {
+        "domainId": "news.example.com",
+        "rowData": [
+            {"requirement": "SPF_AND_DKIM", "status": {"status": "COMPLIANT"}},
+            {"requirement": "DMARC_ALIGNMENT", "status": {"status": "COMPLIANT"}},
+            {"requirement": "DMARC_POLICY", "status": {"status": "COMPLIANT"}},
+            {"requirement": "ENCRYPTION", "status": {"status": "COMPLIANT"}},
+            {"requirement": "USER_REPORTED_SPAM_RATE", "status": {"status": "NEEDS_WORK"}},
+            {"requirement": "DNS_RECORDS", "status": {"status": "COMPLIANT"}}
+        ],
+        "oneClickUnsubscribeVerdict": {"status": {"status": "COMPLIANT"}},
+        "honorUnsubscribeVerdict": {"status": {"status": "NEEDS_WORK"}, "reason": "NOT_HONORING"},
+        "deliverabilityStatusVerdict": {"state": {"status": "NEEDS_WORK"}, "reason": "SPAM_RATE_HIGH"}
+    }
+}

@@ -1,0 +1,6 @@
+# The least OpenSSL needs to make a key: some systems have no default
+# configuration file, and openssl_pkey_new() fails without one.
+[req]
+distinguished_name = dn
+
+[dn]

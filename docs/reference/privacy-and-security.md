@@ -42,7 +42,8 @@ Error trackers record request paths, bodies and outgoing requests. Some of the p
 | the arguments of MCP tool calls (`POST /mcp/campaigns`) | addresses an agent adds, blocks or looks up |
 | outgoing requests to `api.*.mailgun.net/v3/<domain>/bounces`, `/complaints` and `/unsubscribes`, path and query | one address's lookup puts the address in the path, and the lists' next pages carry one in the query |
 | outgoing requests to `email.<region>.amazonaws.com/v2/email/suppression/addresses/...`, path and query | Amazon SES's lookup of one address puts the address in the path |
-| the `Authorization` header | an MCP token or an OAuth bearer |
+| the `Authorization` header | an MCP token or an OAuth bearer, and on outgoing requests to `gmailpostmastertools.googleapis.com`, the access token that reads Gmail's spam rate |
+| the body of outgoing requests to `oauth2.googleapis.com/token` (its `assertion` field), and its response's `access_token` field | a sign-in signed with the Google service account's key, and the token it buys, each good for an hour |
 
 The package keeps addresses out of its own exception messages and reports, and never chains an HTTP client's exception whose message quotes a request URL. A database error is passed on with its SQLSTATE and without the SQL, whose values hold addresses and visitors' IP addresses. A deadlock while a list syncs or an import runs inside your own transaction reaches your app as a `DeadlockException` of its own with code 40001 and nothing chained, so Laravel still retries the transaction.
 
@@ -59,6 +60,8 @@ SVG images are refused, since an SVG can carry script, and an image's type comes
 ## Requests the server makes
 
 The pre-send checks fetch every link in an email, and an agent can add an image from an address. Every such request goes through one guard: each hop, redirects included, must name a host whose every address is public, the connection is pinned to the address that was checked, and no proxy is used. An address that points into your own network, such as `127.0.0.1` or a cloud metadata service, is refused, and the refusal never names the private address. A host name written in another script (`bücher.example`) is fetched only when PHP has the `intl` extension, which turns it into the form DNS reads; without it, such an address is refused until it is written in its `xn--` form.
+
+The Gmail reading calls only Google's own two hosts, `oauth2.googleapis.com` and `gmailpostmastertools.googleapis.com`, whatever the key file names, and follows no redirect.
 
 ## Pages and links
 

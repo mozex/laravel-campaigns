@@ -41,6 +41,7 @@ weight: 1
 | `uploads.disk`, `uploads.path` | `CAMPAIGNS_UPLOADS_DISK` | `local`, `campaigns/uploads` | a private disk where uploads wait for the tool that uses them |
 | `uploads.max_size` | | 25 MB | the largest upload, held to PHP's `post_max_size` too |
 | `checks.spam_score` | | `false` | sends the rendered email to Postmark's free SpamAssassin checker as one of the pre-send checks |
+| `postmaster.credentials` | `CAMPAIGNS_POSTMASTER_CREDENTIALS` | none | a Google service account's JSON key file, base64-encoded, that reads the sending domain's [Gmail spam rate](../campaigns/feedback.md#gmails-spam-rate) from Postmaster Tools |
 
 ## Lists, audiences and agents
 
@@ -62,7 +63,7 @@ weight: 1
 | Key | Env | Default | What it does |
 |---|---|---|---|
 | `queue.connection`, `queue.name` | `CAMPAIGNS_QUEUE_CONNECTION`, `CAMPAIGNS_QUEUE` | the default connection, `campaigns` | where the jobs run |
-| `cache_store` | `CAMPAIGNS_CACHE_STORE` | the default store | the scheduled commands' locks and a few marks; use a store your deploys don't flush |
+| `cache_store` | `CAMPAIGNS_CACHE_STORE` | the default store | the scheduled commands' locks, a few marks and Gmail's latest reading; use a store your deploys don't flush |
 | `schedule` | | `true` | whether the package schedules its commands |
 | `event_retention_days` | | `180` | how long provider events are kept |
 

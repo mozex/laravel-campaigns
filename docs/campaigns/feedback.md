@@ -50,6 +50,39 @@ The sending domain is measured too: its last 24 hours across all its campaigns a
 
 What paused a campaign counts again from that pause, so a campaign someone resumes after a look isn't paused again by the same numbers. The pause's reason names the numbers and the limit's key, and `CampaignPausedEvent` fires with `automatic` set. A campaign's first spam report, while it keeps sending, fires `CampaignFirstComplaintEvent`. The alert address hears about both.
 
+## Gmail's spam rate
+
+Gmail tells no sender who marked its mail as spam. It reports only a daily rate per domain, in [Google Postmaster Tools](https://postmaster.google.com), and Google asks bulk senders to keep it under 0.1% and never let it reach 0.3%. The package reads it for the sending domain, so an agent sees it in `get_overview`'s `domain.gmail` before it asks to start or speed up a campaign.
+
+To turn it on:
+
+1. Register the sending domain in Postmaster Tools and verify it with the DNS record Google gives you.
+2. In a Google Cloud project, turn on the Gmail Postmaster Tools API, create a service account with no roles, and download a JSON key for it.
+3. In Postmaster Tools, add the service account's address (`...@<project>.iam.gserviceaccount.com`) as a user of the domain.
+4. Put the key file in your env, base64-encoded, since a `.env` value can't hold its line breaks (on macOS, `base64 -i service-account.json`):
+
+```bash
+base64 -w0 service-account.json
+```
+
+```dotenv
+CAMPAIGNS_POSTMASTER_CREDENTIALS=eyJ0eXBlIjoic2VydmljZV9hY2NvdW50Ii...
+```
+
+The package signs in with that key, asking only for the read-only `postmaster.traffic.readonly` scope, and reads two things: the last 14 days to yesterday (Gmail's numbers run about a day late) and Google's bulk-sender checks. `domain.gmail` shows:
+
+| Field | What it holds |
+|---|---|
+| `spam_rate`, `spam_rate_date` | the latest day's known spam rate, in percent, and its date |
+| `warning` | set when that rate is at or above 0.1%, and worded for Gmail's stop line at 0.3% or above |
+| `days` | each of the 14 days with its spam rate and DKIM, SPF and DMARC success, in percent |
+| `compliance` | Google's checks (SPF and DKIM, DMARC, encryption, one-click unsubscribe and the rest) for the registrable domain and the subdomain you send from |
+| `read`, `note` | whether Google answered, and why not when it didn't |
+
+Gmail reports a day only when the domain sent it enough mail. A day with no report, a day it fills with zeros (DKIM and SPF included) and a day without a spam rate show as `null`: unknown, never clean. A new or quiet domain often has no known day at all. The warning refuses nothing: whether to start, slow down or pause stays with the agent and the person it works for.
+
+A reading is kept in `campaigns.cache_store` for an hour, so Google is asked at most once an hour; a failed one is tried again after 5 minutes. Each request gives up after 10 seconds. The key, the signed sign-in request and the access token never reach a log, an exception or an answer.
+
 ## The reconciler
 
 Every 15 minutes, whether or not sending is switched on:

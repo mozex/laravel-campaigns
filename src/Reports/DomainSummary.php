@@ -17,8 +17,9 @@ use Mozex\Campaigns\Sending\StopLoss;
  * The sending domain's standing, for an agent judging whether a campaign
  * may start or speed up: its last 24 hours from the app's own messages (the
  * stop-loss's measure, rates per send), its daily cap and what the last 24
- * hours used of it, and the service's own counts for the last 30 days, when
- * the active driver reads them (ReadsMetrics).
+ * hours used of it, the service's own counts for the last 30 days, when
+ * the active driver reads them (ReadsMetrics), and Gmail's spam rate and
+ * checks from Postmaster Tools (GmailReading).
  */
 class DomainSummary
 {
@@ -59,6 +60,7 @@ class DomainSummary
                 'last_24_hours' => static::lastDay($domain),
                 'daily_cap' => Allowance::domainUsage($domain, now()),
                 'provider' => $metrics === null ? null : static::provider($metrics),
+                'gmail' => GmailReading::for($domain),
             ],
             'notes' => $notes,
         ];

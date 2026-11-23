@@ -214,6 +214,49 @@ class Schemas
     }
 
     /**
+     * Gmail's numbers for the sending domain (GmailReading::for()).
+     */
+    public static function gmail(JsonSchema $schema): Type
+    {
+        $rate = fn (string $description): Type => $schema->number()->nullable()->required()->description($description);
+
+        $verdict = $schema->object([
+            'status' => $schema->string()->nullable()->required()->description('COMPLIANT or NEEDS_WORK.'),
+            'reason' => $schema->string()->nullable()->required()->description('Google\'s reason code, when it gives one.'),
+        ])->nullable()->required();
+
+        $compliance = $schema->object([
+            'domain' => $schema->string()->nullable()->required(),
+            'requirements' => $schema->object()->required()->description('Each of Google\'s bulk-sender requirements (SPF_AND_DKIM, DMARC_POLICY, DMARC_ALIGNMENT, ENCRYPTION, DNS_RECORDS, USER_REPORTED_SPAM_RATE, ...) to COMPLIANT or NEEDS_WORK.'),
+            'one_click_unsubscribe' => $verdict,
+            'honor_unsubscribe' => $verdict,
+            'deliverability' => $verdict,
+        ])->nullable()->required();
+
+        return $schema->object([
+            'read' => $schema->boolean()->required()->description('Whether Google answered; false when no key is set or the read failed (note says which).'),
+            'read_at' => $schema->string()->nullable()->required()->description('When Google answered: a reading is kept for an hour.'),
+            'spam_rate' => $rate('The latest day\'s known user-reported spam rate, in percent (0.1 is 0.1%); null when no day of the window has one: unknown, never clean.'),
+            'spam_rate_date' => $schema->string()->nullable()->required()->description('The UTC date of spam_rate.'),
+            'warning' => $schema->string()->nullable()->required()->description('Set when spam_rate is at or above 0.1%, the rate Google asks bulk senders to stay under, or at or above 0.3%, which Google says a bulk sender must never reach.'),
+            'note' => $schema->string()->nullable()->required()->description('Why Gmail wasn\'t read, or that it reported no spam rate in the window.'),
+            'from' => $schema->string()->nullable()->required()->description('The first UTC date read.'),
+            'to' => $schema->string()->nullable()->required()->description('The last UTC date read: yesterday, since Gmail reports about a day late.'),
+            'days' => $schema->array()->items($schema->object([
+                'date' => $schema->string()->required(),
+                'spam_rate' => $rate('Percent of the day\'s mail to Gmail inboxes that people reported as spam.'),
+                'dkim_success_rate' => $rate('Percent of the day\'s mail that passed DKIM.'),
+                'spf_success_rate' => $rate('Percent that passed SPF.'),
+                'dmarc_success_rate' => $rate('Percent that passed DMARC.'),
+            ]))->required()->description('Every day read, oldest first. A rate is null when unknown: Gmail reports a day only when the domain sent it enough mail, and a day it filled with zeros counts as unknown.'),
+            'compliance' => $schema->object([
+                'registrable_domain' => $compliance,
+                'subdomain' => $compliance,
+            ])->nullable()->required()->description('Google\'s bulk-sender checks for the registrable domain and, when Google has them, the sending subdomain itself.'),
+        ]);
+    }
+
+    /**
      * Where a revision's pre-send checks stand (CheckSummary::status()).
      */
     public static function checkStatus(JsonSchema $schema): Type

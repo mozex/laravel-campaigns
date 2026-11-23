@@ -63,6 +63,7 @@ it('fills a published nested group in from the defaults', function (): void {
     expect(config('campaigns.pace.first_day'))->toBe(500)
         ->and(config('campaigns.pace.per_minute'))->toBe(10)
         ->and(config('campaigns.stop_loss.complaint_rate'))->toBe(0.08)
+        ->and(config('campaigns.postmaster'))->toBe(['credentials' => null])
         ->and(config('campaigns.domain_daily_caps'))->toBe(['news.example.com' => 3000]);
 });
 

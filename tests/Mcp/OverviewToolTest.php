@@ -20,6 +20,7 @@ use Mozex\Campaigns\Models\Campaign;
 use Mozex\Campaigns\Models\CampaignList;
 use Mozex\Campaigns\Models\Subscriber;
 use Mozex\Campaigns\Reports\DomainSummary;
+use Mozex\Campaigns\Reports\GmailReading;
 use Mozex\Campaigns\Reports\Overview;
 use Mozex\Campaigns\Sending\DomainMetrics;
 use Mozex\Campaigns\Sending\Drivers\DriverManager;
@@ -156,12 +157,32 @@ it('stays under the answer limit with every column at its longest', function (st
         fakeDriver()->count(now()->utc()->subDays($day)->toDateString(), array_fill_keys(DomainMetrics::COUNTS, 1_000_000_000));
     }
 
+    // Gmail's 14 days, every rate with its most digits over the stop line,
+    // and Google's checks at their longest for both domains.
+    $days = [];
+
+    foreach (range(1, GmailReading::DAYS) as $day) {
+        $days[now()->utc()->subDays($day)->toDateString()] = array_fill_keys(array_keys(GmailReading::METRICS), 0.1234567);
+    }
+
+    $checks = [
+        'domainId' => str_repeat('d', 253),
+        'rowData' => array_map(fn (int $n): array => ['requirement' => str_pad("R{$n}_", 40, 'X'), 'status' => ['status' => str_repeat('N', 40)]], range(1, GmailReading::REQUIREMENTS + 5)),
+        'oneClickUnsubscribeVerdict' => ['status' => ['status' => str_repeat('N', 40)], 'reason' => str_repeat('R', 40)],
+        'honorUnsubscribeVerdict' => ['status' => ['status' => str_repeat('N', 40)], 'reason' => str_repeat('R', 40)],
+        'deliverabilityStatusVerdict' => ['state' => ['status' => str_repeat('N', 40)], 'reason' => str_repeat('R', 40)],
+    ];
+
+    fakeGoogle(postmasterStats($days), ['complianceData' => $checks, 'subdomainComplianceData' => $checks]);
+
     $content = structuredContent(CampaignsServer::actingAs(ApiToken::factory()->readOnly()->create(), 'campaigns')
         ->tool(OverviewTool::class)
         ->assertOk()
         ->assertHasNoErrors());
 
     expect($content['domain']['provider']['days'])->toHaveCount(DomainSummary::DAYS)
+        ->and($content['domain']['gmail']['warning'])->toContain('stop line')
+        ->and($content['domain']['gmail']['compliance']['subdomain']['requirements'])->toHaveCount(GmailReading::REQUIREMENTS)
         ->and($content['lists'])->toHaveCount(Overview::LIMIT)
         ->and($content['lists_total'])->toBe(Overview::LIMIT + 1)
         ->and($content['campaigns'])->toHaveCount(Overview::LIMIT)
@@ -274,6 +295,50 @@ it('shows the sending domain\'s standing: its last 24 hours, its daily cap and t
     expect($failing['domain']['provider'])->toBeNull()
         ->and(structuredContent(agent(Rights::Read)->tool(OverviewTool::class)->assertOk())['domain']['provider'])->not->toBeNull();
 })->with('databases');
+
+it('shows Gmail\'s spam rate, authentication and checks for the sending domain', function (): void {
+    $this->travelTo(now()->parse('2026-11-23 15:00:00Z'));
+    sendFromExample();
+    fakeGoogle(postmasterStats(['2026-11-21' => ['spam_rate' => 0.0012, 'dkim_success_rate' => 1.0, 'spf_success_rate' => 1.0, 'dmarc_success_rate' => 0.98]]));
+
+    $gmail = structuredContent(agent(Rights::Read)->tool(OverviewTool::class)->assertOk()->assertHasNoErrors())['domain']['gmail'];
+
+    expect($gmail)->toMatchArray([
+        'read' => true,
+        'read_at' => '2026-11-23T15:00:00+00:00',
+        'spam_rate' => 0.12,
+        'spam_rate_date' => '2026-11-21',
+        'warning' => 'Gmail\'s spam rate for news.example.com was 0.12% on 2026-11-21, at or above the 0.1% Google asks bulk senders to stay under.',
+        'note' => null,
+        'from' => '2026-11-09',
+        'to' => '2026-11-22',
+    ])
+        ->and($gmail['days'])->toHaveCount(GmailReading::DAYS)
+        ->and($gmail['days'][12])->toEqual(['date' => '2026-11-21', 'spam_rate' => 0.12, 'dkim_success_rate' => 100, 'spf_success_rate' => 100, 'dmarc_success_rate' => 98])
+        ->and($gmail['compliance']['subdomain']['requirements']['USER_REPORTED_SPAM_RATE'])->toBe('NEEDS_WORK')
+        ->and($gmail['compliance']['registrable_domain']['deliverability'])->toBe(['status' => 'COMPLIANT', 'reason' => 'USER_FEEDBACK_LOW']);
+
+    Http::assertSentCount(3);
+});
+
+it('says Gmail isn\'t read without a key, and shows a requirement-less check as an object', function (): void {
+    sendFromExample();
+    Http::preventStrayRequests();
+
+    $gmail = structuredContent(agent(Rights::Read)->tool(OverviewTool::class)->assertOk()->assertHasNoErrors())['domain']['gmail'];
+
+    expect($gmail['read'])->toBeFalse()
+        ->and($gmail['note'])->toContain('CAMPAIGNS_POSTMASTER_CREDENTIALS');
+
+    Http::assertNothingSent();
+
+    fakeGoogle(compliance: ['complianceData' => ['domainId' => 'example.com', 'rowData' => []]]);
+
+    expect(structuredContent(agent(Rights::Read)->tool(OverviewTool::class)->assertOk()->assertHasNoErrors())['domain']['gmail']['compliance'])
+        ->toBe(['registrable_domain' => ['domain' => 'example.com', 'requirements' => [], 'one_click_unsubscribe' => null, 'honor_unsubscribe' => null, 'deliverability' => null], 'subdomain' => null])
+        // Kept as a JSON object, as the schema says, though empty.
+        ->and(json_encode(GmailReading::for('news.example.com')['compliance']))->toContain('"requirements":{}');
+});
 
 it('asks Mailgun nothing for the domain\'s numbers without the key that reads them, and says so', function (): void {
     Http::preventStrayRequests();

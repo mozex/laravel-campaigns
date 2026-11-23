@@ -21,13 +21,14 @@ use Mozex\Campaigns\Enums\ListKind;
 use Mozex\Campaigns\Enums\SubscriptionStatus;
 use Mozex\Campaigns\Mcp\Schemas;
 use Mozex\Campaigns\Reports\DomainSummary;
+use Mozex\Campaigns\Reports\GmailReading;
 use Mozex\Campaigns\Reports\Overview;
 use Mozex\Campaigns\Sending\DomainMetrics;
 use Mozex\Campaigns\Sending\Drivers\DriverManager;
 
 #[Name('get_overview')]
 #[Title('Get overview')]
-#[Description('Start here. How sending is set up and what is switched off, the addresses test emails may go to, the sending domain\'s standing (its last 24 hours from the app\'s own records, its daily cap and what is left of it, and the provider\'s counts for its last 30 days), every list in use with its counts (by status, how many may be mailed, and by engagement tier) and whether it is a default list, the default lists first (archived lists through list_lists), the campaigns starting, scheduled, sending or paused, and the placeholders an email may hold with this app\'s values. At most 25 lists and 25 campaigns; lists_total and campaigns_total say how many there are.')]
+#[Description('Start here. How sending is set up and what is switched off, the addresses test emails may go to, the sending domain\'s standing (its last 24 hours from the app\'s own records, its daily cap and what is left of it, the provider\'s counts for its last 30 days, and Gmail\'s spam rate and bulk-sender checks from Postmaster Tools), every list in use with its counts (by status, how many may be mailed, and by engagement tier) and whether it is a default list, the default lists first (archived lists through list_lists), the campaigns starting, scheduled, sending or paused, and the placeholders an email may hold with this app\'s values. At most 25 lists and 25 campaigns; lists_total and campaigns_total say how many there are.')]
 #[IsReadOnly]
 #[IsIdempotent]
 #[IsOpenWorld]
@@ -89,6 +90,7 @@ class OverviewTool extends CampaignsTool
                     'totals' => $schema->object(static::providerCounts($schema))->required(),
                     'days' => $schema->array()->items($schema->object(['date' => $schema->string()->required(), ...static::providerCounts($schema)]))->required()->description('Oldest first.'),
                 ])->nullable()->required()->description('The provider\'s own counts for the domain over the last '.DomainSummary::DAYS.' days: sent is the domain\'s own outgoing mail; forwarded is inbound mail its routes passed on; the bounces, spam reports and unsubscribes are the provider\'s for all of the domain\'s mail. A count the provider doesn\'t keep is null. Null when they can\'t be read or the driver reads no counts (sending.notes says why).'),
+                'gmail' => Schemas::gmail($schema)->required()->description('Gmail\'s numbers for the domain from Google Postmaster Tools over the '.GmailReading::DAYS.' days to yesterday: the user-reported spam rate, DKIM, SPF and DMARC success, and Google\'s bulk-sender checks.'),
             ])->nullable()->description('The sending domain\'s standing; null when no domain is configured.'),
             'lists' => $schema->array()->items($schema->object([
                 'key' => $schema->string()->required(),

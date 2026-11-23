@@ -27,6 +27,7 @@
         "php": "^8.2.0",
         "ext-curl": "*",
         "ext-dom": "*",
+        "ext-openssl": "*",
         "ext-zip": "*",
         "guzzlehttp/guzzle": "^7.8.2|^8.0",
         "guzzlehttp/psr7": "^2.4|^3.0",
