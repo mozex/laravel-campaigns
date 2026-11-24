@@ -10,6 +10,7 @@ use Illuminate\Database\Schema\Builder;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Schema;
 use Mozex\Campaigns\CampaignsServiceProvider;
+use Mozex\Campaigns\Tests\Fixtures\Mcp\SchemaCheckedServer;
 use Mozex\Campaigns\Tests\Fixtures\MemberList;
 use Orchestra\Testbench\Concerns\WithWorkbench;
 use Orchestra\Testbench\TestCase as Orchestra;
@@ -25,6 +26,8 @@ class TestCase extends Orchestra
         // an unsized column fail the column-length test.
         Model::shouldBeStrict();
         Builder::defaultStringLength(125);
+        SchemaCheckedServer::$answered = [];
+        SchemaCheckedServer::$filled = [];
 
         parent::setUp();
     }

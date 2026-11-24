@@ -17,27 +17,6 @@ use Mozex\Campaigns\Mcp\Tools\SpeedUpCampaignTool;
 use Mozex\Campaigns\Mcp\Tools\StartCampaignTool;
 use Mozex\Campaigns\Mcp\Tools\UnblockContactTool;
 
-/**
- * Every tool class in src/Mcp/Tools, found on disk.
- *
- * @return list<class-string<CampaignsTool>>
- */
-function toolClasses(): array
-{
-    $classes = [];
-
-    foreach (glob(dirname(__DIR__, 2).'/src/Mcp/Tools/*Tool.php') ?: [] as $file) {
-        $class = 'Mozex\\Campaigns\\Mcp\\Tools\\'.basename($file, '.php');
-
-        if (! (new ReflectionClass($class))->isAbstract()) {
-            /** @var class-string<CampaignsTool> $class */
-            $classes[] = $class;
-        }
-    }
-
-    return $classes;
-}
-
 it('lists every tool the package has on its server', function (): void {
     $listed = (fn (): array => $this->tools)->call(app(CampaignsServer::class, ['transport' => new FakeTransporter]));
 

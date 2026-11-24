@@ -16,7 +16,6 @@ use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Exceptions;
 use Illuminate\Support\Facades\Http;
-use Mozex\Campaigns\Mcp\CampaignsServer;
 use Mozex\Campaigns\Mcp\Tools\OverviewTool;
 use Mozex\Campaigns\Models\ApiToken;
 use Mozex\Campaigns\Postmaster\Postmaster;
@@ -453,7 +452,7 @@ it('never lets the key, the signed assertion or the access token reach a log, a 
     sendFromExample();
     $fake();
 
-    $answer = json_encode(structuredContent(CampaignsServer::actingAs(ApiToken::factory()->readOnly()->create(), 'campaigns')
+    $answer = json_encode(structuredContent(mcpServer()->actingAs(ApiToken::factory()->readOnly()->create(), 'campaigns')
         ->tool(OverviewTool::class)
         ->assertOk()
         ->assertHasNoErrors()), JSON_THROW_ON_ERROR);

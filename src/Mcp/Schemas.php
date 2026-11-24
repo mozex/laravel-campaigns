@@ -301,8 +301,8 @@ class Schemas
             'status' => $schema->string()->enum(['none', 'queued', 'done', 'failed'])->required()->description('none: never run; failed: the run itself died (message says why).'),
             'queued_at' => $schema->string()->nullable()->required(),
             'finished_at' => $schema->string()->nullable()->required(),
-            'passed' => $schema->integer()->nullable()->required(),
-            'failed' => $schema->integer()->nullable()->required(),
+            'passed' => $schema->integer()->nullable()->required()->description('How many checks passed; null until a run is done.'),
+            'failed' => $schema->integer()->nullable()->required()->description('How many checks failed; the rest were skipped.'),
             'message' => $schema->string()->nullable()->required(),
         ]);
     }

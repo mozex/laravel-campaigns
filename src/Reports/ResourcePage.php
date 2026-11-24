@@ -33,9 +33,11 @@ class ResourcePage
     {
         $resources = [];
 
+        // PHP keeps a name like "7", and a list's 0, as an integer key, which
+        // the server's resources and the guide's answer take as a string.
         foreach (app(Campaigns::class)->resources() as $key => $resource) {
             try {
-                $resources[] = ['name' => $key, 'description' => ShownText::of($resource->description(), static::DESCRIPTION_LENGTH)];
+                $resources[] = ['name' => (string) $key, 'description' => ShownText::of($resource->description(), static::DESCRIPTION_LENGTH)];
             } catch (Throwable $exception) {
                 report($exception);
             }

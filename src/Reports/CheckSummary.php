@@ -30,7 +30,8 @@ class CheckSummary
     public const ITEM_LOCALES = 10;
 
     /**
-     * Where the revision's latest run stands: none, queued, done or failed.
+     * Where the revision's latest run stands: none, queued, done or failed,
+     * with how many checks passed and failed.
      *
      * @return array<string, mixed>
      */
@@ -42,10 +43,28 @@ class CheckSummary
             'status' => is_string($results['status'] ?? null) ? $results['status'] : 'none',
             'queued_at' => $results['queued_at'] ?? null,
             'finished_at' => $results['finished_at'] ?? null,
-            'passed' => $results['passed'] ?? null,
-            'failed' => $results['failed'] ?? null,
+            'passed' => static::counted($results, 'passed'),
+            'failed' => static::counted($results, 'failed'),
             'message' => ShownText::of(is_string($results['message'] ?? null) ? $results['message'] : null, static::STATUS_MESSAGE_LENGTH),
         ];
+    }
+
+    /**
+     * How many of a run's checks have the status: the count the run stored,
+     * or, where it stored something else (versions before 0.2.2 stored
+     * `passed` as true when nothing failed), its checks counted.
+     *
+     * @param  array<string, mixed>  $results
+     */
+    protected static function counted(array $results, string $status): ?int
+    {
+        $stored = $results[$status] ?? null;
+
+        if ($stored === null || is_int($stored)) {
+            return $stored;
+        }
+
+        return count(array_filter(static::checksOf($results), fn (array $check): bool => ($check['status'] ?? null) === $status));
     }
 
     /**
@@ -103,7 +122,16 @@ class CheckSummary
      */
     protected static function all(Revision $revision): array
     {
-        $checks = $revision->check_results['checks'] ?? [];
+        return static::checksOf($revision->check_results ?? []);
+    }
+
+    /**
+     * @param  array<string, mixed>  $results
+     * @return list<array<string, mixed>>
+     */
+    protected static function checksOf(array $results): array
+    {
+        $checks = $results['checks'] ?? [];
 
         return is_array($checks) ? array_values(array_filter($checks, 'is_array')) : [];
     }

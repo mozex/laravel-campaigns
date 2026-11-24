@@ -103,7 +103,7 @@ describe('starting a campaign', function (): void {
         ], ['utm' => ['content' => 'hero']]);
         subscriberOn([readers()]);
         $authored = $campaign->currentRevision()->sole();
-        $authored->forceFill(['check_results' => ['status' => 'done', 'passed' => true]])->save();
+        $authored->forceFill(['check_results' => ['status' => 'done', 'passed' => 6, 'failed' => 1]])->save();
 
         app(StartCampaignAction::class)->execute($campaign, 1);
         $frozen = $campaign->fresh()->frozenRevision;
@@ -112,7 +112,7 @@ describe('starting a campaign', function (): void {
         expect($frozen)
             ->number->toBe(2)
             ->frozen_from_id->toBe($authored->id)
-            ->check_results->toEqual(['status' => 'done', 'passed' => true])
+            ->check_results->toEqual(['status' => 'done', 'passed' => 6, 'failed' => 1])
             ->and($frozen->authored()->id)->toBe($authored->id)
             ->and($frozen->contentFor('en')->html)->toBe(
                 "<a href=\"https://www.example.com/sale?a=1&amp;b=2&amp;{$tags}#top\">Sale</a> <a href=\"https://shop.example.com/?{$tags}\">Shop</a> "

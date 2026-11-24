@@ -14,7 +14,6 @@ use Mozex\Campaigns\Enums\CampaignStatus;
 use Mozex\Campaigns\Enums\Rights;
 use Mozex\Campaigns\Enums\SubscriptionStatus;
 use Mozex\Campaigns\Jobs\SendMessageJob;
-use Mozex\Campaigns\Mcp\CampaignsServer;
 use Mozex\Campaigns\Mcp\Tools\OverviewTool;
 use Mozex\Campaigns\Models\ApiToken;
 use Mozex\Campaigns\Models\Campaign;
@@ -70,7 +69,7 @@ it('reads every list\'s counts, the open campaigns and the placeholders with the
     ]);
     config()->set('campaigns.drivers.mailgun.monthly_included', '50000');
 
-    $overview = CampaignsServer::actingAs(ApiToken::factory()->readOnly()->create(), 'campaigns')
+    $overview = mcpServer()->actingAs(ApiToken::factory()->readOnly()->create(), 'campaigns')
         ->tool(OverviewTool::class)
         ->assertOk()
         ->assertHasNoErrors();
@@ -202,7 +201,7 @@ it('stays under the answer limit with every column at its longest', function (st
 
     fakeGoogle(postmasterStats($days), ['complianceData' => $checks, 'subdomainComplianceData' => $checks]);
 
-    $content = structuredContent(CampaignsServer::actingAs(ApiToken::factory()->readOnly()->create(), 'campaigns')
+    $content = structuredContent(mcpServer()->actingAs(ApiToken::factory()->readOnly()->create(), 'campaigns')
         ->tool(OverviewTool::class)
         ->assertOk()
         ->assertHasNoErrors());
@@ -229,7 +228,7 @@ it('says what is switched off or missing, and what a driver without each ability
         'mail.from.address' => null,
     ]);
 
-    $overview = CampaignsServer::actingAs(ApiToken::factory()->readOnly()->create(), 'campaigns')
+    $overview = mcpServer()->actingAs(ApiToken::factory()->readOnly()->create(), 'campaigns')
         ->tool(OverviewTool::class)
         ->assertOk();
 

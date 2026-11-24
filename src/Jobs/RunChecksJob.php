@@ -52,12 +52,13 @@ class RunChecksJob implements ShouldQueue
         }
 
         $results = $checks->run($revision, $this->locales, $this->clickTracking);
-        $failed = count(array_filter($results, fn (array $result): bool => $result['status'] === CheckStatus::Failed->value));
+        $count = fn (CheckStatus $status): int => count(array_filter($results, fn (array $result): bool => $result['status'] === $status->value));
 
+        // How many checks passed and how many failed; the rest were skipped.
         $this->store($revision, [
             'status' => 'done',
-            'passed' => $failed === 0,
-            'failed' => $failed,
+            'passed' => $count(CheckStatus::Passed),
+            'failed' => $count(CheckStatus::Failed),
             'checks' => $results,
         ]);
     }

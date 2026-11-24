@@ -144,6 +144,17 @@ it('leaves out and reports a resource whose description fails, the guide still a
     Exceptions::assertReported(fn (RuntimeException $exception): bool => $exception->getMessage() === 'The description failed.');
 });
 
+it('lists a resource whose name PHP keeps as a number by that name, the server still starting', function (): void {
+    Member::query()->create(['email' => 'member@example.org', 'name' => 'Member']);
+    config(['campaigns.resources' => ['7' => MemberDirectory::class]]);
+
+    $guide = structuredContent(agent(Rights::Read)->tool(GetGuideTool::class)->assertOk());
+    $page = structuredContent(agent(Rights::Read)->tool(GetGuideTool::class, ['resource' => '7'])->assertOk());
+
+    expect($guide['resources'])->toBe([['name' => '7', 'description' => 'The members, by name.']])
+        ->and($page['page']['resource'])->toBe('7');
+});
+
 it('refuses and reports a resource page longer than an answer may be', function (): void {
     Exceptions::fake();
 

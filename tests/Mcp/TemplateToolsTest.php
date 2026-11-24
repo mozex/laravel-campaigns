@@ -13,6 +13,7 @@ use Mozex\Campaigns\Mcp\Tools\AddRevisionTool;
 use Mozex\Campaigns\Mcp\Tools\ArchiveTemplateTool;
 use Mozex\Campaigns\Mcp\Tools\CreateTemplateTool;
 use Mozex\Campaigns\Mcp\Tools\GetCheckResultsTool;
+use Mozex\Campaigns\Mcp\Tools\GetPreviewLinkTool;
 use Mozex\Campaigns\Mcp\Tools\GetTemplateTool;
 use Mozex\Campaigns\Mcp\Tools\ListRevisionsTool;
 use Mozex\Campaigns\Mcp\Tools\ListTemplatesTool;
@@ -384,6 +385,39 @@ describe('checks', function (): void {
             ->and($linksLast['items'])->toHaveCount(5)
             ->and($french['items'])->toBe([['locale' => 'fr', 'url' => 'https://example.com/b.png', 'problem' => 'is not on https']]);
     });
+
+    it('counts the checks of a run stored before 0.2.2, whose passed said only whether none failed', function (bool $passed, int $failed): void {
+        $template = app(CreateTemplateAction::class)->execute('welcome', 'Welcome', [campaignEmail()]);
+        $checks = [
+            ['check' => 'unsubscribe', 'locale' => 'en', 'status' => 'passed', 'message' => 'Has an unsubscribe link.'],
+            ['check' => 'size', 'locale' => 'en', 'status' => 'passed', 'message' => 'Small enough.', 'bytes' => 2048],
+            ['check' => 'spam_score', 'locale' => 'en', 'status' => 'skipped', 'message' => 'The spam checker gave no answer.'],
+        ];
+
+        if ($failed > 0) {
+            $checks[] = ['check' => 'links', 'locale' => null, 'status' => 'failed', 'message' => '1 of the 3 has a problem.', 'checked' => 3, 'items' => [['url' => 'https://example.com/gone', 'problem' => 'answered 404']]];
+        }
+
+        $template->currentRevision()->firstOrFail()->update(['check_results' => [
+            'status' => 'done', 'passed' => $passed, 'failed' => $failed, 'checks' => $checks,
+            'run' => 'r', 'queued_at' => '2026-11-24T12:00:00+00:00', 'finished_at' => '2026-11-24T12:00:31+00:00',
+        ]]);
+
+        $counts = ['passed' => 2, 'failed' => $failed];
+        $read = structuredContent(agent(Rights::Read)->tool(GetTemplateTool::class, ['key' => 'welcome'])->assertOk());
+        $results = structuredContent(agent(Rights::Read)->tool(GetCheckResultsTool::class, ['template' => 'welcome'])->assertOk());
+        $listed = structuredContent(agent(Rights::Read)->tool(ListRevisionsTool::class, ['template' => 'welcome'])->assertOk());
+        $preview = structuredContent(agent(Rights::Read)->tool(GetPreviewLinkTool::class, ['template' => 'welcome'])->assertOk());
+
+        expect($read['revision']['checks'])->toMatchArray(['status' => 'done', ...$counts])
+            ->and($results['run'])->toMatchArray($counts)
+            ->and($listed['revisions'][0]['checks'])->toMatchArray($counts);
+
+        $this->get($preview['url'])->assertOk()->assertSee("2 passed, {$failed} failed.");
+    })->with([
+        'none failed' => [true, 0],
+        'one failed' => [false, 1],
+    ]);
 
     it('answers the longest results under the limit', function (string $character): void {
         $template = app(CreateTemplateAction::class)->execute('welcome', 'Welcome', [campaignEmail()]);

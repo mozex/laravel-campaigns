@@ -154,7 +154,7 @@ it('checks the links, images, size, unsubscribe and privacy links, languages and
 
     expect($results)
         ->status->toBe('done')
-        ->passed->toBeFalse()
+        ->passed->toBe(4)
         ->failed->toBe(3)
         ->and($revision->fresh()->checked_at)->not->toBeNull()
         ->and(check($results, 'locales'))

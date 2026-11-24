@@ -26,7 +26,7 @@ use Mozex\Campaigns\Enums\SubscriptionStatus;
 use Mozex\Campaigns\Enums\UploadPurpose;
 use Mozex\Campaigns\Fetching\HostResolver;
 use Mozex\Campaigns\Fetching\StaticHostResolver;
-use Mozex\Campaigns\Mcp\CampaignsServer;
+use Mozex\Campaigns\Mcp\Tools\CampaignsTool;
 use Mozex\Campaigns\Models\ApiToken;
 use Mozex\Campaigns\Models\Campaign;
 use Mozex\Campaigns\Models\CampaignList;
@@ -42,6 +42,7 @@ use Mozex\Campaigns\Sending\Drivers\FakeDriver;
 use Mozex\Campaigns\Sending\OutgoingMessage;
 use Mozex\Campaigns\Sending\SendFailed;
 use Mozex\Campaigns\Support\Token;
+use Mozex\Campaigns\Tests\Fixtures\Mcp\SchemaCheckedServer;
 use Mozex\Campaigns\Tests\Fixtures\Person;
 use Mozex\Campaigns\Tests\Fixtures\Smtp\ScriptedStream;
 use Mozex\Campaigns\Tests\TestCase;
@@ -156,10 +157,41 @@ function structuredContent(McpTestResponse $response): array
 }
 
 /**
+ * Every tool class in src/Mcp/Tools, found on disk.
+ *
+ * @return list<class-string<CampaignsTool>>
+ */
+function toolClasses(): array
+{
+    $classes = [];
+
+    foreach (glob(dirname(__DIR__).'/src/Mcp/Tools/*Tool.php') ?: [] as $file) {
+        $class = 'Mozex\\Campaigns\\Mcp\\Tools\\'.basename($file, '.php');
+
+        if (! (new ReflectionClass($class))->isAbstract()) {
+            /** @var class-string<CampaignsTool> $class */
+            $classes[] = $class;
+        }
+    }
+
+    return $classes;
+}
+
+/**
+ * The campaigns server under test, checking every tool's answer against
+ * that tool's output schema as a client does. Sign in with actingAs().
+ */
+function mcpServer(): SchemaCheckedServer
+{
+    return new SchemaCheckedServer;
+}
+
+/**
  * The campaigns server as an agent signed in with these rights: a package
  * token ("laptop" with full rights, "reader" with read), or a person named
  * "Ann Agent" signed in through a stand-in for an app's own guard, whose
- * model answers these rights.
+ * model answers these rights. Every answer is checked against its tool's
+ * output schema.
  */
 function agent(Rights $rights = Rights::Full, bool $person = false): PendingTestResponse
 {
@@ -167,13 +199,13 @@ function agent(Rights $rights = Rights::Full, bool $person = false): PendingTest
         $name = $rights === Rights::Full ? 'laptop' : 'reader';
         $token = ApiToken::query()->where('name', $name)->first() ?? ApiToken::factory()->create(['name' => $name, 'rights' => $rights]);
 
-        return CampaignsServer::actingAs($token, 'campaigns');
+        return mcpServer()->actingAs($token, 'campaigns');
     }
 
     config(['auth.guards.people' => ['driver' => 'people']]);
     Auth::viaRequest('people', fn (): ?Person => null);
 
-    return CampaignsServer::actingAs(new Person(['id' => 7, 'name' => 'Ann Agent', 'rights' => $rights->value]), 'people');
+    return mcpServer()->actingAs(new Person(['id' => 7, 'name' => 'Ann Agent', 'rights' => $rights->value]), 'people');
 }
 
 /**
