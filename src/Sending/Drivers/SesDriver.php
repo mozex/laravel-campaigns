@@ -18,6 +18,7 @@ use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Sleep;
 use Mozex\Campaigns\CampaignsException;
 use Mozex\Campaigns\Contracts\CampaignDriver;
+use Mozex\Campaigns\Contracts\Drivers\ChecksSetup;
 use Mozex\Campaigns\Contracts\Drivers\ReadsMetrics;
 use Mozex\Campaigns\Contracts\Drivers\ReadsSuppressions;
 use Mozex\Campaigns\Contracts\Drivers\ReadsUsage;
@@ -64,12 +65,13 @@ use Throwable;
  * account's in the region, whatever the domain; its daily counts need
  * Virtual Deliverability Manager (campaigns.drivers.ses.vdm); its usage is
  * the account's 24-hour quota in the region. Reads go through the campaigns
- * mailer's own SES client.
+ * mailer's own SES client. Its webhooks are on only while their secret is
+ * set, and its daily counts while vdm is (ChecksSetup).
  *
  * A failure is read from the AWS error code and the HTTP status, never the
  * service's words, which may quote an address.
  */
-class SesDriver implements CampaignDriver, ReadsMetrics, ReadsSuppressions, ReadsUsage, ReceivesWebhooks
+class SesDriver implements CampaignDriver, ChecksSetup, ReadsMetrics, ReadsSuppressions, ReadsUsage, ReceivesWebhooks
 {
     use UsesCampaignsMailer;
 
@@ -194,6 +196,15 @@ class SesDriver implements CampaignDriver, ReadsMetrics, ReadsSuppressions, Read
         'COMPLAINT' => SuppressionType::Complaint,
     ];
 
+    public function missingSetup(string $ability): ?string
+    {
+        return match ($ability) {
+            ReceivesWebhooks::class => static::hasSecret() ? null : 'campaigns.drivers.ses.webhook_secret (CAMPAIGNS_SES_WEBHOOK_SECRET) holds the key your EventBridge API destination sends',
+            ReadsMetrics::class => filter_var(config('campaigns.drivers.ses.vdm'), FILTER_VALIDATE_BOOL) ? null : 'campaigns.drivers.ses.vdm (CAMPAIGNS_SES_VDM) is true, with Virtual Deliverability Manager turned on in SES',
+            default => null,
+        };
+    }
+
     public function send(OutgoingMessage $message): SendReceipt
     {
         $mailer = $this->mailer();
@@ -258,7 +269,7 @@ class SesDriver implements CampaignDriver, ReadsMetrics, ReadsSuppressions, Read
     {
         $secret = config('campaigns.drivers.ses.webhook_secret');
 
-        if (! is_string($secret) || $secret === '') {
+        if (! is_string($secret) || ! static::hasSecret()) {
             throw new CampaignsException('An Amazon SES event arrived, but no webhook secret is configured (campaigns.drivers.ses.webhook_secret, CAMPAIGNS_SES_WEBHOOK_SECRET), so it can\'t be verified.');
         }
 
@@ -472,6 +483,17 @@ class SesDriver implements CampaignDriver, ReadsMetrics, ReadsSuppressions, Read
      *
      * @throws SendFailed
      */
+    /**
+     * Whether the webhook secret holds something: a blank env line arrives
+     * as '', and spaces are no secret either.
+     */
+    protected static function hasSecret(): bool
+    {
+        $secret = config('campaigns.drivers.ses.webhook_secret');
+
+        return is_string($secret) && trim($secret) !== '';
+    }
+
     protected function mailer(): MailerContract
     {
         $mailer = $this->campaignsMailer(SesV2Transport::class, 'Amazon SES\'s v2 API', "the ses-v2 transport with 'retries' => 0");

@@ -22,6 +22,7 @@ use Illuminate\Support\Sleep;
 use Mozex\Campaigns\Actions\PumpCampaignsAction;
 use Mozex\Campaigns\CampaignsException;
 use Mozex\Campaigns\CampaignsServiceProvider;
+use Mozex\Campaigns\Contracts\Drivers\ReadsMetrics;
 use Mozex\Campaigns\Enums\BlockReason;
 use Mozex\Campaigns\Enums\CampaignStatus;
 use Mozex\Campaigns\Enums\DeliveryFailure;
@@ -315,7 +316,7 @@ describe('sending', function (): void {
 });
 
 describe('as a driver', function (): void {
-    it('is built in, with webhooks, suppressions, daily counts and usage but no logs, and reads back', function (): void {
+    it('is built in, with suppressions and usage, webhooks once their secret is set and daily counts with VDM, but no logs', function (): void {
         config()->set('campaigns.driver', 'ses');
         $drivers = app(DriverManager::class);
         $active = $drivers->active();
@@ -326,8 +327,10 @@ describe('as a driver', function (): void {
         config()->set('campaigns.drivers.ses.webhook_secret', 'webhook-secret');
 
         expect($active)->toBeInstanceOf(SesDriver::class)
-            ->and(DriverManager::abilities($active))->toBe(['webhooks', 'suppressions', 'metrics', 'usage'])
-            ->and($readsBack)->toBeTrue()
+            // Read back before its secret was set, its abilities after.
+            ->and($readsBack)->toBeFalse()
+            ->and(DriverManager::abilities($active))->toBe(['webhooks', 'suppressions', 'usage'])
+            ->and($drivers->readsBack('ses'))->toBeTrue()
             ->and($configuredAfter)->toBeFalse()
             ->and($drivers->isConfigured('ses'))->toBeTrue();
     });
@@ -397,7 +400,7 @@ describe('webhooks', function (): void {
             ->message_id->toBe($message->id);
     });
 
-    it('answers 500 while its secret isn\'t set, reported once an hour, so EventBridge retries', function (): void {
+    it('answers 500 while its secret isn\'t set, unreported, so EventBridge retries', function (): void {
         Exceptions::fake();
         config()->set('campaigns.drivers.ses.webhook_secret', null);
         config()->set('campaigns.driver', 'ses');
@@ -410,7 +413,7 @@ describe('webhooks', function (): void {
 
         expect([$first, $second, $inactive])->toBe([500, 500, 404]);
 
-        Exceptions::assertReportedCount(1);
+        Exceptions::assertNothingReported();
     });
 
     it('reads what each event means for the email', function (string $fixture, array $changes, ?FeedbackType $type, ?DeliveryFailure $failure, ?string $severity): void {
@@ -640,7 +643,7 @@ describe('daily counts', function (): void {
         $this->travelTo(Carbon::parse('2026-02-03 14:30:00', 'UTC'));
     });
 
-    it('says the counts need VDM while it is off, which the overview shows as a note', function (): void {
+    it('says the counts need VDM while it is off, which the overview says in its own note', function (): void {
         sesMailer(new MockHandler);
         config()->set('campaigns.driver', 'ses');
         config()->set('campaigns.mail.domain', 'news.example.com');
@@ -649,7 +652,8 @@ describe('daily counts', function (): void {
             ->toThrow(CampaignsException::class, 'Virtual Deliverability Manager')
             ->and(DomainSummary::for('news.example.com'))
             ->summary->provider->toBeNull()
-            ->notes->toBe(['The provider\'s numbers for news.example.com couldn\'t be read: Amazon SES counts a domain\'s mail by day only with Virtual Deliverability Manager, a paid add-on: turn it on in SES, then set campaigns.drivers.ses.vdm (CAMPAIGNS_SES_VDM) to true.']);
+            ->notes->toBe([])
+            ->and(DriverManager::missingSetup(app(SesDriver::class), ReadsMetrics::class))->toContain('CAMPAIGNS_SES_VDM');
     });
 
     it('reads the domain identity\'s sends, hard bounces and complaints by UTC day, with VDM on', function (): void {

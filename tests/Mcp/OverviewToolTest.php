@@ -7,12 +7,15 @@ use Illuminate\Http\Client\Request as ClientRequest;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Mozex\Campaigns\CampaignsException;
+use Mozex\Campaigns\Contracts\Drivers\ChecksSetup;
 use Mozex\Campaigns\Contracts\Drivers\ReadsEvents;
 use Mozex\Campaigns\Contracts\Drivers\ReadsSuppressions;
 use Mozex\Campaigns\Contracts\Drivers\ReceivesWebhooks;
 use Mozex\Campaigns\Enums\CampaignStatus;
 use Mozex\Campaigns\Enums\Rights;
 use Mozex\Campaigns\Enums\SubscriptionStatus;
+use Mozex\Campaigns\Facades\Campaigns;
+use Mozex\Campaigns\Http\Controllers\WebhookController;
 use Mozex\Campaigns\Jobs\SendMessageJob;
 use Mozex\Campaigns\Mcp\Tools\OverviewTool;
 use Mozex\Campaigns\Models\ApiToken;
@@ -25,6 +28,7 @@ use Mozex\Campaigns\Reports\Overview;
 use Mozex\Campaigns\Reports\ProviderUsage;
 use Mozex\Campaigns\Sending\DomainMetrics;
 use Mozex\Campaigns\Sending\Drivers\DriverManager;
+use Mozex\Campaigns\Sending\Drivers\FakeDriver;
 use Mozex\Campaigns\Sending\Drivers\FakeSendOnlyDriver;
 use Mozex\Campaigns\Sending\Drivers\FakeWebhookDriver;
 use Mozex\Campaigns\Sending\Usage;
@@ -68,6 +72,10 @@ it('reads every list\'s counts, the open campaigns and the placeholders with the
         'https://api.eu.mailgun.net/v1/analytics/metrics' => Http::response(['items' => [mailgunMetricsDay(now(), ['processed_count' => 3000])]]),
     ]);
     config()->set('campaigns.drivers.mailgun.monthly_included', '50000');
+    // Every optional extra set up, so no note says one is missing.
+    config()->set('campaigns.drivers.mailgun.webhook_signing_key', 'webhook-signing-key');
+    config()->set('campaigns.alert_address', 'alerts@acme.example');
+    config()->set('campaigns.mcp.guards', ['campaigns', 'api']);
 
     $overview = mcpServer()->actingAs(ApiToken::factory()->readOnly()->create(), 'campaigns')
         ->tool(OverviewTool::class)
@@ -173,15 +181,30 @@ it('stays under the answer limit with every column at its longest', function (st
 
     // The domain's 30 days, every count at its longest.
     sendFromExample();
-    config(['campaigns.driver' => 'fake', 'campaigns.domain_daily_caps' => ['news.example.com' => 100_000_000]]);
+    config(['campaigns.domain_daily_caps' => ['news.example.com' => 100_000_000]]);
+
+    // Every note at once beside the full readings: a driver at the longest
+    // name whose settings leave its webhooks off (their posts refused), and
+    // every optional extra unset.
+    $name = str_repeat('d', 50);
+    $driver = new class extends FakeDriver implements ChecksSetup
+    {
+        public function missingSetup(string $ability): ?string
+        {
+            return $ability === ReceivesWebhooks::class ? 'campaigns.drivers.'.str_repeat('d', 50).'.webhook_signing_key ('.str_repeat('D', 50).'_WEBHOOK_SIGNING_KEY) holds the key its service signs webhooks with' : null;
+        }
+    };
+    Campaigns::extend($name, fn (): FakeDriver => $driver);
+    config(['campaigns.driver' => $name, 'campaigns.enabled' => false, 'campaigns.test_addresses' => [], 'campaigns.alert_address' => null]);
+    cache()->put(WebhookController::refusedMark($name), true, 86400);
 
     foreach (range(0, DomainSummary::DAYS - 1) as $day) {
-        fakeDriver()->count(now()->utc()->subDays($day)->toDateString(), array_fill_keys(DomainMetrics::COUNTS, 1_000_000_000));
+        $driver->count(now()->utc()->subDays($day)->toDateString(), array_fill_keys(DomainMetrics::COUNTS, 1_000_000_000));
     }
 
     // The account's usage, every count at its longest and its notes past
     // the cut.
-    fakeDriver()->used(PHP_INT_MAX, PHP_INT_MAX, Usage::DAY, enforced: true, perSecond: 123456.789012345, notes: [str_repeat($character, 5000), str_repeat($character, 5000)]);
+    $driver->used(PHP_INT_MAX, PHP_INT_MAX, Usage::DAY, enforced: true, perSecond: 123456.789012345, notes: [str_repeat($character, 5000), str_repeat($character, 5000)]);
 
     // Gmail's 14 days, every rate with its most digits over the stop line,
     // and Google's checks at their longest for both domains.
@@ -206,7 +229,9 @@ it('stays under the answer limit with every column at its longest', function (st
         ->assertOk()
         ->assertHasNoErrors());
 
-    expect($content['domain']['provider']['days'])->toHaveCount(DomainSummary::DAYS)
+    expect($content['sending']['notes'])->toHaveCount(6)
+        ->and($content['sending']['notes'][0])->toContain('posted webhooks')
+        ->and($content['domain']['provider']['days'])->toHaveCount(DomainSummary::DAYS)
         ->and($content['domain']['gmail']['warning'])->toContain('stop line')
         ->and($content['domain']['gmail']['compliance']['subdomain']['requirements'])->toHaveCount(GmailReading::REQUIREMENTS)
         ->and($content['usage']['sent'])->toBe(PHP_INT_MAX)
@@ -241,14 +266,21 @@ it('says what is switched off or missing, and what a driver without each ability
     expect($sending['enabled'])->toBeFalse()
         ->and($sending['driver'])->toBe(['name' => 'fake', 'abilities' => []])
         ->and($sending['domain'])->toBeNull()
-        ->and($sending['notes'])->toHaveCount(5)
+        ->and($sending['notes'])->toHaveCount(8)
         ->and($sending['notes'][0])->toStartWith('No sending domain is configured')
         // One warning for neither webhooks nor logs (decision 53's words).
-        ->and($sending['notes'][1])->toStartWith('The campaigns driver "fake" reads nothing back from its service (no webhooks, no logs)')
+        ->and($sending['notes'][1])->toStartWith('The campaigns driver "fake" reads nothing back from its service (no webhooks, no logs), so')
         ->and($sending['notes'][1])->toContain('the stop-loss sees only what is refused while sending, only a refusal naming a bad mailbox blocks an address')
         ->and($sending['notes'][2])->toStartWith('The campaigns driver "fake" reads no suppression lists')
         ->and($sending['notes'][3])->toStartWith('Sending is switched off')
-        ->and($sending['notes'][4])->toStartWith('No test addresses are set');
+        ->and($sending['notes'][4])->toStartWith('No test addresses are set')
+        // The optional extras left off, each with what it adds and its page.
+        ->and($sending['notes'][5])->toStartWith('No alert address is set')
+        ->and($sending['notes'][5])->toEndWith('/docs/campaigns/feedback.md.')
+        ->and($sending['notes'][6])->toStartWith('The spam score check is off')
+        ->and($sending['notes'][6])->toEndWith('/docs/campaigns/emails.md.')
+        ->and($sending['notes'][7])->toStartWith('Only the package\'s tokens sign in')
+        ->and($sending['notes'][7])->toEndWith('/docs/getting-started/connecting-agents.md.');
 
     // Webhooks without logs: each missing ability on its own.
     app(DriverManager::class)->swap('fake', new FakeWebhookDriver);
@@ -267,10 +299,10 @@ it('says what is switched off or missing, and what a driver without each ability
 
     expect($noCounts['sending']['driver']['abilities'])->toBe(['webhooks', 'events', 'suppressions'])
         ->and($noCounts['domain']['provider'])->toBeNull()
-        ->and($noCounts['sending']['notes'])->toBe(['The campaigns driver "fake" counts nothing by day, so domain.provider is null.'])
+        ->and($noCounts['sending']['notes'])->toContain('The campaigns driver "fake" counts nothing by day, so domain.provider is null.')
         ->and($unknown['sending']['driver'])->toBe(['name' => 'postmark', 'abilities' => []])
         ->and($unknown['domain']['provider'])->toBeNull()
-        ->and($unknown['sending']['notes'])->toHaveCount(1)
+        ->and($unknown['sending']['notes'])->toHaveCount(4)
         ->and($unknown['sending']['notes'][0])->toStartWith('No campaigns driver is called "postmark"')
         ->and($unknown['usage']['read'])->toBeFalse()
         ->and($unknown['usage']['note'])->toStartWith('No campaigns driver is called "postmark"');
@@ -383,9 +415,9 @@ it('asks Mailgun nothing for the domain\'s numbers without the key that reads th
 
     expect($content['domain']['provider'])->toBeNull()
         ->and($content['domain']['last_24_hours']['sends'])->toBe(0)
-        ->and($content['sending']['notes'])->toHaveCount(2)
-        ->and($content['sending']['notes'][0])->toStartWith('No test addresses are set')
-        ->and($content['sending']['notes'][1])->toContain('CAMPAIGNS_MAILGUN_API_KEY');
+        ->and($content['sending']['notes'][0])->toStartWith('The campaigns driver "mailgun" reads nothing back from its service (no webhooks, no logs) until')
+        ->and($content['sending']['notes'][0])->toContain('CAMPAIGNS_MAILGUN_API_KEY')
+        ->and($content['sending']['notes'][1])->toStartWith('The campaigns driver "mailgun" doesn\'t use its suppression lists, its daily counts and its usage until');
 
     Http::assertNothingSent();
 });

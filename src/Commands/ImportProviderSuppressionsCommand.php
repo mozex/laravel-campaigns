@@ -65,8 +65,10 @@ class ImportProviderSuppressionsCommand extends Command
             return self::FAILURE;
         }
 
-        if (! $driver instanceof ReadsSuppressions) {
-            $this->error(CampaignsException::driverLacks($drivers->getDefaultDriver(), 'reads no suppression lists, so there is nothing to import')->getMessage());
+        $reader = DriverManager::ability($driver, ReadsSuppressions::class);
+
+        if ($reader === null) {
+            $this->error(CampaignsException::driverLacks($drivers->getDefaultDriver(), 'reads no suppression lists'.DriverManager::until($driver, ReadsSuppressions::class).', so there is nothing to import')->getMessage());
 
             return self::FAILURE;
         }
@@ -94,8 +96,8 @@ class ImportProviderSuppressionsCommand extends Command
             // One address is looked up on its own, rather than read out of the
             // whole lists.
             $suppressions = $address === null
-                ? $driver->suppressions($domain)
-                : $driver->suppressionsFor($domain, $address);
+                ? $reader->suppressions($domain)
+                : $reader->suppressionsFor($domain, $address);
 
             $result = $import->execute(
                 $this->contacts($suppressions, $marketing),

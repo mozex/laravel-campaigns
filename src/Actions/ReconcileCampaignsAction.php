@@ -40,9 +40,10 @@ use Throwable;
  * or an event landing at the same moment wins or loses cleanly.
  *
  * The logs are read through each configured driver that reads them
- * (ReadsEvents), for the messages it sent, with its own reach, so a switch
- * of drivers keeps reading the old one's. A driver without logs, or no
- * longer configured, is skipped, which is no problem to report: its
+ * (ReadsEvents, set up), for the messages it sent, with its own reach, so a
+ * switch of drivers keeps reading the old one's. A driver without logs, one
+ * whose settings leave them off, or one no longer configured, is skipped,
+ * which is no problem to report: its
  * messages left `sending` by a job that died are settled as unknown
  * without a lookup (settleUnread()), so their campaign still completes.
  */
@@ -200,8 +201,10 @@ class ReconcileCampaignsAction
     }
 
     /**
-     * The configured drivers that read logs, by name. One whose creator
-     * fails is a problem, and the others are still read.
+     * The configured drivers whose logs are read, by name: one without logs,
+     * or whose settings leave them off (no key that reads them), is no
+     * reader, quietly. One whose creator fails is a problem, and the
+     * others are still read.
      *
      * @return array<string, ReadsEvents>
      */
@@ -211,9 +214,10 @@ class ReconcileCampaignsAction
 
         foreach ($this->drivers->names() as $name) {
             $driver = $this->attempt(fn () => $this->drivers->configured($name));
+            $reader = $driver === null ? null : DriverManager::ability($driver, ReadsEvents::class);
 
-            if ($driver instanceof ReadsEvents) {
-                $readers[$name] = $driver;
+            if ($reader !== null) {
+                $readers[$name] = $reader;
             }
         }
 

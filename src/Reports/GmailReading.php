@@ -10,6 +10,7 @@ use Illuminate\Support\Facades\Cache;
 use Mozex\Campaigns\Postmaster\Postmaster;
 use Mozex\Campaigns\Postmaster\PostmasterException;
 use Mozex\Campaigns\Postmaster\ServiceAccount;
+use Mozex\Campaigns\Support\Docs;
 use stdClass;
 
 /**
@@ -75,7 +76,7 @@ class GmailReading
         $credentials = config('campaigns.postmaster.credentials');
 
         if (! is_string($credentials) || trim($credentials) === '') {
-            return static::unread('Gmail\'s spam rate isn\'t read: campaigns.postmaster.credentials (CAMPAIGNS_POSTMASTER_CREDENTIALS) holds no Google service account key.');
+            return static::unread('Gmail\'s spam rate isn\'t read: campaigns.postmaster.credentials (CAMPAIGNS_POSTMASTER_CREDENTIALS) holds no Google service account key. With one, the overview and the start, resume and speed-up answers show the domain\'s spam rate from Postmaster Tools.'.Docs::see(Docs::FEEDBACK));
         }
 
         $key = 'campaigns:gmail-reading:'.sha1(strtolower($domain));

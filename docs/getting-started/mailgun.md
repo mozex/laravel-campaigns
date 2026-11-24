@@ -23,7 +23,7 @@ Subscribe the `delivered`, `permanent_fail`, `temporary_fail`, `complained` and 
 MAILGUN_WEBHOOK_SIGNING_KEY=your-webhook-signing-key
 ```
 
-Every request is checked against that key, and the token Mailgun signs is recorded, so a replayed request is refused. The route runs outside your `web` middleware and has no throttle, since Mailgun retries for hours. While Mailgun is the active driver and the key isn't set, the route answers 500 and reports it at most once an hour. After a switch to another driver, keep the key set for a few days: the route keeps taking Mailgun's late events about the mail it sent while the key is there, and answers 404 once it's gone.
+Every request is checked against that key, and the token Mailgun signs is recorded, so a replayed request is refused. The route runs outside your `web` middleware and has no throttle, since Mailgun retries for hours. While Mailgun is the active driver and the key isn't set, the route answers 500 so Mailgun retries once the key is there, reports nothing (anyone can post to it), and `get_overview` notes that the driver reads nothing back, adding that Mailgun posted webhooks in the last day when it did. After a switch to another driver, keep the key set for a few days: the route keeps taking Mailgun's late events about the mail it sent while the key is there, and answers 404 once it's gone.
 
 One Mailgun account signs every domain's webhooks with the same key. If several of your apps share an account, a signed request leaked at one would verify at another; give each app a Mailgun subaccount to keep them apart.
 
@@ -36,9 +36,9 @@ CAMPAIGNS_MAILGUN_API_KEY=your-api-key
 CAMPAIGNS_MAILGUN_ENDPOINT=api.eu.mailgun.net
 ```
 
-Where your plan offers roles, the Support role is the narrowest one that reads logs, metrics and suppressions (the Analyst role can't read suppressions). The region comes from `CAMPAIGNS_MAILGUN_ENDPOINT`, else the campaigns mailer's `endpoint`, else Mailgun's US host. Set `campaigns.drivers.mailgun.log_days` to the number of days your plan keeps logs (5 by default): nothing older is looked for.
+Where your plan offers roles, the Support role is the narrowest one that reads logs, metrics and suppressions (the Analyst role can't read suppressions). The region comes from `CAMPAIGNS_MAILGUN_ENDPOINT`, else the campaigns mailer's `endpoint`, else Mailgun's US host. Set `CAMPAIGNS_MAILGUN_LOG_DAYS` to the number of days your plan keeps logs (5 by default): nothing older is looked for.
 
-Without the key, Mailgun's logs aren't read: events a webhook missed and sends that ended unclear stay unsettled, `campaigns:reconcile` fails every run (after putting back lost jobs and queueing unprocessed events again), and the overview's notes say the domain's counts couldn't be read for want of it.
+Without the key, nothing fails: the driver reads no logs, suppression lists, counts or usage. Events a webhook missed aren't replayed, a send that ended unclear stays `unknown` (never sent again), an email a killed worker left `sending` becomes `unknown` after 15 minutes so its campaign can complete, `campaigns:import-provider-suppressions` and `unblock_contact`'s check say they need the key, and `get_overview` has one note naming it and what it would add. Set it later and the next `campaigns:reconcile` looks up the unclear sends its logs still reach.
 
 ## Your plan's monthly volume
 

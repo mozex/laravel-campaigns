@@ -24,6 +24,7 @@ use Mozex\Campaigns\Sending\Drivers\MailgunDriver;
 use Mozex\Campaigns\Sending\OutgoingMessage;
 use Mozex\Campaigns\Sending\Suppression;
 use Mozex\Campaigns\Sending\Usage;
+use Mozex\Campaigns\Support\Docs;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
 use Symfony\Component\Mailer\Bridge\Mailgun\Transport\MailgunApiTransport;
@@ -661,7 +662,7 @@ describe('reading Mailgun\'s usage', function (): void {
         expect($usage->sent)->toBe(8)
             ->and($usage->from->toIso8601String())->toBe('2026-12-01T00:00:00+00:00')
             ->and($usage->allowance)->toBeNull()
-            ->and($usage->notes)->toBe(["campaigns.drivers.mailgun.monthly_included (CAMPAIGNS_MAILGUN_MONTHLY_INCLUDED) {$says}, so the emails the Mailgun plan includes each month aren't known and no overage is warned of."]);
+            ->and($usage->notes)->toBe(["campaigns.drivers.mailgun.monthly_included (CAMPAIGNS_MAILGUN_MONTHLY_INCLUDED) {$says}, so the emails the Mailgun plan includes each month aren't known and no overage is warned of. See ".Docs::url(MailgunDriver::PAGE).'.']);
 
         Http::assertSent(fn (ClientRequest $request): bool => $request['start'] === 'Tue, 01 Dec 2026 00:00:00 +0000');
     })->with([

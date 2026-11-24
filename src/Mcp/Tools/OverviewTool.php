@@ -28,7 +28,7 @@ use Mozex\Campaigns\Sending\Drivers\DriverManager;
 
 #[Name('get_overview')]
 #[Title('Get overview')]
-#[Description('Start here. How sending is set up and what is switched off, the addresses test emails may go to, the sending domain\'s standing (its last 24 hours from the app\'s own records, its daily cap and what is left of it, the provider\'s counts for its last 30 days, and Gmail\'s spam rate and bulk-sender checks from Postmaster Tools), what the provider account sent against its plan or quota, every list in use with its counts (by status, how many may be mailed, and by engagement tier) and whether it is a default list, the default lists first (archived lists through list_lists), the campaigns starting, scheduled, sending or paused, and the placeholders an email may hold with this app\'s values. At most 25 lists and 25 campaigns; lists_total and campaigns_total say how many there are.')]
+#[Description('Start here. How sending is set up and what is switched off, the addresses test emails may go to, the sending domain\'s standing (its last 24 hours from the app\'s own records, its daily cap and what is left of it, the provider\'s counts for its last 30 days, and Gmail\'s spam rate and bulk-sender checks from Postmaster Tools), what the provider account sent against its plan or quota, every list in use with its counts (by status, how many may be mailed, and by engagement tier) and whether it is a default list, the default lists first (archived lists through list_lists), the campaigns starting, scheduled, sending or paused, and the placeholders an email may hold with this app\'s values. At most 20 lists and 20 campaigns; lists_total and campaigns_total say how many there are.')]
 #[IsReadOnly]
 #[IsIdempotent]
 #[IsOpenWorld]

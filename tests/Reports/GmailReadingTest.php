@@ -22,6 +22,7 @@ use Mozex\Campaigns\Postmaster\Postmaster;
 use Mozex\Campaigns\Postmaster\PostmasterException;
 use Mozex\Campaigns\Postmaster\ServiceAccount;
 use Mozex\Campaigns\Reports\GmailReading;
+use Mozex\Campaigns\Support\Docs;
 
 beforeEach(function (): void {
     $this->travelTo(Carbon::parse('2026-11-23 15:00:00Z'));
@@ -273,7 +274,7 @@ it('asks Google nothing without a key, and says so', function (?string $credenti
         'spam_rate' => null,
         'spam_rate_date' => null,
         'warning' => null,
-        'note' => 'Gmail\'s spam rate isn\'t read: campaigns.postmaster.credentials (CAMPAIGNS_POSTMASTER_CREDENTIALS) holds no Google service account key.',
+        'note' => 'Gmail\'s spam rate isn\'t read: campaigns.postmaster.credentials (CAMPAIGNS_POSTMASTER_CREDENTIALS) holds no Google service account key. With one, the overview and the start, resume and speed-up answers show the domain\'s spam rate from Postmaster Tools. See '.Docs::url(Docs::FEEDBACK).'.',
         'from' => null,
         'to' => null,
         'days' => [],

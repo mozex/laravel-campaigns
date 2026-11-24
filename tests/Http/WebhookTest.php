@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Illuminate\Database\UniqueConstraintViolationException;
+use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -21,6 +22,9 @@ use Mozex\Campaigns\Models\ProviderEvent;
 use Mozex\Campaigns\Models\Subscriber;
 use Mozex\Campaigns\Models\TestSend;
 use Mozex\Campaigns\Models\WebhookToken;
+use Mozex\Campaigns\Reports\Overview;
+use Mozex\Campaigns\Sending\Drivers\DriverManager;
+use Mozex\Campaigns\Sending\Drivers\FakeDriver;
 use Mozex\Campaigns\Sending\Feedback;
 use Mozex\Campaigns\Support\Token;
 
@@ -87,24 +91,48 @@ describe('verifying', function (): void {
             ->and(WebhookToken::query()->count())->toBe(3);
     })->with('databases');
 
-    it('answers 500 while the active driver has no signing key, so Mailgun retries, and reports it once an hour', function (): void {
+    it('answers 500 while the active driver has no signing key, so Mailgun retries, unreported, and the overview says its posts were refused', function (): void {
         Exceptions::fake();
+        sendFromExample();
         config()->set('campaigns.driver', 'mailgun');
         config()->set('campaigns.drivers.mailgun.webhook_signing_key', null);
         $message = CampaignMessage::factory()->create();
 
+        expect(Overview::readsNothingBack())->not->toContain('posted webhooks');
+
         $this->postJson(route('campaigns.webhooks', 'mailgun'), mailgunWebhook(eventFor($message)))->assertStatus(500);
         $this->postJson(route('campaigns.webhooks', 'mailgun'), [])->assertStatus(500);
+
+        Exceptions::assertNothingReported();
+
+        expect(ProviderEvent::query()->count())->toBe(0)
+            ->and(Overview::readsNothingBack())->toContain('Its service posted webhooks in the last day, each refused for that.');
+
+        $this->travel(25)->hours();
+
+        expect(Overview::readsNothingBack())->not->toContain('posted webhooks');
+    });
+
+    it('answers 500 when a driver set up for webhooks can\'t verify one, reporting it once an hour', function (): void {
+        Exceptions::fake();
+        app(DriverManager::class)->swap('fake', new class extends FakeDriver
+        {
+            public function verifyWebhook(Request $request): bool
+            {
+                throw new CampaignsException('This driver can\'t verify webhooks yet.');
+            }
+        });
+
+        $this->postJson(route('campaigns.webhooks', 'fake'), [])->assertStatus(500);
+        $this->postJson(route('campaigns.webhooks', 'fake'), [])->assertStatus(500);
 
         Exceptions::assertReportedCount(1);
         Exceptions::assertReported(CampaignsException::class);
 
         $this->travel(61)->minutes();
-        $this->postJson(route('campaigns.webhooks', 'mailgun'), [])->assertStatus(500);
+        $this->postJson(route('campaigns.webhooks', 'fake'), [])->assertStatus(500);
 
         Exceptions::assertReportedCount(2);
-
-        expect(ProviderEvent::query()->count())->toBe(0);
     });
 
     it('runs outside the app\'s web middleware and any throttle, at Mailgun\'s same address', function (): void {

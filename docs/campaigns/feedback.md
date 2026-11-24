@@ -28,7 +28,7 @@ Some services refuse an email as it's handed over, as an SMTP server does with a
 
 ## Drivers that read nothing back
 
-A driver with neither webhooks nor logs, such as the [SMTP driver](../getting-started/smtp.md), never learns what happens to an email after its service takes it. No delivery, bounce or spam report reaches the package, and neither does an unsubscribe made at the service; the package's own unsubscribe page and the one-click header still work. So its emails end at `sent`, the stop-loss sees only refusals while sending, and the report divides opens and clicks by sent emails. `get_overview` says this, and so do `start_campaign` and `resume_campaign` in their `warnings`.
+A driver with neither webhooks nor logs, such as the [SMTP driver](../getting-started/smtp.md), or one whose settings leave both off (Mailgun without its webhook signing key and its reading key, Amazon SES without its webhook secret), never learns what happens to an email after its service takes it. No delivery, bounce or spam report reaches the package, and neither does an unsubscribe made at the service; the package's own unsubscribe page and the one-click header still work. So its emails end at `sent`, the stop-loss sees only refusals while sending, and the report divides opens and clicks by sent emails. `get_overview` says this, and so do `start_campaign` and `resume_campaign` in their `warnings`.
 
 ## The stop-loss
 
@@ -92,7 +92,7 @@ Every 15 minutes, whether or not sending is switched on:
 - Mailgun's logs are replayed per sending domain from half an hour behind (its logs fill in out of order), storing every event no webhook brought except `accepted`, which the others prove;
 - a send that ended unclear is looked up by its id. If the logs show it, it's marked sent; if they hold nothing an hour after it went, it fails as `not_accepted` and is never resent. Past what the logs reach, it stays `unknown`.
 
-It reads the logs through the driver that sent each email, so a switch of drivers keeps settling the old one's. A driver without logs is skipped: its unclear sends stay `unknown`, never resent, and an email its job left `sending` (a worker killed mid-send) becomes `unknown` after 15 minutes, so the campaign can complete. Mailgun's driver needs the [reading key](../getting-started/mailgun.md#the-reading-key).
+It reads the logs through the driver that sent each email, so a switch of drivers keeps settling the old one's. A driver without logs, or whose settings leave them off, is skipped without a problem reported: its unclear sends stay `unknown`, never resent, and an email its job left `sending` (a worker killed mid-send) becomes `unknown` after 15 minutes, so the campaign can complete. Mailgun's driver needs the [reading key](../getting-started/mailgun.md#the-reading-key).
 
 ## Reports
 

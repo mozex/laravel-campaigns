@@ -73,17 +73,19 @@ return [
      *
      * Mailgun's webhooks post to /campaigns/webhooks/mailgun and are verified
      * with the account's HTTP webhook signing key (Settings, API Security in
-     * Mailgun), which is neither the API key nor a domain sending key.
-     * api_key reads Mailgun's logs, suppression lists and daily counts, which
-     * the reconciler, the suppressions import, an unblock's check and the
-     * overview need: an account API key, since a domain sending key can only
-     * send. Where your plan offers roles, the Support role is the narrowest
-     * that reads them. endpoint is the region's API host, such as
-     * api.eu.mailgun.net (default: the campaigns mailer's endpoint, else
-     * api.mailgun.net). log_days is how many days back your plan keeps logs
-     * (5 on Foundation, 30 on Scale): nothing older is looked for.
+     * Mailgun), which is neither the API key nor a domain sending key; until
+     * it is set, the route answers 500 and Mailgun retries.
+     * api_key reads Mailgun's logs, suppression lists, daily counts and
+     * usage, which the reconciler, the suppressions import, an unblock's
+     * check and the overview use: an account API key, since a domain sending
+     * key can only send. Where your plan offers roles, the Support role is
+     * the narrowest that reads them. Without it, those reads are off and fail
+     * nothing; the overview says what they would add. endpoint is the
+     * region's API host, such as api.eu.mailgun.net (default: the campaigns
+     * mailer's endpoint, else api.mailgun.net). log_days is how many days
+     * back your plan keeps logs (default 5): nothing older is looked for.
      * monthly_included is how many emails your plan includes each month
-     * (50000 on Foundation): the start, resume and speed-up answers warn
+     * (as your plan states): the start, resume and speed-up answers warn
      * when a campaign would take the account past it, which Mailgun bills
      * as overage. The account's count is read from both regions, since one
      * plan covers them. Default: not set, so nothing warns.
@@ -103,7 +105,7 @@ return [
             'webhook_signing_key' => env('MAILGUN_WEBHOOK_SIGNING_KEY'),
             'api_key' => env('CAMPAIGNS_MAILGUN_API_KEY'),
             'endpoint' => env('CAMPAIGNS_MAILGUN_ENDPOINT'),
-            'log_days' => 5,
+            'log_days' => (int) (env('CAMPAIGNS_MAILGUN_LOG_DAYS') ?: 5),
             'monthly_included' => env('CAMPAIGNS_MAILGUN_MONTHLY_INCLUDED'),
         ],
         'smtp' => [],

@@ -5,13 +5,19 @@ declare(strict_types=1);
 namespace Mozex\Campaigns\Reports;
 
 use Composer\InstalledVersions;
+use Illuminate\Support\Arr;
+use Illuminate\Support\Facades\Cache;
 use Mozex\Campaigns\Campaigns;
 use Mozex\Campaigns\CampaignsException;
 use Mozex\Campaigns\Content\Placeholders;
+use Mozex\Campaigns\Contracts\Drivers\ReadsEvents;
+use Mozex\Campaigns\Contracts\Drivers\ReceivesWebhooks;
 use Mozex\Campaigns\Enums\CampaignStatus;
+use Mozex\Campaigns\Http\Controllers\WebhookController;
 use Mozex\Campaigns\Models\Campaign;
 use Mozex\Campaigns\Models\CampaignList;
 use Mozex\Campaigns\Sending\Drivers\DriverManager;
+use Mozex\Campaigns\Support\Docs;
 use Mozex\Campaigns\Support\Sender;
 use Mozex\Campaigns\Support\ShownText;
 use Mozex\Campaigns\Support\TestAddresses;
@@ -32,7 +38,7 @@ class Overview
      * CampaignsTool::RESULT_LIMIT, counted as JSON, with every column at its
      * longest and every free character a quote.
      */
-    public const LIMIT = 25;
+    public const LIMIT = 20;
 
     public const NAME_LENGTH = 100;
 
@@ -47,8 +53,9 @@ class Overview
     ];
 
     /**
-     * What a driver without each ability can't do, by the ability's name
-     * (the domain summary says what a driver without counts can't).
+     * What a driver whose class lacks each ability can't do, by the
+     * ability's name (the domain summary says what a driver without counts
+     * can't, and the usage what one without usage can't).
      */
     protected const MISSING = [
         'webhooks' => 'takes no webhooks, so what happens to an email after its service takes it is learnt only from its logs, if it reads any',
@@ -57,9 +64,22 @@ class Overview
     ];
 
     /**
+     * What a driver whose settings leave an ability off doesn't read, by
+     * the ability's name, and what the setting would add.
+     */
+    protected const UNSET = [
+        'webhooks' => ['its webhooks', 'what happens to each email arrives within seconds'],
+        'events' => ['its logs', 'what a webhook missed is replayed and an unclear send is settled'],
+        'suppressions' => ['its suppression lists', 'campaigns:import-provider-suppressions and unblock_contact can ask the service which addresses it refuses'],
+        'metrics' => ['its daily counts', 'domain.provider shows its counts for the last 30 days'],
+        'usage' => ['its usage', 'usage shows what the account sent against its plan or quota'],
+    ];
+
+    /**
      * What a driver that reads nothing back means for a campaign it sends
-     * (it has neither webhooks nor logs), or null for one that does: the
-     * overview, the start and the resume say it.
+     * (it has neither webhooks nor logs, or its settings leave both off), or
+     * null for one that does: the overview, the start and the resume say it,
+     * with the settings that would turn either on.
      */
     public static function readsNothingBack(): ?string
     {
@@ -67,16 +87,36 @@ class Overview
         $name = $drivers->getDefaultDriver();
 
         try {
-            $abilities = DriverManager::abilities($drivers->active());
+            $driver = $drivers->active();
         } catch (CampaignsException) {
             return null;
         }
 
-        if (in_array('webhooks', $abilities, true) || in_array('events', $abilities, true)) {
+        if (DriverManager::ability($driver, ReceivesWebhooks::class) !== null || DriverManager::ability($driver, ReadsEvents::class) !== null) {
             return null;
         }
 
-        return CampaignsException::driverLacks($name, 'reads nothing back from its service (no webhooks, no logs), so no bounce, spam report or unsubscribe made at the service reaches the package (its own unsubscribe page and one-click still work): the stop-loss sees only what is refused while sending, only a refusal naming a bad mailbox blocks an address, and emails end as sent, never delivered')->getMessage();
+        $settings = array_values(array_filter([
+            DriverManager::missingSetup($driver, ReceivesWebhooks::class),
+            DriverManager::missingSetup($driver, ReadsEvents::class),
+        ]));
+        $until = $settings === [] ? '' : ' until '.implode(', or ', $settings);
+
+        return CampaignsException::driverLacks($name, 'reads nothing back from its service (no webhooks, no logs)'.$until.', so no bounce, spam report or unsubscribe made at the service reaches the package (its own unsubscribe page and one-click still work): the stop-loss sees only what is refused while sending, only a refusal naming a bad mailbox blocks an address, and emails end as sent, never delivered')->getMessage()
+            .static::webhooksRefused($name)
+            .($settings === [] ? '' : Docs::see($drivers->page($name)));
+    }
+
+    /**
+     * " Its service posted webhooks ..." when the webhook route refused a
+     * post for the driver in the last day because its key isn't set, or ''.
+     */
+    protected static function webhooksRefused(string $name): string
+    {
+        $store = config('campaigns.cache_store') ?: null;
+        $refused = rescue(fn (): bool => Cache::store(is_string($store) ? $store : null)->has(WebhookController::refusedMark($name)), false, report: false);
+
+        return $refused ? ' Its service posted webhooks in the last day, each refused for that.' : '';
     }
 
     /**
@@ -126,21 +166,37 @@ class Overview
         $testAddresses = TestAddresses::configured();
 
         try {
-            $abilities = DriverManager::abilities($drivers->active());
+            $driver = $drivers->active();
+            $abilities = DriverManager::abilities($driver);
             $nothingBack = static::readsNothingBack();
-            $missing = static::MISSING;
+            $unset = [];
 
             // One warning for a driver with neither webhooks nor logs, in
             // place of the two it would hold.
             if ($nothingBack !== null) {
                 $notes[] = $nothingBack;
-                unset($missing['webhooks'], $missing['events']);
             }
 
-            foreach ($missing as $ability => $lack) {
-                if (! in_array($ability, $abilities, true)) {
-                    $notes[] = CampaignsException::driverLacks($name, $lack)->getMessage();
+            foreach (DriverManager::ABILITIES as $ability => $interface) {
+                if (in_array($ability, $abilities, true) || ($nothingBack !== null && in_array($ability, ['webhooks', 'events'], true))) {
+                    continue;
                 }
+
+                $setting = DriverManager::missingSetup($driver, $interface);
+
+                if ($setting !== null) {
+                    $unset[$setting][] = $ability;
+                } elseif (isset(static::MISSING[$ability])) {
+                    $notes[] = CampaignsException::driverLacks($name, static::MISSING[$ability])->getMessage();
+                }
+            }
+
+            // One note per setting the driver lacks, saying what it adds.
+            foreach ($unset as $setting => $off) {
+                $notes[] = CampaignsException::driverLacks($name, 'doesn\'t use '.static::listed(array_map(fn (string $ability): string => static::UNSET[$ability][0], $off)).' until '.$setting)->getMessage()
+                    .' With it, '.implode('; ', array_map(fn (string $ability): string => static::UNSET[$ability][1], $off)).'.'
+                    .(in_array('webhooks', $off, true) ? static::webhooksRefused($name) : '')
+                    .Docs::see($drivers->page($name));
             }
         } catch (CampaignsException $exception) {
             $abilities = [];
@@ -155,6 +211,18 @@ class Overview
             $notes[] = 'No test addresses are set (campaigns.test_addresses), so no test email can go out.';
         }
 
+        if (! filled(config('campaigns.alert_address'))) {
+            $notes[] = 'No alert address is set (campaigns.alert_address, CAMPAIGNS_ALERT_ADDRESS), so a campaign or domain the stop-loss pauses mails nobody.'.Docs::see(Docs::FEEDBACK);
+        }
+
+        if (! config('campaigns.checks.spam_score')) {
+            $notes[] = 'The spam score check is off (campaigns.checks.spam_score): turned on, the pre-send checks score each email with SpamAssassin through Postmark\'s free checker, which receives the rendered email.'.Docs::see(Docs::CHECKS);
+        }
+
+        if (array_diff(Arr::wrap(config('campaigns.mcp.guards')), ['campaigns']) === []) {
+            $notes[] = 'Only the package\'s tokens sign in (campaigns.mcp.guards): Claude\'s apps, claude.ai and ChatGPT sign in with OAuth, which an OAuth server such as Laravel Passport adds once its guard is listed there.'.Docs::see(Docs::AGENTS);
+        }
+
         return [
             'enabled' => $enabled,
             'driver' => ['name' => (string) ShownText::of($name, 50), 'abilities' => $abilities],
@@ -167,6 +235,18 @@ class Overview
             'spam_score_check' => (bool) config('campaigns.checks.spam_score'),
             'notes' => $notes,
         ];
+    }
+
+    /**
+     * "a, b and c".
+     *
+     * @param  list<string>  $items
+     */
+    protected static function listed(array $items): string
+    {
+        $last = array_pop($items);
+
+        return $items === [] ? (string) $last : implode(', ', $items).' and '.$last;
     }
 
     /**

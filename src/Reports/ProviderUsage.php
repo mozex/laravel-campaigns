@@ -57,8 +57,12 @@ class ProviderUsage
             return static::unread($exception->getMessage());
         }
 
-        if (! $driver instanceof ReadsUsage) {
-            return static::unread(CampaignsException::driverLacks($name, 'reads no usage, so what the account sent against its plan or quota isn\'t known here')->getMessage());
+        $reader = DriverManager::ability($driver, ReadsUsage::class);
+
+        // Answered before the cache is read, and never kept, so a setting
+        // added later shows at once.
+        if ($reader === null) {
+            return static::unread(CampaignsException::driverLacks($name, 'reads no usage'.DriverManager::until($driver, ReadsUsage::class).', so what the account sent against its plan or quota isn\'t known here')->getMessage());
         }
 
         $key = 'campaigns:provider-usage:'.sha1($name).':'.now()->utc()->toDateString();
@@ -70,7 +74,7 @@ class ProviderUsage
         }
 
         try {
-            $reading = static::shown($driver->usage());
+            $reading = static::shown($reader->usage());
             $seconds = static::CACHE_SECONDS;
         } catch (CampaignsException $exception) {
             $reading = static::unread("The provider's usage couldn't be read: {$exception->getMessage()} It is read again after 5 minutes.");

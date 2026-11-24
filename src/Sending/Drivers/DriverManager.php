@@ -11,6 +11,7 @@ use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Support\Manager;
 use Mozex\Campaigns\CampaignsException;
 use Mozex\Campaigns\Contracts\CampaignDriver;
+use Mozex\Campaigns\Contracts\Drivers\ChecksSetup;
 use Mozex\Campaigns\Contracts\Drivers\ReadsEvents;
 use Mozex\Campaigns\Contracts\Drivers\ReadsMetrics;
 use Mozex\Campaigns\Contracts\Drivers\ReadsSuppressions;
@@ -27,11 +28,12 @@ use Throwable;
  * kept there would be lost between jobs). It lives beside the drivers, being
  * the one place outside them that names each built-in one.
  *
- * Besides the active driver, a driver is configured when its block holds the
- * credential its webhooks are verified with, or when an app registered it,
- * so a switch keeps the old one's late webhooks and log reads working for
- * the emails it sent; the fake only while active. A driver that isn't
- * configured is never built.
+ * Besides the active driver, a driver is configured when its block holds a
+ * credential it reads back with (its webhooks' key, a key that reads its
+ * logs), or when an app registered it, so a switch keeps the old one's late
+ * webhooks and log reads working for the emails it sent; the fake only
+ * while active. A driver that isn't configured is never built. What a
+ * configured driver may do also follows its settings (ChecksSetup).
  */
 class DriverManager extends Manager
 {
@@ -48,14 +50,24 @@ class DriverManager extends Manager
     public const NAME_PATTERN = '[a-z][a-z0-9_-]{0,49}';
 
     /**
-     * The built-in drivers, by name, with the key of their block that holds
-     * the credential their webhooks are verified with (null for none).
+     * The built-in drivers, by name, with the keys of their block that hold
+     * a credential they read back with: any of them set makes the driver
+     * configured while another sends.
      */
     protected const BUILT_IN = [
-        'mailgun' => 'webhook_signing_key',
-        'smtp' => null,
-        'ses' => 'webhook_secret',
-        'fake' => null,
+        'mailgun' => ['webhook_signing_key', 'api_key'],
+        'smtp' => [],
+        'ses' => ['webhook_secret'],
+        'fake' => [],
+    ];
+
+    /**
+     * Each built-in driver's setup page, under docs/.
+     */
+    protected const PAGES = [
+        'mailgun' => 'getting-started/mailgun.md',
+        'smtp' => 'getting-started/smtp.md',
+        'ses' => 'getting-started/ses.md',
     ];
 
     /**
@@ -137,9 +149,24 @@ class DriverManager extends Manager
             return true;
         }
 
-        $credential = static::BUILT_IN[$name] ?? null;
+        foreach (static::BUILT_IN[$name] ?? [] as $credential) {
+            $value = config("campaigns.drivers.{$name}.{$credential}");
 
-        return $credential !== null && filled(config("campaigns.drivers.{$name}.{$credential}"));
+            if (is_string($value) && trim($value) !== '') {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * The setup page of a built-in driver by name, under docs/; null for
+     * one an app registered, though under a built-in's name.
+     */
+    public function page(string $name): ?string
+    {
+        return isset($this->customCreators[$name]) ? null : (static::PAGES[$name] ?? null);
     }
 
     /**
@@ -183,7 +210,8 @@ class DriverManager extends Manager
      * an email after its service takes it (webhooks or logs): deliveries,
      * bounces, spam reports. False for one that only sends, one that isn't
      * configured, and one that can't be built, whose creator's failure is
-     * reported unless it is the package's own refusal.
+     * reported unless it is the package's own refusal. Its abilities count
+     * only when its configuration sets them up.
      */
     public function readsBack(string $name): bool
     {
@@ -197,17 +225,77 @@ class DriverManager extends Manager
             return false;
         }
 
-        return $driver instanceof ReceivesWebhooks || $driver instanceof ReadsEvents;
+        return $driver !== null && (static::ability($driver, ReceivesWebhooks::class) !== null || static::ability($driver, ReadsEvents::class) !== null);
     }
 
     /**
-     * The abilities a driver has, by name.
+     * The abilities a driver has, by name: the ones its class implements
+     * and its configuration sets up.
      *
      * @return list<string>
      */
     public static function abilities(CampaignDriver $driver): array
     {
-        return array_keys(array_filter(static::ABILITIES, fn (string $ability): bool => $driver instanceof $ability));
+        $abilities = [];
+
+        foreach (static::ABILITIES as $name => $interface) {
+            if ($driver instanceof $interface && static::missingSetup($driver, $interface) === null) {
+                $abilities[] = $name;
+            }
+        }
+
+        return $abilities;
+    }
+
+    /**
+     * The driver as one of its abilities: itself when its class implements
+     * the ability and its configuration sets it up, else null. Every caller
+     * asks here, never with instanceof, so an ability whose setting is
+     * missing counts as missing everywhere alike.
+     *
+     * @template T of object
+     *
+     * @param  class-string<T>  $ability
+     * @return ?T
+     */
+    public static function ability(CampaignDriver $driver, string $ability): ?object
+    {
+        if (! $driver instanceof $ability) {
+            return null;
+        }
+
+        return static::missingSetup($driver, $ability) === null ? $driver : null;
+    }
+
+    /**
+     * What a driver's configuration still lacks for an ability its class
+     * implements, written to follow "until"; null when it is set up, and
+     * when the class lacks the ability, which no setting gives.
+     *
+     * @param  class-string  $ability
+     */
+    public static function missingSetup(CampaignDriver $driver, string $ability): ?string
+    {
+        if (! $driver instanceof $ability || ! $driver instanceof ChecksSetup) {
+            return null;
+        }
+
+        $missing = $driver->missingSetup($ability);
+
+        return is_string($missing) && trim($missing) !== '' ? $missing : null;
+    }
+
+    /**
+     * " until <what the configuration lacks>", for a sentence saying what a
+     * driver can't do, or '' when no setting would give the ability.
+     *
+     * @param  class-string  $ability
+     */
+    public static function until(CampaignDriver $driver, string $ability): string
+    {
+        $missing = static::missingSetup($driver, $ability);
+
+        return $missing === null ? '' : " until {$missing}";
     }
 
     /**

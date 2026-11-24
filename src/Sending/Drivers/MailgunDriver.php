@@ -13,6 +13,7 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Mail;
 use Mozex\Campaigns\CampaignsException;
 use Mozex\Campaigns\Contracts\CampaignDriver;
+use Mozex\Campaigns\Contracts\Drivers\ChecksSetup;
 use Mozex\Campaigns\Contracts\Drivers\ReadsEvents;
 use Mozex\Campaigns\Contracts\Drivers\ReadsMetrics;
 use Mozex\Campaigns\Contracts\Drivers\ReadsSuppressions;
@@ -30,6 +31,7 @@ use Mozex\Campaigns\Sending\SendFailed;
 use Mozex\Campaigns\Sending\SendReceipt;
 use Mozex\Campaigns\Sending\Suppression;
 use Mozex\Campaigns\Sending\Usage;
+use Mozex\Campaigns\Support\Docs;
 use Mozex\Campaigns\Support\Sender;
 use Symfony\Component\Mailer\Bridge\Mailgun\Transport\MailgunApiTransport;
 use Symfony\Component\Mailer\Exception\HttpTransportException;
@@ -48,15 +50,21 @@ use Throwable;
  * /campaigns/webhooks/mailgun, signed with campaigns.drivers.mailgun's
  * webhook_signing_key; its logs, suppression lists, metrics and usage are
  * read with that block's api_key, since the mailer's sending key can only
- * send. Its
+ * send. Each of those abilities is on only while its key is set
+ * (ChecksSetup), so an app that skips one loses only what it adds. Its
  * config is read on every call, never kept, so a change reaches a driver
  * already built. Mailgun's own open and click tracking is off on every
  * message, and its opened and clicked events are dropped: the package
  * tracks both itself, the same for every driver, so nothing counts twice.
  */
-class MailgunDriver implements CampaignDriver, ReadsEvents, ReadsMetrics, ReadsSuppressions, ReadsUsage, ReceivesWebhooks
+class MailgunDriver implements CampaignDriver, ChecksSetup, ReadsEvents, ReadsMetrics, ReadsSuppressions, ReadsUsage, ReceivesWebhooks
 {
     use UsesCampaignsMailer;
+
+    /**
+     * Its setup page, under docs/.
+     */
+    public const PAGE = 'getting-started/mailgun.md';
 
     /**
      * Mailgun took nothing and may take it later: rate limited, or its
@@ -152,6 +160,15 @@ class MailgunDriver implements CampaignDriver, ReadsEvents, ReadsMetrics, ReadsS
         'unsubscribes' => SuppressionType::Unsubscribe,
     ];
 
+    public function missingSetup(string $ability): ?string
+    {
+        if ($ability === ReceivesWebhooks::class) {
+            return static::filled('webhook_signing_key') ? null : 'campaigns.drivers.mailgun.webhook_signing_key (MAILGUN_WEBHOOK_SIGNING_KEY) holds the webhook signing key from Mailgun\'s webhooks page';
+        }
+
+        return static::filled('api_key') ? null : 'campaigns.drivers.mailgun.api_key (CAMPAIGNS_MAILGUN_API_KEY) holds an account API key that may read them';
+    }
+
     public function send(OutgoingMessage $message): SendReceipt
     {
         $mailer = $this->mailer();
@@ -212,7 +229,7 @@ class MailgunDriver implements CampaignDriver, ReadsEvents, ReadsMetrics, ReadsS
     {
         $key = config('campaigns.drivers.mailgun.webhook_signing_key');
 
-        if (! is_string($key) || $key === '') {
+        if (! is_string($key) || ! static::filled('webhook_signing_key')) {
             throw new CampaignsException('A Mailgun webhook arrived, but no webhook signing key is configured (campaigns.drivers.mailgun.webhook_signing_key, MAILGUN_WEBHOOK_SIGNING_KEY), so it can\'t be verified.');
         }
 
@@ -484,7 +501,7 @@ class MailgunDriver implements CampaignDriver, ReadsEvents, ReadsMetrics, ReadsS
 
         if ($included === false) {
             $included = null;
-            $notes[] = 'campaigns.drivers.mailgun.monthly_included (CAMPAIGNS_MAILGUN_MONTHLY_INCLUDED) '.($given === null || $given === '' ? 'isn\'t set' : 'isn\'t a whole number above 0, such as 50000').', so the emails the Mailgun plan includes each month aren\'t known and no overage is warned of.';
+            $notes[] = 'campaigns.drivers.mailgun.monthly_included (CAMPAIGNS_MAILGUN_MONTHLY_INCLUDED) '.($given === null || $given === '' ? 'isn\'t set' : 'isn\'t a whole number above 0, such as 50000').', so the emails the Mailgun plan includes each month aren\'t known and no overage is warned of.'.Docs::see(static::PAGE);
         }
 
         return new Usage(Usage::MONTH, $from, $now, array_sum($sent), $included, enforced: false, notes: $notes);
@@ -609,7 +626,7 @@ class MailgunDriver implements CampaignDriver, ReadsEvents, ReadsMetrics, ReadsS
     {
         $key = config('campaigns.drivers.mailgun.api_key');
 
-        if (! is_string($key) || $key === '') {
+        if (! is_string($key) || ! static::filled('api_key')) {
             throw new CampaignsException('Reading Mailgun\'s logs, suppressions, metrics and usage needs an API key that can read them (campaigns.drivers.mailgun.api_key, CAMPAIGNS_MAILGUN_API_KEY); the campaigns mailer\'s sending key can only send.');
         }
 
@@ -642,6 +659,17 @@ class MailgunDriver implements CampaignDriver, ReadsEvents, ReadsMetrics, ReadsS
         }
 
         return $json;
+    }
+
+    /**
+     * Whether a key of the driver's block holds something: a blank env line
+     * arrives as '', and spaces are no key either.
+     */
+    protected static function filled(string $key): bool
+    {
+        $value = config("campaigns.drivers.mailgun.{$key}");
+
+        return is_string($value) && trim($value) !== '';
     }
 
     /**

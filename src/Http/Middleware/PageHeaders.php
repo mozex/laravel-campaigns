@@ -27,6 +27,10 @@ class PageHeaders
         if (! $response->headers->hasCacheControlDirective('no-store')) {
             $response->headers->set('Cache-Control', 'no-store, private');
         }
+        // A CDN that rewrites HTML on its way (an email address obfuscated
+        // behind a script the pages' policy blocks, links or scripts changed)
+        // leaves alone a response marked no-transform.
+        $response->headers->addCacheControlDirective('no-transform');
         $response->headers->set('X-Frame-Options', 'DENY');
 
         return $response;

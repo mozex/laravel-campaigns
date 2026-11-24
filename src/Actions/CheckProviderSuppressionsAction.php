@@ -34,10 +34,12 @@ class CheckProviderSuppressionsAction
         $address = EmailAddress::normalize($email) ?? throw CampaignsException::invalidEmail();
         $driver = $this->drivers->active();
 
-        if (! $driver instanceof ReadsSuppressions) {
-            throw CampaignsException::driverLacks($this->drivers->getDefaultDriver(), 'reads no suppression lists, so whether its service still holds the address can\'t be checked');
+        $reader = DriverManager::ability($driver, ReadsSuppressions::class);
+
+        if ($reader === null) {
+            throw CampaignsException::driverLacks($this->drivers->getDefaultDriver(), 'reads no suppression lists'.DriverManager::until($driver, ReadsSuppressions::class).', so whether its service still holds the address can\'t be checked');
         }
 
-        return $driver->suppressionsFor(Sender::domain(), $address);
+        return $reader->suppressionsFor(Sender::domain(), $address);
     }
 }

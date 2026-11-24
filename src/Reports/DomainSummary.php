@@ -42,15 +42,19 @@ class DomainSummary
             $driver = null;
         }
 
-        if ($driver instanceof ReadsMetrics) {
+        $reader = $driver === null ? null : DriverManager::ability($driver, ReadsMetrics::class);
+
+        if ($reader !== null) {
             try {
                 // Counted back in UTC, the service's days: in a zone with
                 // daylight saving, 29 local days can span 30 or 31 UTC ones.
-                $metrics = $driver->domainMetrics($domain, now()->utc()->subDays(static::DAYS - 1), now()->utc());
+                $metrics = $reader->domainMetrics($domain, now()->utc()->subDays(static::DAYS - 1), now()->utc());
             } catch (CampaignsException $exception) {
                 $notes[] = 'The provider\'s numbers for '.$domain.' couldn\'t be read: '.$exception->getMessage();
             }
-        } elseif ($driver !== null) {
+        } elseif ($driver !== null && DriverManager::missingSetup($driver, ReadsMetrics::class) === null) {
+            // A setting that would turn the counts on is the overview's own
+            // note, with what else it adds.
             $notes[] = CampaignsException::driverLacks($drivers->getDefaultDriver(), 'counts nothing by day, so domain.provider is null')->getMessage();
         }
 

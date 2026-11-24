@@ -6,6 +6,8 @@ namespace Mozex\Campaigns\Commands;
 
 use Illuminate\Console\Command;
 use Mozex\Campaigns\Actions\ReconcileCampaignsAction;
+use Mozex\Campaigns\Contracts\Drivers\ReadsEvents;
+use Mozex\Campaigns\Sending\Drivers\DriverManager;
 
 class ReconcileCommand extends Command
 {
@@ -26,6 +28,13 @@ class ReconcileCommand extends Command
             $result->lost,
             $result->settled,
         ));
+
+        $drivers = app(DriverManager::class);
+        $missing = rescue(fn (): ?string => DriverManager::missingSetup($drivers->active(), ReadsEvents::class), report: false);
+
+        if ($missing !== null) {
+            $this->line("The {$drivers->getDefaultDriver()} driver's logs are read once {$missing}.");
+        }
 
         foreach ($result->problems as $problem) {
             $this->error($problem);

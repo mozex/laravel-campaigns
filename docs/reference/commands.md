@@ -19,6 +19,6 @@ Every command that changes data you'd have to repair by hand is a dry run unless
 
 The package schedules the last three itself: the pump every minute, the reconciler every 15 minutes and pruning daily, each with an overlap lock in `campaigns.cache_store`. Set `campaigns.schedule` to `false` to schedule them yourself.
 
-The reconciler runs whether or not sending is switched on, since events keep coming after it's switched off. It exits non-zero when a step failed, such as Mailgun's logs being unreadable without the reading key.
+The reconciler runs whether or not sending is switched on, since events keep coming after it's switched off. It exits non-zero when a step failed, such as a provider refusing the key that reads its logs. A driver whose logs its settings leave off (Mailgun without its reading key) is skipped without failing, and the command prints the setting that would turn them on.
 
 Run a sync or an import the careful way: a dry run, then `--id` or `--email` on one record, then the hardest case you have, then everything, reading the same numbers before and after.
