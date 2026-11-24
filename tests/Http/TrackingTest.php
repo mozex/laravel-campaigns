@@ -239,15 +239,19 @@ it('records nothing for an email whose tracking token was cleared as it went bac
     expect(ProviderEvent::query()->count())->toBe(0);
 });
 
-it('keeps every page of the package out of caches, the pixel keeping its own stricter header', function (): void {
+it('keeps every page of the package out of caches and away from a CDN\'s rewriting, the pixel keeping its own stricter header', function (): void {
     [, $token] = trackedEmail();
 
     $pixel = $this->get(Links::open($token))->baseResponse;
     $page = $this->get(Links::webVersion(Token::generate()))->baseResponse;
 
     expect($pixel->headers->get('Cache-Control'))->toContain('max-age=0')->toContain('no-cache')
+        ->and($pixel->headers->hasCacheControlDirective('no-transform'))->toBeTrue()
         ->and($page->headers->hasCacheControlDirective('no-store'))->toBeTrue()
         ->and($page->headers->hasCacheControlDirective('private'))->toBeTrue()
+        // A CDN obfuscating addresses would hide the reader's behind a
+        // script the pages' policy blocks.
+        ->and($page->headers->hasCacheControlDirective('no-transform'))->toBeTrue()
         ->and($page->getStatusCode())->toBe(Response::HTTP_NOT_FOUND);
 });
 

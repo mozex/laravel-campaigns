@@ -143,12 +143,42 @@ it('answers a driver\'s webhooks only while it is configured, never building one
     config()->set('campaigns.driver', 'acme');
     $this->postJson(route('campaigns.webhooks', 'fake'), [])->assertNotFound();
 
+    // Configured by its reading key alone while another sends: its logs are
+    // read for the mail it sent, its webhooks refused until their key is set.
+    config()->set('campaigns.drivers.mailgun.api_key', 'key-reader');
+    $this->postJson(route('campaigns.webhooks', 'mailgun'), [])->assertStatus(500);
+
+    expect($manager->isConfigured('mailgun'))->toBeTrue()
+        ->and(DriverManager::abilities($manager->get('mailgun')))->toBe(['events', 'suppressions', 'metrics', 'usage']);
+
     // Once its key is set, Mailgun's are verified, whichever driver sends.
     config()->set('campaigns.drivers.mailgun.webhook_signing_key', 'webhook-signing-key');
     $this->postJson(route('campaigns.webhooks', 'mailgun'), [])->assertStatus(406);
 
     expect(array_keys($manager->getDrivers()))->toBe(['mailgun']);
+
+    // A key of blanks counts as none.
+    config()->set('campaigns.drivers.mailgun.webhook_signing_key', '  ');
+    config()->set('campaigns.drivers.mailgun.api_key', '');
+
+    expect($manager->isConfigured('mailgun'))->toBeFalse();
 });
+
+it('reads how many days Mailgun keeps logs from its env name, five when unset or blank', function (?string $value, int $days): void {
+    putenv($value === null ? 'CAMPAIGNS_MAILGUN_LOG_DAYS' : "CAMPAIGNS_MAILGUN_LOG_DAYS={$value}");
+
+    try {
+        $config = require __DIR__.'/../../../config/campaigns.php';
+    } finally {
+        putenv('CAMPAIGNS_MAILGUN_LOG_DAYS');
+    }
+
+    expect($config['drivers']['mailgun']['log_days'])->toBe($days);
+})->with([
+    'unset' => [null, 5],
+    'blank' => ['', 5],
+    'set' => ['30', 30],
+]);
 
 it('takes the fake\'s webhooks only while it is active, and only what a test told it to post', function (): void {
     Queue::fake([ProcessFeedbackJob::class]);
