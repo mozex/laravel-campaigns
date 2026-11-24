@@ -16,6 +16,8 @@ vendor/bin/pest tests/SomeTest.php          # one file
 vendor/bin/pest --filter="test name here"   # one test
 ```
 
+With the MySQL and PostgreSQL tests running, the suite can outlast Composer's 300-second process timeout, which stops it partway: run the gate as `COMPOSER_PROCESS_TIMEOUT=0 composer test`.
+
 ## Architecture
 
 - `src/CampaignsServiceProvider.php`: config (merged key by key, so an older published file gets new nested keys), views, translations, both route files, the migration stubs, the install command, commands, morph aliases, the `campaigns` guard, the alert listener, the `campaigns.links` limiter and the schedule. `config/campaigns.php` documents every key.
