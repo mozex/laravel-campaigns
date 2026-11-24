@@ -98,7 +98,7 @@ describe('verifying', function (): void {
         config()->set('campaigns.drivers.mailgun.webhook_signing_key', null);
         $message = CampaignMessage::factory()->create();
 
-        expect(Overview::readsNothingBack())->not->toContain('posted webhooks');
+        expect(Overview::readsNothingBack())->not->toContain('reached its webhook route');
 
         $this->postJson(route('campaigns.webhooks', 'mailgun'), mailgunWebhook(eventFor($message)))->assertStatus(500);
         $this->postJson(route('campaigns.webhooks', 'mailgun'), [])->assertStatus(500);
@@ -106,11 +106,11 @@ describe('verifying', function (): void {
         Exceptions::assertNothingReported();
 
         expect(ProviderEvent::query()->count())->toBe(0)
-            ->and(Overview::readsNothingBack())->toContain('Its service posted webhooks in the last day, each refused for that.');
+            ->and(Overview::readsNothingBack())->toContain('A post reached its webhook route in the last day and was refused for that.');
 
         $this->travel(25)->hours();
 
-        expect(Overview::readsNothingBack())->not->toContain('posted webhooks');
+        expect(Overview::readsNothingBack())->not->toContain('reached its webhook route');
     });
 
     it('answers 500 when a driver set up for webhooks can\'t verify one, reporting it once an hour', function (): void {

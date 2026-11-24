@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Mozex\Campaigns\Reports;
 
 use Composer\InstalledVersions;
-use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Cache;
 use Mozex\Campaigns\Campaigns;
 use Mozex\Campaigns\CampaignsException;
@@ -14,6 +13,7 @@ use Mozex\Campaigns\Contracts\Drivers\ReadsEvents;
 use Mozex\Campaigns\Contracts\Drivers\ReceivesWebhooks;
 use Mozex\Campaigns\Enums\CampaignStatus;
 use Mozex\Campaigns\Http\Controllers\WebhookController;
+use Mozex\Campaigns\Http\Middleware\AuthenticateAgent;
 use Mozex\Campaigns\Models\Campaign;
 use Mozex\Campaigns\Models\CampaignList;
 use Mozex\Campaigns\Sending\Drivers\DriverManager;
@@ -108,15 +108,16 @@ class Overview
     }
 
     /**
-     * " Its service posted webhooks ..." when the webhook route refused a
-     * post for the driver in the last day because its key isn't set, or ''.
+     * " A post reached its webhook route ..." when the route refused a post
+     * for the driver in the last day because its key isn't set, or ''. The
+     * post is unverified, so it may be the service's or anyone's.
      */
     protected static function webhooksRefused(string $name): string
     {
         $store = config('campaigns.cache_store') ?: null;
         $refused = rescue(fn (): bool => Cache::store(is_string($store) ? $store : null)->has(WebhookController::refusedMark($name)), false, report: false);
 
-        return $refused ? ' Its service posted webhooks in the last day, each refused for that.' : '';
+        return $refused ? ' A post reached its webhook route in the last day and was refused for that.' : '';
     }
 
     /**
@@ -212,14 +213,14 @@ class Overview
         }
 
         if (! filled(config('campaigns.alert_address'))) {
-            $notes[] = 'No alert address is set (campaigns.alert_address, CAMPAIGNS_ALERT_ADDRESS), so a campaign or domain the stop-loss pauses mails nobody.'.Docs::see(Docs::FEEDBACK);
+            $notes[] = 'No alert address is set (campaigns.alert_address, CAMPAIGNS_ALERT_ADDRESS), so nobody is mailed when the stop-loss pauses a campaign or its domain, a campaign gets its first spam report, or the queue stalls.'.Docs::see(Docs::EVENTS);
         }
 
         if (! config('campaigns.checks.spam_score')) {
             $notes[] = 'The spam score check is off (campaigns.checks.spam_score): turned on, the pre-send checks score each email with SpamAssassin through Postmark\'s free checker, which receives the rendered email.'.Docs::see(Docs::CHECKS);
         }
 
-        if (array_diff(Arr::wrap(config('campaigns.mcp.guards')), ['campaigns']) === []) {
+        if (array_diff(AuthenticateAgent::guards(), ['campaigns']) === []) {
             $notes[] = 'Only the package\'s tokens sign in (campaigns.mcp.guards): Claude\'s apps, claude.ai and ChatGPT sign in with OAuth, which an OAuth server such as Laravel Passport adds once its guard is listed there.'.Docs::see(Docs::AGENTS);
         }
 

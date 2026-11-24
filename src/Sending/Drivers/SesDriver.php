@@ -469,6 +469,17 @@ class SesDriver implements CampaignDriver, ChecksSetup, ReadsMetrics, ReadsSuppr
     }
 
     /**
+     * Whether the webhook secret holds something: a blank env line arrives
+     * as '', and spaces are no secret either.
+     */
+    protected static function hasSecret(): bool
+    {
+        $secret = config('campaigns.drivers.ses.webhook_secret');
+
+        return is_string($secret) && trim($secret) !== '';
+    }
+
+    /**
      * The campaigns mailer, checked before anything is sent: one that isn't
      * named, can't be built, doesn't send through SES's v2 API, delivers
      * nothing in production, lets the SDK retry, or has an SDK too old to
@@ -483,17 +494,6 @@ class SesDriver implements CampaignDriver, ChecksSetup, ReadsMetrics, ReadsSuppr
      *
      * @throws SendFailed
      */
-    /**
-     * Whether the webhook secret holds something: a blank env line arrives
-     * as '', and spaces are no secret either.
-     */
-    protected static function hasSecret(): bool
-    {
-        $secret = config('campaigns.drivers.ses.webhook_secret');
-
-        return is_string($secret) && trim($secret) !== '';
-    }
-
     protected function mailer(): MailerContract
     {
         $mailer = $this->campaignsMailer(SesV2Transport::class, 'Amazon SES\'s v2 API', "the ses-v2 transport with 'retries' => 0");

@@ -10,11 +10,13 @@ use Mozex\Campaigns\Actions\PumpCampaignsAction;
 use Mozex\Campaigns\Actions\ReconcileCampaignsAction;
 use Mozex\Campaigns\Enums\MessageStatus;
 use Mozex\Campaigns\Enums\Rights;
+use Mozex\Campaigns\Facades\Campaigns;
 use Mozex\Campaigns\Mcp\Tools\OverviewTool;
 use Mozex\Campaigns\Mcp\Tools\UnblockContactTool;
 use Mozex\Campaigns\Models\Subscriber;
 use Mozex\Campaigns\Reports\ProviderUsage;
 use Mozex\Campaigns\Sending\Drivers\DriverManager;
+use Mozex\Campaigns\Sending\Drivers\FakeDriver;
 use Mozex\Campaigns\Sending\Drivers\MailgunDriver;
 use Mozex\Campaigns\Support\Docs;
 
@@ -171,7 +173,7 @@ it('asks for a driver\'s abilities only through the driver manager', function ()
 });
 
 it('points every note at a page the docs hold', function (): void {
-    $pages = [Docs::AGENTS, Docs::CHECKS, Docs::FEEDBACK, MailgunDriver::PAGE, ...array_filter(array_map(fn (string $name): ?string => app(DriverManager::class)->page($name), app(DriverManager::class)->names()))];
+    $pages = [Docs::AGENTS, Docs::CHECKS, Docs::FEEDBACK, Docs::EVENTS, MailgunDriver::PAGE, ...array_filter(array_map(fn (string $name): ?string => app(DriverManager::class)->page($name), app(DriverManager::class)->names()))];
 
     foreach ($pages as $page) {
         expect(__DIR__.'/../../../docs/'.$page)->toBeFile();
@@ -179,4 +181,19 @@ it('points every note at a page the docs hold', function (): void {
 
     expect(Docs::url(Docs::AGENTS))->toStartWith(Docs::REPOSITORY.'/blob/')
         ->and(app(DriverManager::class)->page('postmark'))->toBeNull();
+});
+
+it('holds a domain\'s bookmark while the logs its mail went through wait for their key, whatever other driver reads logs', function (): void {
+    Http::preventStrayRequests();
+    $campaign = sendingCampaign(1);
+    app(PumpCampaignsAction::class)->execute();
+    keylessMailgun();
+    Campaigns::extend('other', fn (): FakeDriver => new FakeDriver);
+    $campaign->messages()->update(['driver' => 'mailgun']);
+    $this->travel(2)->hours();
+
+    $result = app(ReconcileCampaignsAction::class)->execute();
+
+    expect($result->problems)->toBe([])
+        ->and($campaign->fresh()->events_read_until)->toBeNull();
 });

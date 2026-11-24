@@ -230,7 +230,7 @@ it('stays under the answer limit with every column at its longest', function (st
         ->assertHasNoErrors());
 
     expect($content['sending']['notes'])->toHaveCount(6)
-        ->and($content['sending']['notes'][0])->toContain('posted webhooks')
+        ->and($content['sending']['notes'][0])->toContain('reached its webhook route')
         ->and($content['domain']['provider']['days'])->toHaveCount(DomainSummary::DAYS)
         ->and($content['domain']['gmail']['warning'])->toContain('stop line')
         ->and($content['domain']['gmail']['compliance']['subdomain']['requirements'])->toHaveCount(GmailReading::REQUIREMENTS)
@@ -276,7 +276,7 @@ it('says what is switched off or missing, and what a driver without each ability
         ->and($sending['notes'][4])->toStartWith('No test addresses are set')
         // The optional extras left off, each with what it adds and its page.
         ->and($sending['notes'][5])->toStartWith('No alert address is set')
-        ->and($sending['notes'][5])->toEndWith('/docs/campaigns/feedback.md.')
+        ->and($sending['notes'][5])->toEndWith('/docs/reference/events.md.')
         ->and($sending['notes'][6])->toStartWith('The spam score check is off')
         ->and($sending['notes'][6])->toEndWith('/docs/campaigns/emails.md.')
         ->and($sending['notes'][7])->toStartWith('Only the package\'s tokens sign in')

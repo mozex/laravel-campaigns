@@ -115,6 +115,13 @@ class ReconcileCampaignsAction
     /** @var list<string> */
     protected array $problems = [];
 
+    /**
+     * The configured drivers with logs their settings leave off, by name.
+     *
+     * @var list<string>
+     */
+    protected array $unread = [];
+
     public function __construct(
         protected DriverManager $drivers,
         protected RecordFeedbackAction $record,
@@ -129,6 +136,7 @@ class ReconcileCampaignsAction
         $this->deadline = microtime(true) + static::RUN_SECONDS;
         $this->stored = 0;
         $this->problems = [];
+        $this->unread = [];
 
         $released = $this->attempt(fn (): int => $this->releaseQueued()) ?? 0;
         $requeued = $this->attempt(fn (): int => $this->requeueUnprocessed()) ?? 0;
@@ -218,6 +226,8 @@ class ReconcileCampaignsAction
 
             if ($reader !== null) {
                 $readers[$name] = $reader;
+            } elseif ($driver !== null && DriverManager::missingSetup($driver, ReadsEvents::class) !== null) {
+                $this->unread[] = $name;
             }
         }
 
@@ -281,14 +291,20 @@ class ReconcileCampaignsAction
             return;
         }
 
-        // Only the drivers these campaigns' messages went through.
-        $readers = array_filter($readers, fn (string $name): bool => CampaignMessage::query()
+        $sentThrough = fn (string $name): bool => CampaignMessage::query()
             ->whereIn('campaign_id', $campaigns->modelKeys())
             ->where('driver', $name)
-            ->exists(), ARRAY_FILTER_USE_KEY);
+            ->exists();
+
+        // Only the drivers these campaigns' messages went through.
+        $readers = array_filter($readers, $sentThrough, ARRAY_FILTER_USE_KEY);
+
+        // One whose logs wait for their key holds the bookmark where it is,
+        // so the key's first run reads the time it had none.
+        $held = array_values(array_filter($this->unread, $sentThrough));
 
         /** @var array<string, ?CarbonInterface> $reached */
-        $reached = array_fill_keys(array_keys($readers), null);
+        $reached = array_fill_keys([...array_keys($readers), ...$held], null);
 
         foreach ($readers as $name => $reader) {
             if ($this->stored >= static::REPLAY_STORED || $this->outOfTime()) {

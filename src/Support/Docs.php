@@ -26,6 +26,8 @@ class Docs
 
     public const FEEDBACK = 'campaigns/feedback.md';
 
+    public const EVENTS = 'reference/events.md';
+
     /**
      * A page's address.
      */

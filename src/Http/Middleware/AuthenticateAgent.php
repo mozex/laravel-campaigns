@@ -35,7 +35,7 @@ class AuthenticateAgent
     {
         $authorization = $request->headers->get('Authorization');
 
-        foreach ($this->guards() as $guard) {
+        foreach (static::guards() as $guard) {
             // Passport's guard blanks the header when the bearer isn't one
             // of its tokens, which would hide a package token from the next
             // guard.
@@ -84,7 +84,7 @@ class AuthenticateAgent
      *
      * @return list<string>
      */
-    protected function guards(): array
+    public static function guards(): array
     {
         $guards = config('campaigns.mcp.guards');
 
