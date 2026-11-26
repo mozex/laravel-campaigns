@@ -333,7 +333,7 @@ class CampaignsException extends RuntimeException
     {
         // Starters' keys are reserved, so no template can hold one.
         if (StarterTemplates::has($key)) {
-            return new self("\"{$key}\" is a starter template, which only create_template copies (its from): copy it into a template of your own, then use that template's key.");
+            return new self("\"{$key}\" is a starter template, which is read-only: copy it with create_template's from (create_campaign's template takes it too), then use the copy's key.");
         }
 
         return new self('There is no template with the key "'.mb_strimwidth($key, 0, 130, '...').'".');

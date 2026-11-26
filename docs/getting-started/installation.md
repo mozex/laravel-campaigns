@@ -156,7 +156,7 @@ They run as long as your server runs Laravel's scheduler (`php artisan schedule:
 
 Each holds a lock while it runs, and the package keeps its locks, a few marks (the pump's last run, when an alert last went) and its latest Gmail and usage readings in `CAMPAIGNS_CACHE_STORE`, the app's default cache store unless you set it. Use a store that:
 
-- your deploys don't flush, so a release can't free a lock a running pump still holds. A deploy's `php artisan cache:clear` empties the default store, and on Redis the whole database that store uses, so give the package a store of its own in `config/cache.php` (the `database` store, or Redis on a connection with a database of its own) and name it in `CAMPAIGNS_CACHE_STORE`;
+- your deploys don't flush. A flush loses the marks and readings (so an alert can go again within its six hours), and on a store that keeps its locks with its values, such as `file`, frees a lock a running pump still holds. A deploy's `php artisan cache:clear` empties the default store (its whole table for `database`, its whole database on Redis), so if yours runs it, give the package a store of its own in `config/cache.php`, a `database` store with a `table` of its own or Redis on a connection with a database of its own, and name it in `CAMPAIGNS_CACHE_STORE`;
 - lasts between processes: the `array` store forgets everything when each command ends;
 - every server that runs the scheduler shares, such as Redis or the database, so two servers don't run the same command at once. Running the scheduler on one server only works too.
 

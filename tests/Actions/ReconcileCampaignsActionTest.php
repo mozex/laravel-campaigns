@@ -23,6 +23,7 @@ use Mozex\Campaigns\Jobs\SendMessageJob;
 use Mozex\Campaigns\Models\Campaign;
 use Mozex\Campaigns\Models\CampaignMessage;
 use Mozex\Campaigns\Models\ProviderEvent;
+use Mozex\Campaigns\Models\TestSend;
 use Mozex\Campaigns\Sending\Drivers\DriverManager;
 use Mozex\Campaigns\Sending\Drivers\FakeDriver;
 use Mozex\Campaigns\Sending\Drivers\FakeSendOnlyDriver;
@@ -378,6 +379,24 @@ describe('the replay', function (): void {
             ->and($second->fresh()->clicked_at)->toBeNull()
             ->and($campaign->fresh()->updated_at?->toDateTimeString())->toBe($updatedAt?->toDateTimeString());
     })->with('databases');
+
+    it('leaves a test email\'s events in the logs alone, so only a webhook shows its delivery', function (): void {
+        $campaign = sendingCampaign(1);
+        app(PumpCampaignsAction::class)->execute();
+        $message = $campaign->messages()->sole();
+        $test = TestSend::factory()->create(['sent_at' => now()]);
+        $sentAt = now()->copy();
+        $this->travel(2)->hours();
+
+        recordingDriver()->log(
+            loggedEvent($message, FeedbackType::Delivered, $sentAt->copy()->addMinute()),
+            new Feedback(providerEventId: 'test-delivered', type: FeedbackType::Delivered, occurredAt: $sentAt->copy()->addMinute(), testSendUuid: $test->uuid),
+        );
+
+        expect(reconcile()->replayed)->toBe(1)
+            ->and($message->fresh()->status)->toBe(MessageStatus::Delivered)
+            ->and($test->events()->count())->toBe(0);
+    });
 
     it('reads each domain with a campaign that may still get events, from its earliest bookmark, and advances them all', function (): void {
         $provider = recordingDriver();

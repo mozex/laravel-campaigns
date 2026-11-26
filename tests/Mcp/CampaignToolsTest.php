@@ -438,7 +438,7 @@ describe('tests and previews', function (): void {
 
         agent()->tool(SendTestTool::class, ['campaign' => 'march', 'addresses' => ['someone@else.com']])->assertHasErrors(['Test emails go only to the addresses in campaigns.test_addresses']);
         agent()->tool(SendTestTool::class, ['template' => 'nope'])->assertHasErrors(['There is no template with the key "nope".']);
-        agent()->tool(SendTestTool::class, ['template' => 'starter'])->assertHasErrors(['"starter" is a starter template, which only create_template copies (its from): copy it into a template of your own, then use that template\'s key.']);
+        agent()->tool(SendTestTool::class, ['template' => 'starter'])->assertHasErrors(['"starter" is a starter template, which is read-only: copy it with create_template\'s from (create_campaign\'s template takes it too), then use the copy\'s key.']);
         agent(Rights::Read)->tool(GetTestSendsTool::class, ['tests' => ['not-a-uuid']])->assertHasErrors(['tests.0']);
 
         config(['campaigns.enabled' => false]);
@@ -456,12 +456,14 @@ describe('tests and previews', function (): void {
 
         expect($read())->toBe([null, null]);
 
-        foreach ([['opened', FeedbackType::Opened, 'campaigns'], ['first', FeedbackType::Delivered, 'fake'], ['again', FeedbackType::Delivered, 'fake']] as [$id, $type, $driver]) {
+        // Another driver's delivery isn't this test's: only the one that sent
+        // it reports on it.
+        foreach ([['opened', FeedbackType::Opened, 'campaigns'], ['elsewhere', FeedbackType::Delivered, 'mailgun'], ['first', FeedbackType::Delivered, 'fake'], ['again', FeedbackType::Delivered, 'fake']] as [$id, $type, $driver]) {
             $this->travel(1)->minutes();
             app(RecordFeedbackAction::class)->execute(new Feedback(providerEventId: $id, type: $type, occurredAt: now(), testSendUuid: $uuids[0]), $driver);
         }
 
-        expect($read())->toBe(['2026-11-26T10:02:00+00:00', null]);
+        expect($read())->toBe(['2026-11-26T10:03:00+00:00', null]);
     });
 
     it('links to a template\'s or a campaign\'s preview, its current email or an earlier one', function (string $driver): void {

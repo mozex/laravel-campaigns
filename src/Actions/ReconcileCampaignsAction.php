@@ -373,8 +373,10 @@ class ReconcileCampaignsAction
     /**
      * Records the events of a batch no webhook brought: the ones already
      * stored are found with one query, so a replay of a domain whose
-     * webhooks work costs a read per hundred events. Returns the time of the
-     * batch's last event.
+     * webhooks work costs a read per hundred events. A test email's events
+     * are left out: they change nothing, and only a webhook's delivery may
+     * show in get_test_sends, where it proves the webhooks work. Returns
+     * the time of the batch's last event.
      *
      * @param  non-empty-list<Feedback>  $batch
      */
@@ -387,6 +389,10 @@ class ReconcileCampaignsAction
             ->flip();
 
         foreach ($batch as $feedback) {
+            if ($feedback->testSendUuid !== null && $feedback->messageUuid === null) {
+                continue;
+            }
+
             if (! $known->has($feedback->providerEventId) && $this->record->execute($feedback, $driver) === FeedbackResult::Stored) {
                 $this->stored++;
             }

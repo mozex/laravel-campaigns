@@ -42,7 +42,7 @@ CAMPAIGNS_MAILGUN_SECRET=your-sending-key
 CAMPAIGNS_MAILGUN_ENDPOINT=api.mailgun.net
 ```
 
-Your app's own mailgun mailer can serve instead, named in `CAMPAIGNS_MAILER`, when it sends from the sending domain with `'scheme' => 'api'`. Laravel's mailgun transport uses Mailgun's HTTP transport unless a scheme says otherwise, and the driver refuses that: every campaign on the domain pauses, naming the setting, until it's changed.
+Your app's own mailgun mailer can serve instead, named in `CAMPAIGNS_MAILER`, when it sends from the sending domain through Mailgun's API. Laravel uses Mailgun's HTTP transport unless a scheme says otherwise, and the driver refuses that: every campaign on the domain pauses, naming the setting, until it's changed. Put `'scheme' => 'api'` where the mailer's `secret` is: on the mailer when it has its own, otherwise in `services.mailgun`, which Laravel then reads whole. Your app's other mail on that mailer moves to the API too, and gets the package's timeouts when the mailer sets no `client` options.
 
 `secret` is a sending key for that domain. The endpoint is `api.mailgun.net` for a domain in the US region and `api.eu.mailgun.net` for one in the EU ([Mailgun's regions](https://documentation.mailgun.com/docs/mailgun/api-reference/api-overview)). When the mailer leaves out `client` options, the driver gives it a 10-second idle timeout and 30 seconds in all, so a stuck request ends before the job sending it does.
 

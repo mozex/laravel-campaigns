@@ -76,7 +76,7 @@ Call `get_overview` first. It tells you:
 
 - `list_templates` lists the package's starter templates first, then the app's (archived ones only when asked). A template's key reads, revises and copies it even when archived.
 - The starter template's button has a second link inside an Outlook-only block (`<!--[if mso]>`), which only Outlook for Windows draws: change both links. The checks, the UTM tags and the click tracking read both.
-- `create_template` makes one from an upload, inline content, another template or a starter. A starter is read-only: copy it with `create_template` (its `from`) before testing or sending it. `update_template` changes its name, description or default mark.
+- `create_template` makes one from an upload, inline content, another template or a starter. A starter is read-only: copy it with `create_template` (its `from`) before testing or revising it; `create_campaign` takes it directly. `update_template` changes its name, description or default mark.
 - Every upload or edit is a new revision (`add_revision`, for a template or a draft campaign); nothing is overwritten. `list_revisions` and `restore_revision` bring an older one back as a new revision.
 - The edit loop: `get_template` (or `get_campaign`), download the zip or the HTML within the hour, edit it, and send it back to `add_revision` with the subjects and preheaders `get_template` named.
 - `archive_template` hides a template from the list.

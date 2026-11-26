@@ -91,7 +91,8 @@ class GetTestSendsTool extends CampaignsTool
 
     /**
      * The first delivery each test's own driver reported, by test id, read
-     * in one query: the package's own opens and clicks are another driver's.
+     * in one query: a delivery another driver reported proves nothing about
+     * the sending driver's feedback, so it is left out.
      *
      * @param  array<array-key, TestSend>  $tests
      * @return array<int, string>

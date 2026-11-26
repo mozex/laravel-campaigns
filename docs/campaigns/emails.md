@@ -9,7 +9,7 @@ Agents write emails as HTML on their own machine and upload them. The package ke
 
 A template is a reusable email; a campaign has its own email, often copied from one. Either way the email is a series of numbered revisions: every upload or edit adds one, nothing is overwritten, and restoring an old version adds a copy of it as the newest. A campaign's email changes only while it's a draft. When it starts, the current revision is frozen, its links to your own sites carrying [UTM tags](#utm-tags), so the web version and reports show exactly what went out.
 
-The package ships a starter template, kept as a file so a package update can improve it without touching your templates. `list_templates` lists it first, then your app's. It's read-only: `create_template` copies it (its `from`) into a template of your own, whose key `send_test`, `create_campaign` and the other tools take.
+The package ships a starter template, kept as a file so a package update can improve it without touching your templates. `list_templates` lists it first, then your app's. It's read-only: `create_template` copies it (its `from`) into a template of your own, whose key `send_test` and the other tools take. `create_campaign` takes the starter's own key too.
 
 ## The upload
 
