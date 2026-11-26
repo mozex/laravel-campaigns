@@ -3,7 +3,7 @@ title: Imports
 weight: 3
 ---
 
-Moving from another email service means bringing its contacts, opt-outs, blocks and engagement along. `ImportContactsAction` does that from rows you read however the other service exports them, and it's what agents' CSV imports and the Mailgun suppressions import go through too.
+Moving from another email service means bringing its contacts, opt-outs, blocks and engagement along. `ImportContactsAction` does that from rows you read however the other service exports them, and it's what agents' CSV imports and the provider suppressions import go through too.
 
 ## Writing an import command
 

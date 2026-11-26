@@ -3,7 +3,7 @@ title: Feedback and the Stop-Loss
 weight: 4
 ---
 
-What happens to an email after Mailgun takes it comes back as events: by webhook within seconds, and from Mailgun's logs through the reconciler for anything a webhook missed. Each event is stored once, by Mailgun's event id, and applied once. Amazon SES's events come only by webhook, since SES keeps no logs the package can read ([Amazon SES](../getting-started/ses.md) lists what each one does).
+What happens to an email after the sending service takes it comes back as events: by webhook within seconds, and, for a driver that reads its service's logs, through the reconciler for anything a webhook missed. Each event is stored once, by the service's event id and the driver, and applied once. Mailgun's events come both ways (its logs with the [reading key](../getting-started/mailgun.md#the-reading-key)). Amazon SES's come only by webhook, since SES keeps no logs the package can read ([Amazon SES](../getting-started/ses.md) lists what each one does), and the [SMTP driver](../getting-started/smtp.md) gets none.
 
 ## What each event does
 
@@ -13,9 +13,9 @@ What happens to an email after Mailgun takes it comes back as events: by webhook
 | hard bounce | the address is blocked (`hard_bounce`) |
 | soft bounce | counted; three in a row block the address |
 | sender blocked | the receiving server refused the sender, nothing against the address |
-| suppressed by Mailgun | Mailgun held the address from before and sent nothing: a bounce or complaint blocks it, an unsubscribe opts the person out |
+| suppressed by the service | the service held the address from before and sent nothing: a bounce or complaint blocks it, an unsubscribe opts the person out |
 | spam report | the address is blocked (`complaint`) and the person opted out of everything |
-| Mailgun's own unsubscribe | the person is opted out of everything |
+| an unsubscribe at the service (Mailgun's) | the person is opted out of everything |
 | opened, clicked | the email's first open or click, and the person's engagement; these come from the package's own pixel and links, never the service |
 
 Events arrive late and out of order, so every change moves forward only: a delivery never undoes a bounce, and an email already failed stays failed.
@@ -54,9 +54,9 @@ What paused a campaign counts again from that pause, so a campaign someone resum
 
 Gmail tells no sender who marked its mail as spam. It reports only a daily rate per domain, in [Google Postmaster Tools](https://postmaster.google.com), and Google asks bulk senders to keep it under 0.1% and never let it reach 0.3%. The package reads it for the sending domain, so an agent sees it in `get_overview`'s `domain.gmail` before it asks to start or speed up a campaign, and again in the `readings` that `start_campaign`, `resume_campaign` and `speed_up_campaign` answer, with the warning in their `warnings`.
 
-To turn it on:
+To turn it on, an [optional extra](../getting-started/optional-extras.md):
 
-1. Register the sending domain in Postmaster Tools and verify it with the DNS record Google gives you.
+1. [Register the sending domain](https://support.google.com/mail/answer/6227174) in Postmaster Tools and verify it with the DNS record Google gives you. Register the sending domain itself, such as `news.example.com`: the package asks Google about that exact domain.
 2. In a Google Cloud project, turn on the Gmail Postmaster Tools API, create a service account with no roles, and download a JSON key for it.
 3. In Postmaster Tools, add the service account's address (`...@<project>.iam.gserviceaccount.com`) as a user of the domain.
 4. Put the key file in your env, base64-encoded, since a `.env` value can't hold its line breaks (on macOS, `base64 -i service-account.json`):
@@ -89,14 +89,14 @@ Every 15 minutes, whether or not sending is switched on:
 
 - emails whose job was lost go back to waiting;
 - events stored but never applied are queued again;
-- Mailgun's logs are replayed per sending domain from half an hour behind (its logs fill in out of order), storing every event no webhook brought except `accepted`, which the others prove;
+- the logs of each driver that reads them (Mailgun's) are replayed per sending domain from half an hour behind (logs fill in out of order), storing every event no webhook brought except `accepted`, which the others prove;
 - a send that ended unclear is looked up by its id. If the logs show it, it's marked sent; if they hold nothing an hour after it went, it fails as `not_accepted` and is never resent. Past what the logs reach, it stays `unknown`.
 
 It reads the logs through the driver that sent each email, so a switch of drivers keeps settling the old one's. A driver without logs, or whose settings leave them off, is skipped without a problem reported: its unclear sends stay `unknown`, never resent, and an email its job left `sending` (a worker killed mid-send) becomes `unknown` after 15 minutes, so the campaign can complete. Mailgun's driver needs the [reading key](../getting-started/mailgun.md#the-reading-key).
 
 ## Reports
 
-`get_campaign_report` works a campaign's report out when it's read: sends, deliveries, failures by kind, hard bounces, spam reports and unsubscribes (by how they came: a mail app's one-click, the page or Mailgun), opens and clicks by people and by machines, the rates, the clicks on the links the most people clicked (`links_total` counts every link clicked), the same by list, language, engagement tier and mailbox provider, and a timeline by day. Rates of bounces, spam reports and unsubscribes are per send, as the stop-loss measures them; opens and clicks are per delivered email, or per sent email when the campaign went through a driver that reads nothing back (`rates.basis` says which).
+`get_campaign_report` works a campaign's report out when it's read: sends, deliveries, failures by kind, hard bounces, spam reports and unsubscribes (by how they came: a mail app's one-click, the page or the sending service), opens and clicks by people and by machines, the rates, the clicks on the links the most people clicked (`links_total` counts every link clicked), the same by list, language, engagement tier and mailbox provider, and a timeline by day. Rates of bounces, spam reports and unsubscribes are per send, as the stop-loss measures them; opens and clicks are per delivered email, or per sent email when the campaign went through a driver that reads nothing back (`rates.basis` says which).
 
 Each link has three counts. `people` is the number of emails with a person's click on it, and the links are ranked by it, so compare links by `people`. `human` and `machine` count every click, repeat clicks included. `human` also counts a mail app fetching a clicked link a second time: Gmail can do this from Google's network a couple of seconds after the click, with a browser's user agent, and then one Gmail reader's click shows as two `human` clicks and one person. The same goes for the campaign's `clicks`: its `people` are the emails clicked, its `human` and `machine` every click.
 

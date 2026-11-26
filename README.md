@@ -8,40 +8,41 @@
 [![License](https://img.shields.io/github/license/mozex/laravel-campaigns.svg?style=flat-square)](https://packagist.org/packages/mozex/laravel-campaigns)
 [![Total Downloads](https://img.shields.io/packagist/dt/mozex/laravel-campaigns.svg?style=flat-square)](https://packagist.org/packages/mozex/laravel-campaigns)
 
-Laravel Campaigns lets an AI agent run your app's email marketing from inside the app. Your lists stay in step with your own users, every subscribe and unsubscribe is recorded with its basis and source, and campaigns go out through Mailgun, Amazon SES, any SMTP server, or a driver you write for another service, from your own queue, one message at a time, at a pace you set per campaign. Addresses that hard-bounce, report spam or unsubscribe stop getting mail on their own. Agents work through an MCP server the package adds to your app, so Claude Code, Codex or a chat app can draft, preview, test, start and watch a campaign without database access.
+Laravel Campaigns runs your email marketing inside your own Laravel app, and AI agents operate it. The app keeps the lists, in step with your own users, records every subscribe and unsubscribe with its source and basis, and sends each campaign from its own queue, one email at a time, at the pace you set. Emails leave through a driver: Mailgun, Amazon SES and any SMTP server are built in, and another service needs a class of your own. The agents can be any AI app that speaks MCP (Claude Code, Claude's desktop app, ChatGPT, Cursor, Codex): they connect to the MCP server the package adds to your app, then draft, preview, test, start and watch campaigns without database access. Addresses that hard-bounce, report spam or unsubscribe stop getting mail on their own.
 
 > **[Read the full documentation at mozex.dev](https://mozex.dev/docs/laravel-campaigns/v1)**: searchable docs, version requirements, detailed changelog, and more.
 
 ## Table of Contents
 
-- [Introduction](https://mozex.dev/docs/laravel-campaigns/v1)
+- [Introduction](https://github.com/mozex/laravel-campaigns/blob/main/docs/introduction.md)
 - Getting Started
-  - [Installation](https://mozex.dev/docs/laravel-campaigns/v1/getting-started/installation)
-  - [Mailgun](https://mozex.dev/docs/laravel-campaigns/v1/getting-started/mailgun)
-  - [SMTP](https://mozex.dev/docs/laravel-campaigns/v1/getting-started/smtp)
-  - [Amazon SES](https://mozex.dev/docs/laravel-campaigns/v1/getting-started/ses)
-  - [Connecting Agents](https://mozex.dev/docs/laravel-campaigns/v1/getting-started/connecting-agents)
+  - [Installation](https://github.com/mozex/laravel-campaigns/blob/main/docs/getting-started/installation.md)
+  - [Mailgun](https://github.com/mozex/laravel-campaigns/blob/main/docs/getting-started/mailgun.md)
+  - [SMTP](https://github.com/mozex/laravel-campaigns/blob/main/docs/getting-started/smtp.md)
+  - [Amazon SES](https://github.com/mozex/laravel-campaigns/blob/main/docs/getting-started/ses.md)
+  - [Connecting Agents](https://github.com/mozex/laravel-campaigns/blob/main/docs/getting-started/connecting-agents.md)
+  - [Optional Extras](https://github.com/mozex/laravel-campaigns/blob/main/docs/getting-started/optional-extras.md)
 - Lists and Subscribers
-  - [Dynamic Lists](https://mozex.dev/docs/laravel-campaigns/v1/lists-and-subscribers/dynamic-lists)
-  - [Subscriptions and Consent](https://mozex.dev/docs/laravel-campaigns/v1/lists-and-subscribers/subscriptions)
-  - [Imports](https://mozex.dev/docs/laravel-campaigns/v1/lists-and-subscribers/imports)
-  - [Engagement and the Sunset](https://mozex.dev/docs/laravel-campaigns/v1/lists-and-subscribers/engagement)
+  - [Dynamic Lists](https://github.com/mozex/laravel-campaigns/blob/main/docs/lists-and-subscribers/dynamic-lists.md)
+  - [Subscriptions and Consent](https://github.com/mozex/laravel-campaigns/blob/main/docs/lists-and-subscribers/subscriptions.md)
+  - [Imports](https://github.com/mozex/laravel-campaigns/blob/main/docs/lists-and-subscribers/imports.md)
+  - [Engagement and the Sunset](https://github.com/mozex/laravel-campaigns/blob/main/docs/lists-and-subscribers/engagement.md)
 - Campaigns
-  - [Emails and Templates](https://mozex.dev/docs/laravel-campaigns/v1/campaigns/emails)
-  - [Audiences](https://mozex.dev/docs/laravel-campaigns/v1/campaigns/audiences)
-  - [Sending and Pace](https://mozex.dev/docs/laravel-campaigns/v1/campaigns/sending)
-  - [Feedback and the Stop-Loss](https://mozex.dev/docs/laravel-campaigns/v1/campaigns/feedback)
-  - [Opens and Clicks](https://mozex.dev/docs/laravel-campaigns/v1/campaigns/tracking)
+  - [Emails and Templates](https://github.com/mozex/laravel-campaigns/blob/main/docs/campaigns/emails.md)
+  - [Audiences](https://github.com/mozex/laravel-campaigns/blob/main/docs/campaigns/audiences.md)
+  - [Sending and Pace](https://github.com/mozex/laravel-campaigns/blob/main/docs/campaigns/sending.md)
+  - [Feedback and the Stop-Loss](https://github.com/mozex/laravel-campaigns/blob/main/docs/campaigns/feedback.md)
+  - [Opens and Clicks](https://github.com/mozex/laravel-campaigns/blob/main/docs/campaigns/tracking.md)
 - Agents
-  - [The MCP Server](https://mozex.dev/docs/laravel-campaigns/v1/agents/mcp-server)
-  - [Giving Agents Your Data](https://mozex.dev/docs/laravel-campaigns/v1/agents/your-data)
+  - [The MCP Server](https://github.com/mozex/laravel-campaigns/blob/main/docs/agents/mcp-server.md)
+  - [Giving Agents Your Data](https://github.com/mozex/laravel-campaigns/blob/main/docs/agents/your-data.md)
 - Reference
-  - [Configuration](https://mozex.dev/docs/laravel-campaigns/v1/reference/configuration)
-  - [Commands](https://mozex.dev/docs/laravel-campaigns/v1/reference/commands)
-  - [Events](https://mozex.dev/docs/laravel-campaigns/v1/reference/events)
-  - [Testing Your App](https://mozex.dev/docs/laravel-campaigns/v1/reference/testing)
-  - [Drivers](https://mozex.dev/docs/laravel-campaigns/v1/reference/drivers)
-  - [Privacy and Security](https://mozex.dev/docs/laravel-campaigns/v1/reference/privacy-and-security)
+  - [Configuration](https://github.com/mozex/laravel-campaigns/blob/main/docs/reference/configuration.md)
+  - [Commands](https://github.com/mozex/laravel-campaigns/blob/main/docs/reference/commands.md)
+  - [Events](https://github.com/mozex/laravel-campaigns/blob/main/docs/reference/events.md)
+  - [Testing Your App](https://github.com/mozex/laravel-campaigns/blob/main/docs/reference/testing.md)
+  - [Drivers](https://github.com/mozex/laravel-campaigns/blob/main/docs/reference/drivers.md)
+  - [Privacy and Security](https://github.com/mozex/laravel-campaigns/blob/main/docs/reference/privacy-and-security.md)
 
 ## Support This Project
 
@@ -61,11 +62,15 @@ Business sponsors get logo placement in package READMEs. [**See sponsorship tier
 
 **Sending that warms up.** Each campaign starts small (100 emails on day one by default), grows each day, and goes out a few emails a minute from your own queue, engaged readers first, mailbox providers in turn.
 
-**Feedback that acts.** Mailgun's webhooks and logs block hard bounces and spam reports and opt out unsubscribes, and Amazon SES's events through EventBridge block bounces and spam reports. The SMTP driver sends through any server and reads back only what it refuses on the spot, and another service plugs in as a driver that has to do no more than send. A stop-loss pauses a campaign, or a whole sending domain, past its bounce, complaint or unsubscribe limits, and emails you. With a Google service account key, the server also reads the domain's Gmail spam rate from Postmaster Tools, and it reads how much of your Mailgun plan or SES quota the account has used, so an agent sees both before asking you to start a campaign, and again in the answer to every start, resume and speed-up, whichever AI app it runs in.
+**Feedback that acts.** Each driver reads back what its service reports, Mailgun through its webhooks and logs, Amazon SES through its events on EventBridge: a hard bounce or spam report blocks the address, an unsubscribe opts the person out. An SMTP server tells the sender only what it refuses on the spot, and the server says so to every agent. A stop-loss pauses a campaign, or a whole sending domain, past its bounce, complaint or unsubscribe limits, and emails you.
+
+**The same checks in every client.** The server reads how much of your provider's plan or quota the account has used, and, with a Google service account key, the sending domain's Gmail spam rate from Postmaster Tools. An agent sees both before it asks you to start a campaign, and again in the answer to every start, resume and speed-up, whichever AI app it runs in.
 
 **Opens and clicks on every driver.** Your app serves each email's open pixel and the redirects behind its links, so tracking works the same whichever service sends. Apple's privacy prefetch, link scanners and anything that opens an email the second it arrives count as machines, never as a person reading. The report counts the people who clicked each link, so a link Gmail fetches again after a click still counts as one person.
 
 **The pages every email needs.** One-click unsubscribe for mail apps, an unsubscribe page, double opt-in confirmation and a web version, each link holding a token that's stored only as a hash.
+
+**Your coding agent knows it too.** The package ships a [Laravel Boost](https://laravel.com/docs/boost) guideline and skill, so the agent that writes your app's code knows the rules for wiring in lists, sign-up forms, imports and audiences.
 
 ## Installation
 
@@ -83,7 +88,7 @@ php artisan campaigns:install
 
 ## Quick Start
 
-Add a `campaigns` mailer on Mailgun's API to `config/mail.php`, on a domain kept for marketing:
+Send from a domain kept for marketing, such as `news.example.com`, set up at your provider with SPF, DKIM and a DMARC record. The package sends through a mailer named `campaigns` in `config/mail.php`. With Mailgun, the default driver:
 
 ```php
 'campaigns' => [
@@ -91,8 +96,22 @@ Add a `campaigns` mailer on Mailgun's API to `config/mail.php`, on a domain kept
     'scheme' => 'api',
     'domain' => env('CAMPAIGNS_MAILGUN_DOMAIN'),
     'secret' => env('CAMPAIGNS_MAILGUN_SECRET'),
+    'endpoint' => env('CAMPAIGNS_MAILGUN_ENDPOINT', 'api.mailgun.net'),
 ],
 ```
+
+Point the domain's webhooks in Mailgun at `https://your-app.example.com/campaigns/webhooks/mailgun`, so bounces, spam reports and unsubscribes come back, and set the sender:
+
+```dotenv
+MAILGUN_WEBHOOK_SIGNING_KEY=your-webhook-signing-key
+CAMPAIGNS_FROM_ADDRESS=hello@news.example.com
+CAMPAIGNS_FROM_NAME="Example"
+CAMPAIGNS_POSTAL_ADDRESS="Example Ltd, 1 Main Street, Springfield"
+CAMPAIGNS_PRIVACY_URL=https://example.com/privacy
+CAMPAIGNS_TEST_ADDRESSES=you@example.com
+```
+
+Amazon SES and SMTP servers take a different mailer and bring feedback back their own way: see [Amazon SES](https://github.com/mozex/laravel-campaigns/blob/main/docs/getting-started/ses.md) and [SMTP](https://github.com/mozex/laravel-campaigns/blob/main/docs/getting-started/smtp.md).
 
 Turn one of your models into a list. The source says who belongs on it and what to keep in step:
 
@@ -143,9 +162,9 @@ claude mcp add --transport http campaigns https://your-app.example.com/mcp/campa
   --header "Authorization: Bearer <token>"
 ```
 
-Point Mailgun's webhooks at `/campaigns/webhooks/mailgun`, run a worker for the `campaigns` queue and the scheduler, and set `CAMPAIGNS_ENABLED=true` when you're ready to send. Then ask your agent to draft a campaign.
+Other MCP clients take the same address and header. Run `php artisan storage:link` (email images go on the `public` disk by default, so `APP_URL` must be https), a worker for the `campaigns` queue and the scheduler, then set `CAMPAIGNS_ENABLED=true` and ask your agent to send you a test.
 
-The [documentation](https://mozex.dev/docs/laravel-campaigns/v1) covers each piece: Mailgun's keys, OAuth for chat apps, consent on your sign-up form, named audiences, the pace and the stop-loss.
+The [installation guide](https://github.com/mozex/laravel-campaigns/blob/main/docs/getting-started/installation.md) walks through every required step in order, for any provider, host and CDN, and [Optional Extras](https://github.com/mozex/laravel-campaigns/blob/main/docs/getting-started/optional-extras.md) covers what you can add after: Gmail's spam rate, your plan's volume, OAuth sign-in for chat apps and the rest.
 
 ## Resources
 

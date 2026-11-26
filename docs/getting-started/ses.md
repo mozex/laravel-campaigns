@@ -3,7 +3,7 @@ title: Amazon SES
 weight: 4
 ---
 
-The `ses` driver sends through Amazon SES's v2 API. It needs the AWS SDK for PHP, version 3.393.3 or later, which the package only suggests:
+The `ses` driver sends through Amazon SES's v2 API and hears back through SES's events, which Amazon EventBridge posts to your app; both are required. Its daily counts through Virtual Deliverability Manager are an [optional extra](./optional-extras.md). It needs the AWS SDK for PHP, version 3.393.3 or later, which the package only suggests:
 
 ```bash
 composer require aws/aws-sdk-php
@@ -19,7 +19,7 @@ It sends through the `campaigns` mailer, which must use Laravel's `ses-v2` trans
         'transport' => 'ses-v2',
         'key' => env('CAMPAIGNS_SES_KEY'),
         'secret' => env('CAMPAIGNS_SES_SECRET'),
-        'region' => env('CAMPAIGNS_SES_REGION', 'eu-west-1'),
+        'region' => env('CAMPAIGNS_SES_REGION', 'us-east-1'),
         'retries' => 0,
         'options' => [
             'ConfigurationSetName' => env('CAMPAIGNS_SES_CONFIGURATION_SET'),
@@ -30,20 +30,22 @@ It sends through the `campaigns` mailer, which must use Laravel's `ses-v2` trans
 
 ```dotenv
 CAMPAIGNS_DRIVER=ses
+CAMPAIGNS_SES_REGION=us-east-1
+CAMPAIGNS_SES_CONFIGURATION_SET=your-configuration-set
 CAMPAIGNS_SES_WEBHOOK_SECRET=a-long-random-value
 ```
 
-The SDK retries a request whose answer it lost three times by default, and SES may already have sent that email, so a person could get it twice. A mailer without `'retries' => 0`, on itself or in `services.ses`, is refused: every campaign on the domain pauses until it's set. When neither gives `http` options, the package sets a 10-second connect timeout and 30 seconds in all, so a stuck request ends before the send job's 60 seconds. Any other transport is refused, except the log and array mailers outside production.
+The region is the one your SES identity and configuration set live in; SES keeps a separate setup, sandbox and quota in each. The SDK retries a request whose answer it lost three times by default, and SES may already have sent that email, so a person could get it twice. A mailer without `'retries' => 0`, on itself or in `services.ses`, is refused: every campaign on the domain pauses until it's set. When neither gives `http` options, the package sets a 10-second connect timeout and 30 seconds in all, so a stuck request ends before the send job's 60 seconds. Any other transport is refused, except the log and array mailers outside production.
 
 Each email carries its uuid as an SES message tag (`campaign-message`), which SES puts back in every event about it. Laravel's `X-Tag` header is left out. SES's own open and click tracking is turned off on every email, whatever the account's or the configuration set's settings say: the package already tracks both ([Opens and Clicks](../campaigns/tracking.md)). An older SDK can't send that switch, so the driver refuses it, and the switch needs an IAM permission of its own ([below](#permissions)).
 
 ## Set up SES
 
-Do these in the AWS console, in the region the mailer names:
+Do these in the AWS console, in the region the mailer names. AWS's guides cover the first two and the last; SES's own docs leave the EventBridge steps between them unclear, so they're here in full.
 
-1. **The identity.** Verify your marketing domain (`news.example.com`) with Easy DKIM, and give it a custom MAIL FROM domain so SPF aligns too.
-2. **The configuration set.** Create one and name it in the mailer's `ConfigurationSetName`. Add an event destination of type Amazon EventBridge with these event types: Sends, Deliveries, Hard bounces, Complaints, Rejects and Delivery delays. Leave Opens and Clicks out; the driver drops any that arrive. Without a configuration set (or a default one on the identity), no event ever reaches the package, and nothing warns you.
-3. **The connection.** In EventBridge, create a connection with API key authorization: the key name `X-Campaigns-Webhook-Key` and the value of `CAMPAIGNS_SES_WEBHOOK_SECRET`.
+1. **The identity.** [Verify your sending domain](https://docs.aws.amazon.com/ses/latest/dg/creating-identities.html#verify-domain-procedure) (`news.example.com`, or a parent domain that covers it) with Easy DKIM, which signs as your domain, and give it a [custom MAIL FROM domain](https://docs.aws.amazon.com/ses/latest/dg/mail-from.html) so SPF passes for your domain too. Add a DMARC record of your own ([Installation](./installation.md#choose-the-sending-domain)); SES doesn't.
+2. **The configuration set.** [Create one](https://docs.aws.amazon.com/ses/latest/dg/using-configuration-sets.html) and name it in the mailer's `ConfigurationSetName`. Add an [event destination](https://docs.aws.amazon.com/ses/latest/dg/event-publishing-add-event-destination-eventbridge.html) of type Amazon EventBridge with these event types: Sends, Deliveries, Hard bounces, Complaints, Rejects and Delivery delays. Leave Opens and Clicks out; the driver drops any that arrive. Without a configuration set (or a default one on the identity), no event ever reaches the package, and nothing warns you.
+3. **The connection.** In EventBridge, create a [connection](https://docs.aws.amazon.com/eventbridge/latest/userguide/eb-api-destinations.html) with API key authorization: the key name `X-Campaigns-Webhook-Key` and the value of `CAMPAIGNS_SES_WEBHOOK_SECRET`. EventBridge sends them as a header on every request.
 4. **The API destination.** Point it at `https://your-app.example.com/campaigns/webhooks/ses` with method POST, using that connection.
 5. **The rule.** On the default event bus, add a rule with the API destination as its target, matching only this configuration set's sending events, so another app's mail on the same account never reaches yours. Send the event as it is, with no input transformer:
 
@@ -55,7 +57,7 @@ Do these in the AWS console, in the region the mailer names:
    }
    ```
 6. **Feedback forwarding.** On the identity's Notifications tab, turn Email feedback forwarding off, or call `PutEmailIdentityFeedbackAttributes` with `EmailForwardingEnabled` set to `false`. SES turns it on for every identity and emails each bounce and spam report to the address the email came from. A forwarded report can carry the email it's about (a spam report follows RFC 5965), so opening the report in a mail app can load that email's open pixel, or a click in it follow a tracked link, and record an open or a click for the person who complained. The package already reads bounces and complaints from the events. SES keeps forwarding, whatever the switch says, for an email whose bounces and complaints reach you no other way: its guide counts an SNS topic or a Firehose stream as another way, its API reference any event destination. If reports keep arriving with forwarding off, give the identity SNS notifications for bounces and complaints too.
-7. **Production access.** A new account is in the sandbox: 200 emails a day, one a second, and only to addresses you verified. Ask AWS for production access in that region before your first campaign.
+7. **Production access.** A new account is in the sandbox in each region: 200 emails a day, one a second, and only to addresses you verified. [Ask AWS for production access](https://docs.aws.amazon.com/ses/latest/dg/request-production-access.html) in that region before your first campaign.
 
 EventBridge posts from AWS's servers, so a CDN or firewall in front of the app must let `POST /campaigns/webhooks/ses` through without a browser or bot check.
 
@@ -81,15 +83,15 @@ When SES denies a send, it answers 403: the email waits, and every campaign on t
       "Effect": "Allow",
       "Action": ["ses:SendEmail", "ses:SendRawEmail"],
       "Resource": [
-        "arn:aws:ses:eu-west-1:123456789012:identity/news.example.com",
-        "arn:aws:ses:eu-west-1:123456789012:configuration-set/your-configuration-set"
+        "arn:aws:ses:us-east-1:123456789012:identity/news.example.com",
+        "arn:aws:ses:us-east-1:123456789012:configuration-set/your-configuration-set"
       ]
     },
     {
       "Effect": "Allow",
       "Action": ["ses:ApplyTrackingConfigurationOverrides", "ses:GetAccount", "ses:ListSuppressedDestinations", "ses:GetSuppressedDestination"],
       "Resource": "*",
-      "Condition": {"StringEquals": {"aws:RequestedRegion": "eu-west-1"}}
+      "Condition": {"StringEquals": {"aws:RequestedRegion": "us-east-1"}}
     }
   ]
 }
@@ -127,9 +129,9 @@ SES has no unsubscribe of its own here: the package's page and the one-click hea
 
 ## Suppressions and daily counts
 
-SES keeps one suppression list for the whole account in each region, holding bounces and complaints, whatever domain sent the mail. `campaigns:import-provider-suppressions` reads all of it, whichever domain you pass. SES compares addresses on that list as they were added, so `unblock_contact` can miss one added in other letter cases.
+SES keeps one suppression list for the whole account in each region, holding bounces and complaints, whatever domain sent the mail. `campaigns:import-provider-suppressions` reads all of it, whichever domain you pass, so one run covers your transactional mail's bounces too when it goes through the same account and region. SES compares addresses on that list as they were added, so `unblock_contact` can miss one added in other letter cases.
 
-`get_overview`'s `domain.provider` shows SES's sends, hard bounces and complaints by day only with Virtual Deliverability Manager, a paid add-on. Turn it on in SES, then set:
+`get_overview`'s `domain.provider` shows SES's sends, hard bounces and complaints by day only with [Virtual Deliverability Manager](https://docs.aws.amazon.com/ses/latest/dg/vdm.html), a paid add-on and an optional extra. Turn it on in SES, then set:
 
 ```dotenv
 CAMPAIGNS_SES_VDM=true

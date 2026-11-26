@@ -3,7 +3,7 @@ title: SMTP
 weight: 3
 ---
 
-The `smtp` driver sends through any SMTP server: a relay in production, or a mail catcher on your own machine. It has no settings of its own. It sends through the `campaigns` mailer, which must use Laravel's `smtp` transport:
+The `smtp` driver sends through any SMTP server: a relay in production, or a mail catcher on your own machine. It has no settings of its own and no feedback path to set up, since SMTP brings nothing back after the handover ([below](#what-it-reads-back)). It sends through the `campaigns` mailer, which must use Laravel's `smtp` transport:
 
 ```php
 'mailers' => [
@@ -50,7 +50,7 @@ The package's own unsubscribe page and the one-click header work as with any dri
 
 ## In production
 
-Send through a relay that is allowed to send for your marketing domain, with SPF and DKIM set up for it, never straight from your web server. Since bounces don't come back, start with a list you know is clean. If you're moving from Mailgun, run `campaigns:import-provider-suppressions` while Mailgun is still the driver, since it reads only the active driver's lists. For an old or large list, prefer a driver that reads feedback, such as [Mailgun](./mailgun.md).
+Send through a relay that is allowed to send for your sending domain, with SPF, DKIM and DMARC set up for it as your relay's docs describe ([Installation](./installation.md#choose-the-sending-domain)), never straight from your web server. Since bounces don't come back, start with a list you know is clean. If you're moving from Mailgun, run `campaigns:import-provider-suppressions` while Mailgun is still the driver, since it reads only the active driver's lists. For an old or large list, prefer a driver that reads feedback, such as [Mailgun](./mailgun.md).
 
 ## On your own machine
 

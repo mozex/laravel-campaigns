@@ -32,7 +32,7 @@ Tools marked "asks" carry the `anthropic/requiresUserInteraction` flag, so Claud
 | `list_subscribers` | R | people a page at a time, with filters |
 | `get_subscriber` | R | one person, their lists and their latest consent records |
 | `unsubscribe_contact`, `block_contact` | W | opt a person out of everything, or block an address |
-| `unblock_contact` | W, asks | clear a block, and say whether Mailgun still holds the address |
+| `unblock_contact` | W, asks | clear a block, and say whether the sending service still holds the address |
 | `preview_contacts_import` | W | what a CSV import would do, without doing it |
 | `run_contacts_import` | W, asks | run that import |
 

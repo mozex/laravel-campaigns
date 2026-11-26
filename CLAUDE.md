@@ -193,3 +193,5 @@ Each class's docblock gives the reasons for its own behaviour; read it before ch
 - Never give a job a method named `queue()` (Laravel's dispatcher calls it), and no job helper named `failed()` or `fail()`.
 - Read `campaigns.domain_daily_caps` as a whole map: the dots in its domain keys break dot access.
 - The README, `docs/`, `resources/boost/` and `resources/mcp/` describe the same surface: a change to a tool, command, config key or action's behaviour is checked against all four, and `tests/Mcp/GuideToolTest.php` fails when the guidance names a tool the server lacks.
+- The docs are one setup path: `getting-started/installation.md` holds the required steps in order, `optional-extras.md` what is off until set up, and each driver's page gives its settings and links the provider's own docs for its procedures. A new setting goes in one of the two, and an extra also gets its `get_overview` note.
+- Until `1.0.0`, the README's table of contents and its prose link `docs/` on GitHub (`blob/main`), since mozex.dev lists the package only from `1.0.0`; the README's fixed blocks (banner, badges, callout, Resources) keep mozex.dev.

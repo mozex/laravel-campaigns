@@ -32,7 +32,7 @@ A campaign stores only what it was given; the rest follows `campaigns.pace` when
 
 Every minute, the pump works out what each sending campaign may hand out now, the least of:
 
-- `per_minute` less what it handed out this calendar minute (halved for ten minutes after Mailgun took nothing, such as a rate limit);
+- `per_minute` less what it handed out this calendar minute (halved for ten minutes after the service took nothing, such as a rate limit);
 - the day's volume less what it sent that day;
 - its sending domain's daily cap less the domain's last 24 hours, across every campaign on it and the double opt-in emails.
 
@@ -51,10 +51,10 @@ A campaign completes once nothing is left to send. Its sent emails can still cha
 
 ## The queue
 
-Each email is one job on the `campaigns` queue. The job takes its email only if its claim is fresh (15 minutes) and the campaign is still sending, then checks the person again and sends. When Mailgun's answer is unclear (a timeout after the request went out, a 504), the email is marked unknown and never sent again; the reconciler finds out from Mailgun's logs whether it went. Each unclear send halves the campaign's rate for ten minutes, and ten within five minutes pause it, so a lost connection never spends the audience on emails that may not have gone.
+Each email is one job on the `campaigns` queue. The job takes its email only if its claim is fresh (15 minutes) and the campaign is still sending, then checks the person again and sends. When the service's answer is unclear (a timeout after the request went out, a 504), the email is marked unknown and never sent again; when the driver reads its service's logs, the reconciler finds out from them whether it went. Each unclear send halves the campaign's rate for ten minutes, and ten within five minutes pause it, so a lost connection never spends the audience on emails that may not have gone.
 
 If the campaign's queued emails wait more than five minutes, the queue has stalled (no worker is taking them): the campaign hands out nothing more until they go, `CampaignQueueStalledEvent` fires each minute, and the alert address hears about it.
 
-If Mailgun refuses the domain itself (a revoked key, a disabled domain), the email goes back to waiting and every campaign on the domain pauses until someone resumes it.
+If the service refuses the domain itself (a revoked key, a disabled domain, a refused sender), the email goes back to waiting and every campaign on the domain pauses until someone resumes it.
 
 A service can also refuse one email for good as it's sent, as an SMTP server does with a 5xx reply. That email fails and is never sent again: as a hard bounce that blocks the address when the refusal names a mailbox that doesn't exist, else as `rejected`, and 10 `rejected` sends in a row pause the campaign ([Feedback](./feedback.md#refused-while-sending)).

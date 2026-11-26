@@ -1,6 +1,6 @@
 {
     "name": "mozex/laravel-campaigns",
-    "description": "Email campaigns that AI agents run inside your Laravel app over MCP, with lists synced from your users and paced sending through Mailgun, Amazon SES or SMTP on your own queue",
+    "description": "Email marketing inside your Laravel app, run by AI agents from any MCP client (Claude, ChatGPT, Cursor): lists synced from your users, recorded consent, and paced campaigns sent from your own queue through Mailgun, Amazon SES, SMTP or a driver you write",
     "keywords": [
         "laravel",
         "email-marketing",
@@ -8,7 +8,9 @@
         "newsletter",
         "mailgun",
         "amazon-ses",
+        "smtp",
         "mcp",
+        "mcp-server",
         "ai-agents",
         "unsubscribe",
         "mozex"

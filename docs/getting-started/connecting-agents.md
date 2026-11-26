@@ -3,11 +3,11 @@ title: Connecting Agents
 weight: 5
 ---
 
-Agents reach the package through an MCP server it adds to your app, at `/mcp/campaigns` (`CAMPAIGNS_MCP_PATH` moves it; `CAMPAIGNS_MCP_ENABLED=false` switches it off). It answers only to a token the package issued or to a person your app signs in and allows.
+Agents reach the package through an MCP server it adds to your app, at `/mcp/campaigns` (`CAMPAIGNS_MCP_PATH` moves it; `CAMPAIGNS_MCP_ENABLED=false` switches it off). Any MCP client can use it. It answers only to a token the package issued or to a person your app signs in and allows: tokens work with no setup, and OAuth sign-in for chat apps is an [optional extra](./optional-extras.md).
 
 ## Tokens
 
-A token suits a machine you trust, such as your laptop's Claude Code or Codex:
+A token suits a client on a machine you trust that sends a fixed header, such as Claude Code, Cursor or Codex:
 
 ```bash
 php artisan campaigns:token create laptop
@@ -33,9 +33,11 @@ url = "https://your-app.example.com/mcp/campaigns"
 bearer_token_env_var = "CAMPAIGNS_TOKEN"
 ```
 
+Any other client takes the same address and an `Authorization: Bearer <token>` header in its own MCP settings.
+
 ## Signing people in with OAuth
 
-Chat apps such as claude.ai and ChatGPT can't send a fixed header; they sign a person in through OAuth. Laravel's MCP package gives your app what they need on top of Laravel Passport: install Passport, call `Mcp::oauthRoutes()` for the discovery documents and client registration, and set up the consent page, as [Laravel's MCP documentation](https://laravel.com/docs/13.x/mcp) describes. Then add Passport's guard after the package's in `config/campaigns.php`:
+Chat apps such as claude.ai, Claude's desktop app and ChatGPT can't send a fixed header; they sign a person in through OAuth. Laravel's MCP package gives your app what they need on top of Laravel Passport: install Passport, call `Mcp::oauthRoutes()` for the discovery documents and client registration, and set up the consent page, as [Laravel's MCP documentation](https://laravel.com/docs/mcp) describes. Then add Passport's guard after the package's in `config/campaigns.php`. Another OAuth server works the same way, as long as its guard signs a bearer token in:
 
 ```php
 'mcp' => [
@@ -120,10 +122,4 @@ RateLimiter::for('campaigns-mcp', fn (Request $request): Limit => Limit::perMinu
 
 ## Proxies, firewalls and request size
 
-Agents, Mailgun and Amazon SES's EventBridge call your app from servers, not browsers. If a CDN or firewall in front of the app runs a browser or bot check, turn it off for these paths, and keep them out of any cache:
-
-- the MCP path and everything under it (`/mcp/campaigns`, its upload and download links);
-- `/campaigns/` (the unsubscribe, confirmation, web version and preview pages, and the drivers' webhooks);
-- for OAuth, `/oauth/` and `/.well-known/oauth-`.
-
-Files go up to `/mcp/campaigns/uploads/...` with curl, 25 MB at most by default (`campaigns.uploads.max_size`). Laravel holds every request's body to PHP's `post_max_size`, so raise that to match, and keep both under what your web server and proxy accept in one request. The upload tool tells agents the smaller of the limits.
+Agents call the MCP path from servers, not browsers, and upload files under it. [Installation](./installation.md#let-services-through-to-your-app) lists what a CDN, firewall or proxy in front of the app must let through, the OAuth paths included, and the request size uploads need.

@@ -3,7 +3,7 @@ title: Opens and Clicks
 weight: 5
 ---
 
-The package tracks opens and clicks itself, the same way whichever driver sends: every email gets a one-pixel image and its links are wrapped in redirects, both served by your app at `campaigns.url`. The sending service's own tracking is turned off on every email (the Mailgun driver sends `o:tracking-opens: no` and `o:tracking-clicks: no`), and any open or click event a service still reports is dropped, so nothing is counted twice and one set of rules decides what a person did.
+The package tracks opens and clicks itself, the same way whichever driver sends: every email gets a one-pixel image and its links are wrapped in redirects, both served by your app at `campaigns.url`. The sending service's own tracking is turned off on every email (the Mailgun driver sends `o:tracking-opens: no` and `o:tracking-clicks: no`, the SES driver overrides the configuration set's tracking), and any open or click event a service still reports is dropped, so nothing is counted twice and one set of rules decides what a person did.
 
 A campaign's `track_opens` and `track_clicks` switch each part off. A test email is tracked like its campaign's emails, and a template's test always is, so you can see tracking work before a start.
 

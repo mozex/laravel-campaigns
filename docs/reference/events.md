@@ -23,4 +23,4 @@ A listener that throws is reported to your error tracker rather than thrown: by 
 
 ## The alert mail
 
-The package listens to its own events and mails `campaigns.alert_address` for an automatic pause, a first spam report and a stalled queue (at most once every six hours), through your app's default mailer and never the queue: a stalled queue would hold it, and the marketing domain may be the thing Mailgun just refused. Leave the address empty to send none.
+The package listens to its own events and mails `campaigns.alert_address` for an automatic pause, a first spam report and a stalled queue (at most once every six hours), through your app's default mailer and never the queue: a stalled queue would hold it, and the sending domain may be the thing the sending service just refused. Leave the address empty to send none.

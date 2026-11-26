@@ -76,7 +76,7 @@ A revision that breaks any of these is refused, with every problem listed in one
 
 `get_preview_link` makes a link, good for a week, to a page showing the email at 600 and 375 pixels wide with made-up details, its plain text and its latest checks. Nothing in the email can run there, and its links open the real pages without changing anything, so the link is safe to pass around.
 
-`send_test` sends the email to `campaigns.test_addresses` only, one per address and language, at most 25 a call. A draft's test is its current revision; a started campaign's is the frozen one it sends. Test emails carry their own tag, so Mailgun's numbers never mix them with a campaign's.
+`send_test` sends the email to `campaigns.test_addresses` only, one per address and language, at most 25 a call. A draft's test is its current revision; a started campaign's is the frozen one it sends. With Mailgun, test emails carry their own tag, so its numbers never mix them with a campaign's.
 
 ## UTM tags
 
