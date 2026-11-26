@@ -94,7 +94,7 @@ Call `get_overview` first. It tells you:
 - Its email changes through `add_revision` with `campaign`, while it is a draft. A start freezes it, its links carrying the UTM tags.
 - Its audience: the target `lists` (everyone subscribed on any of them, once each; the default lists when it was created without lists), narrowed by any of a named audience (`list_audiences` shows the app's, with their parameters as a JSON Schema, given as `{"audience": {"name": "...", "parameters": {...}}}`), a saved audience (a named set of filters, `save_audience`), the built-in filters, people by id or address, and app records by dynamic list. Replacing a saved audience changes every campaign that names it and hasn't started.
 - `preview_audience` counts who it reaches: the recipients, who was dropped and why (blocked, opted out, sunset), and the breakdown by list, language, engagement tier and mailbox provider. Opted-out, blocked and sunset people are never mailed, whatever the audience says.
-- `send_test` sends the email to the app's test addresses only (it asks the person first): one per address and language, at most 25 a call, in the default language unless you name others. A draft's test is its current email; a started campaign's is the frozen one it sends. Read whether each went with `get_test_sends`: `delivered_at` comes once the provider's delivery event reaches the app, proof that its feedback works, and stays null on a driver that reads nothing back (SMTP). Refused while sending is switched off.
+- `send_test` sends the email to the app's test addresses only (clients that support it ask the person first; otherwise ask them yourself): one per address and language, at most 25 a call, in the default language unless you name others. A draft's test is its current email; a started campaign's is the frozen one it sends. Read whether each went with `get_test_sends`: `delivered_at` comes once the provider's delivery event reaches the app, proof that its feedback works, and stays null on a driver that reads nothing back (SMTP). Refused while sending is switched off.
 - `duplicate_campaign` copies a campaign's settings, audience and email into a new draft.
 
 ## Before a start
@@ -175,7 +175,7 @@ If the provider refuses the sending domain itself (a key or domain problem), the
 
 ## Unblocking
 
-`unblock_contact` (it asks the person first) clears a block here and says whether the provider still holds the address on the sending domain's bounce, complaint or unsubscribe list, or that it couldn't check. Removing it there is a change at the provider, which the person makes or approves; until then the provider sends it nothing. Soft bounces start over at 0. Unblock only on good evidence: an address that bounced or complained hurts the domain if mailed again.
+`unblock_contact` (clients that support it ask the person first; otherwise ask them yourself) clears a block here and says whether the provider still holds the address on the sending domain's bounce, complaint or unsubscribe list, or that it couldn't check. Removing it there is a change at the provider, which the person makes or approves; until then the provider sends it nothing. Soft bounces start over at 0. Unblock only on good evidence: an address that bounced or complained hurts the domain if mailed again.
 
 ## Server commands
 

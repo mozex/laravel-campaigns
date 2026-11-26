@@ -73,6 +73,8 @@ CAMPAIGNS_SMTP_HOST=127.0.0.1
 CAMPAIGNS_SMTP_PORT=1025
 ```
 
-Mailpit shows the emails at `http://127.0.0.1:8025`. Laravel Herd Pro's mail service works the same way: use the SMTP port its mail settings show, and set `CAMPAIGNS_SMTP_USERNAME` to a name such as your app's, which Herd files the emails under.
+Mailpit shows the emails at `http://127.0.0.1:8025`. Laravel Herd Pro's mail service works the same way: use the SMTP port its mail settings show, and set `CAMPAIGNS_SMTP_USERNAME` to a name such as your app's, with no password: Herd only files the emails under that name.
+
+A test email needs less than the whole [installation](./installation.md): the package installed, this mailer, the sender, a worker for the `campaigns` queue and a token for your agent. The scheduler, the image disk and the cache store can wait until you send campaigns.
 
 Point `CAMPAIGNS_URL` (or `APP_URL`) at the address you serve the app on. An email's unsubscribe and web version links start with it, so they open in your browser, and so do its [open pixel and tracked links](../campaigns/tracking.md): open an email in Mailpit and its open is recorded, click a link and the click is, each applied about a minute later. Images must be on https, which on the default `public` disk means serving the app over https (`https://your-app.test` with Herd's `herd secure`, say); over plain http, such as `php artisan serve`, everything else works.

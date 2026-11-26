@@ -65,7 +65,7 @@ Settings that take a domain:
 | the `campaigns` mailer | the sending domain: Mailgun's `domain`, or an SES identity that covers it |
 | `campaigns:import-provider-suppressions` | each domain your service has mailed these people from: the sending domain, and your transactional domain if it's on the same account; only the sending domain's unsubscribe list becomes opt-outs, so when the two are one domain, everyone who unsubscribed from any of its mail is kept off your campaigns |
 | Google Postmaster Tools | the sending domain itself, since the package asks Google about that exact domain |
-| `CAMPAIGNS_URL` | a host on the same domain as the From address: every link and the open pixel point there ([Opens and Clicks](../campaigns/tracking.md#your-domains-reputation)) |
+| `CAMPAIGNS_URL` | in production, a host on the same domain as the From address: every link and the open pixel point there ([Opens and Clicks](../campaigns/tracking.md#your-domains-reputation)); on your own machine, wherever you serve the app |
 | `campaigns.domain_daily_caps` | the sending domain as its key |
 
 ## Set up the driver
@@ -95,7 +95,7 @@ CAMPAIGNS_TEST_ADDRESSES=you@example.com,colleague@example.com
 - The From address must be on the sending domain. Replies can go anywhere someone reads them.
 - The postal address and privacy link appear in every email's footer. Some laws require the address (the US CAN-SPAM Act among them), and mailbox providers and sending services ask for the link. Check what yours ask for.
 - Test emails go only to the test addresses. Until you list one, no test email goes out.
-- On your own machine, any postal address and privacy link will do. The pre-send `privacy_link` check fails while `CAMPAIGNS_PRIVACY_URL` is unset.
+- On your own machine, any postal address and privacy link will do. The pre-send checks report the privacy link only: `privacy_link` fails while `CAMPAIGNS_PRIVACY_URL` is unset, and `links` while the address doesn't answer.
 
 Every link the package puts in an email (unsubscribe, confirmation, the web version, tracked links) starts with `CAMPAIGNS_URL`, which defaults to `APP_URL`, and must be https in production: mail apps' one-click unsubscribe takes only an https address. Mail already delivered keeps pointing there, so that host must keep answering those links for as long as the mail exists. Nothing refuses an http address, so on your own machine an app served over plain http (`php artisan serve`) sends and tracks test emails, but can't use images, which must be https ([below](#store-email-images)).
 
@@ -205,7 +205,7 @@ claude mcp add --transport http campaigns https://your-app.example.com/mcp/campa
 
 ## Turn sending on and send a test
 
-Sending is off until you set `CAMPAIGNS_ENABLED=true`. While it's off, nothing is handed to the queue, campaigns can't start or resume, and no test or double opt-in email goes out. Everything that only records what people chose keeps working: subscriptions, unsubscribes, the consent records. So you can install the package, connect your lists and let agents draft campaigns before anything can reach an inbox.
+Sending is off until you set `CAMPAIGNS_ENABLED=true`, then restart your queue workers (`php artisan queue:restart`): a worker keeps the settings it started with, and one that still reads sending as off fails the test with "Sending was switched off before the test went out." While it's off, nothing is handed to the queue, campaigns can't start or resume, and no test or double opt-in email goes out. Everything that only records what people chose keeps working: subscriptions, unsubscribes, the consent records. So you can install the package, connect your lists and let agents draft campaigns before anything can reach an inbox.
 
 Once it's on, ask your agent to call `get_overview`, which lists in `sending.notes` what isn't set up yet, then to copy the starter template into a template of your own (`create_template` with `from: "starter"`; the starter itself is read-only) and send a test of it to your test address. When it arrives, check that its images load and that its unsubscribe link opens the package's page on your app.
 
