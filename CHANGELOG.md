@@ -2,6 +2,26 @@
 
 All notable changes to `laravel-campaigns` will be documented in this file.
 
+## 0.2.3 - 2026-11-26
+
+### What's Changed
+
+* Mailgun's and Amazon SES's optional abilities now follow their settings. Without Mailgun's account API key (`CAMPAIGNS_MAILGUN_API_KEY`), the driver reads no logs, suppression lists, daily counts or usage, and nothing fails: `campaigns:reconcile` no longer errors on every run, and an email a stopped worker left `sending` becomes `unknown` after 15 minutes so its campaign can complete. Without SES's VDM setting, its daily counts are off the same way.
+* `get_overview` names each optional setting that's missing (Mailgun's reading key, SES's VDM, the Gmail key, your Mailgun plan's volume, the alert address, the spam score, OAuth sign-in), what it would add, and the docs page that sets it up.
+* While a driver's webhook key isn't set, its webhook route still answers 500, so the service keeps retrying until it is (EventBridge gives up for good on a 404), but no longer reports an error for each post. `get_overview` says when it refused one in the last day.
+* `get_overview` lists at most 20 lists and 20 campaigns (was 25), so every note fits within the answer limit. `lists_total`, `campaigns_total` and the list tools give the rest.
+* The unsubscribe, confirmation and web version pages answer with `Cache-Control: no-transform`, so a CDN's email address obfuscation (Cloudflare turns it on by default) no longer hides the reader's address behind a script the pages block.
+* `CAMPAIGNS_MAILGUN_LOG_DAYS` sets how many days of Mailgun's logs the reconciler reads, to match your plan (5 by default).
+* `get_test_sends` answers `delivered_at` for each test email once the provider's delivery event reaches your app, so your first test proves the webhooks or EventBridge work. The log replay no longer stores test emails' events, so the value comes from a webhook alone. It stays null with SMTP.
+* With SES, a VDM answer with no counts at all now shows as a note in the overview instead of 30 days of zeros. A domain sending under its parent domain's identity may get no counts of its own.
+* `send_test` and the other tools that take a template's key now say, when given the starter's key, that the starter is read-only and to copy it with `create_template`, instead of "There is no template with the key".
+* The docs are one setup path: the installation guide's twelve required steps, in order, for any provider, host and CDN, then a new Optional Extras page. The Mailgun, SES and SMTP pages link each provider's own guides and cover an apex sending domain shared with transactional mail, both Mailgun regions, SES with a parent-domain identity, workers without Horizon, the cache store a deploy mustn't flush, and checking that the first test's delivery came back.
+* The package's description names Mailgun, Amazon SES and SMTP as examples of the services it sends through, and any MCP client as what runs it.
+
+Update with `composer update mozex/laravel-campaigns`; there's nothing to publish or migrate.
+
+**Full Changelog**: https://github.com/mozex/laravel-campaigns/compare/0.2.2...0.2.3
+
 ## 0.2.2 - 2026-11-24
 
 ### What's Changed
