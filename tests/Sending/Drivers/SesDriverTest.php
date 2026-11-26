@@ -681,6 +681,23 @@ describe('daily counts', function (): void {
             ->and($queries[0]['EndDate']->format(DATE_ATOM))->toBe('2026-02-03T14:30:00+00:00');
     });
 
+    it('reads no points at all as no counts, never as 30 clean days, since a domain under its parent\'s identity may get none', function (array $results): void {
+        config()->set('campaigns.driver', 'ses');
+        config()->set('campaigns.drivers.ses.vdm', true);
+        sesMailer(new MockHandler([new Result(['Results' => $results, 'Errors' => []])]));
+
+        expect(DomainSummary::for('news.example.com'))
+            ->summary->provider->toBeNull()
+            ->notes->toBe(['The provider\'s numbers for news.example.com couldn\'t be read: Amazon SES has no counts for news.example.com in that time. The package asks VDM for that domain\'s own identity, so a domain sending under its parent domain\'s identity may have none: verify news.example.com as an identity of its own in SES to read them. A domain that sent nothing through SES in that time has none either.']);
+    })->with([
+        'empty series' => [[
+            ['Id' => 'send', 'Timestamps' => [], 'Values' => []],
+            ['Id' => 'permanent_bounce', 'Timestamps' => [], 'Values' => []],
+            ['Id' => 'complaint', 'Timestamps' => [], 'Values' => []],
+        ]],
+        'no results' => [[]],
+    ]);
+
     it('fails, naming the codes, when SES refuses a query', function (): void {
         config()->set('campaigns.drivers.ses.vdm', true);
         sesMailer(new MockHandler([new Result(['Results' => [], 'Errors' => [['Id' => 'send', 'Code' => 'ACCESS_DENIED', 'Message' => 'Denied for reader@example.org']]])]));

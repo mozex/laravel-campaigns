@@ -76,7 +76,7 @@ Call `get_overview` first. It tells you:
 
 - `list_templates` lists the package's starter templates first, then the app's (archived ones only when asked). A template's key reads, revises and copies it even when archived.
 - The starter template's button has a second link inside an Outlook-only block (`<!--[if mso]>`), which only Outlook for Windows draws: change both links. The checks, the UTM tags and the click tracking read both.
-- `create_template` makes one from an upload, inline content, another template or a starter. `update_template` changes its name, description or default mark.
+- `create_template` makes one from an upload, inline content, another template or a starter. A starter is read-only: copy it with `create_template` (its `from`) before testing or sending it. `update_template` changes its name, description or default mark.
 - Every upload or edit is a new revision (`add_revision`, for a template or a draft campaign); nothing is overwritten. `list_revisions` and `restore_revision` bring an older one back as a new revision.
 - The edit loop: `get_template` (or `get_campaign`), download the zip or the HTML within the hour, edit it, and send it back to `add_revision` with the subjects and preheaders `get_template` named.
 - `archive_template` hides a template from the list.
@@ -94,7 +94,7 @@ Call `get_overview` first. It tells you:
 - Its email changes through `add_revision` with `campaign`, while it is a draft. A start freezes it, its links carrying the UTM tags.
 - Its audience: the target `lists` (everyone subscribed on any of them, once each; the default lists when it was created without lists), narrowed by any of a named audience (`list_audiences` shows the app's, with their parameters as a JSON Schema, given as `{"audience": {"name": "...", "parameters": {...}}}`), a saved audience (a named set of filters, `save_audience`), the built-in filters, people by id or address, and app records by dynamic list. Replacing a saved audience changes every campaign that names it and hasn't started.
 - `preview_audience` counts who it reaches: the recipients, who was dropped and why (blocked, opted out, sunset), and the breakdown by list, language, engagement tier and mailbox provider. Opted-out, blocked and sunset people are never mailed, whatever the audience says.
-- `send_test` sends the email to the app's test addresses only (it asks the person first): one per address and language, at most 25 a call, in the default language unless you name others. A draft's test is its current email; a started campaign's is the frozen one it sends. Read whether each went with `get_test_sends`. Refused while sending is switched off.
+- `send_test` sends the email to the app's test addresses only (it asks the person first): one per address and language, at most 25 a call, in the default language unless you name others. A draft's test is its current email; a started campaign's is the frozen one it sends. Read whether each went with `get_test_sends`: `delivered_at` comes once the provider's delivery event reaches the app, proof that its feedback works, and stays null on a driver that reads nothing back (SMTP). Refused while sending is switched off.
 - `duplicate_campaign` copies a campaign's settings, audience and email into a new draft.
 
 ## Before a start

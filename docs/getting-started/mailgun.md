@@ -7,7 +7,7 @@ The `mailgun` driver is the default (`CAMPAIGNS_DRIVER=mailgun`). It sends throu
 
 ## The sending domain
 
-Add your sending domain (`news.example.com`) in Mailgun and publish the records it lists (SPF, DKIM, MX and a tracking CNAME), as [Mailgun's guide to domains](https://documentation.mailgun.com/docs/mailgun/user-manual/domains/) describes. Pick the region with care: a domain stays in the US or EU region it was added to, and the mailer and the API host follow it.
+Add your sending domain (`news.example.com`) in Mailgun and publish the records it lists (SPF, DKIM, MX and a tracking CNAME), as [Mailgun's guide to domains](https://documentation.mailgun.com/docs/mailgun/user-manual/domains/) describes. Pick the region with care: a domain stays in the US or EU region it was added to, and the mailer and the API host follow it. If the domain is already on your account and verified (the one your app sends from, say), there's nothing to add: leave its records as they are, a tracking CNAME your other mail uses included.
 
 - **SPF and DKIM** sign and authorise the mail. Add a DMARC record of your own too ([Installation](./installation.md#choose-the-sending-domain)); Mailgun's list doesn't include one.
 - **MX records** make Mailgun receive the mail sent to the domain. If another mail server already receives mail there, keep its records instead of Mailgun's. Replies go to `CAMPAIGNS_REPLY_TO`, wherever that is.
@@ -15,7 +15,7 @@ Add your sending domain (`news.example.com`) in Mailgun and publish the records 
 
 Two things Mailgun's guide doesn't make plain:
 
-- **Which domain signs.** When your root domain (`example.com`) is already on the same Mailgun account, Mailgun can set up a subdomain to sign with the root's DKIM key, and your newsletter's reputation then rides on your main domain's signature. Look at the DKIM record Mailgun gives you: its name should end in `._domainkey.news.example.com`. If it ends in `._domainkey.example.com`, the subdomain isn't its own DKIM authority. Make it one: through a DKIM authority choice when you add the domain, if Mailgun's form offers one, or afterwards through the API's [`dkim_authority`](https://documentation.mailgun.com/docs/mailgun/api-reference/send/mailgun/domain-keys/put-v3-domains--name--dkim-authority) setting (`self` set to true). Then publish the new record it gives.
+- **Which domain signs**, for a sending domain that is a subdomain. When your root domain (`example.com`) is already on the same Mailgun account, Mailgun can set up a subdomain to sign with the root's DKIM key, and your newsletter's reputation then rides on your main domain's signature. Look at the DKIM record Mailgun gives you: its name should end in `._domainkey.` followed by your sending domain (`._domainkey.news.example.com`). If it ends in `._domainkey.example.com`, the subdomain isn't its own DKIM authority. Make it one: through a DKIM authority choice when you add the domain, if Mailgun's form offers one, or afterwards through the API's [`dkim_authority`](https://documentation.mailgun.com/docs/mailgun/api-reference/send/mailgun/domain-keys/put-v3-domains--name--dkim-authority) setting (`self` set to true). Then publish the new record it gives.
 - **When a key starts signing.** Mailgun checks a DKIM key's record in DNS before it signs with it, so a new or rotated key stays inactive until its record resolves. Publish the record first, then verify the domain or activate the key in Mailgun.
 
 ## The mailer
@@ -42,6 +42,8 @@ CAMPAIGNS_MAILGUN_SECRET=your-sending-key
 CAMPAIGNS_MAILGUN_ENDPOINT=api.mailgun.net
 ```
 
+Your app's own mailgun mailer can serve instead, named in `CAMPAIGNS_MAILER`, when it sends from the sending domain with `'scheme' => 'api'`. Laravel's mailgun transport uses Mailgun's HTTP transport unless a scheme says otherwise, and the driver refuses that: every campaign on the domain pauses, naming the setting, until it's changed.
+
 `secret` is a sending key for that domain. The endpoint is `api.mailgun.net` for a domain in the US region and `api.eu.mailgun.net` for one in the EU ([Mailgun's regions](https://documentation.mailgun.com/docs/mailgun/api-reference/api-overview)). When the mailer leaves out `client` options, the driver gives it a 10-second idle timeout and 30 seconds in all, so a stuck request ends before the job sending it does.
 
 ## Webhooks
@@ -52,7 +54,7 @@ Webhooks are how bounces, spam reports and unsubscribes come back, so add them b
 https://your-app.example.com/campaigns/webhooks/mailgun
 ```
 
-Subscribe `delivered`, `permanent_fail`, `temporary_fail`, `complained` and `unsubscribed`. `accepted` may be added too; every other event of an email already proves Mailgun took it. Leave out `opened` and `clicked`: Mailgun tracks nothing the package sends, and the driver drops them. [Mailgun's webhook guide](https://documentation.mailgun.com/docs/mailgun/user-manual/webhooks/webhooks) has the steps. Add them a few minutes before the email you first want them to report: Mailgun can take a moment to start calling a new webhook, and an event it never sent is lost unless the [reading key](#the-reading-key) replays it.
+Subscribe `delivered`, `permanent_fail`, `temporary_fail`, `complained` and `unsubscribed`. If the domain already sends some of these events to your app's own handler, add this URL beside it rather than replacing it. `accepted` may be added too; every other event of an email already proves Mailgun took it. Leave out `opened` and `clicked`: Mailgun tracks nothing the package sends, and the driver drops them. [Mailgun's webhook guide](https://documentation.mailgun.com/docs/mailgun/user-manual/webhooks/webhooks) has the steps. Add them a few minutes before the email you first want them to report: Mailgun can take a moment to start calling a new webhook, and an event it never sent is lost unless the [reading key](#the-reading-key) replays it.
 
 Then give the package the account's HTTP webhook signing key, from the API Security page of Mailgun's dashboard. It's neither the API key nor a sending key:
 
@@ -99,6 +101,8 @@ php artisan campaigns:import-provider-suppressions news.example.com --force
 
 The first run is a dry run that prints what would change. `--email=someone@example.com` looks up one address instead of reading the whole lists. A bounce becomes a `hard_bounce` block, a spam report a `complaint` block, and the unsubscribe list an opt-out, read only for the sending domain itself. Addresses nobody has subscribed are kept with nothing but the address, so a later import can't mail them.
 
-Run it for every domain on the account that has mailed the same people, your transactional domain included: a bounce there is a fact about the address, whichever domain found it. Their unsubscribe lists are left alone, since unsubscribing from receipts isn't unsubscribing from your newsletter.
+Run it for every domain on the account that has mailed the same people, your transactional domain included: a bounce there is a fact about the address, whichever domain found it. Their unsubscribe lists are left alone, since unsubscribing from receipts isn't unsubscribing from your newsletter. When your campaigns go out from that same domain, its unsubscribe list is the sending domain's and becomes opt-outs, so anyone who unsubscribed from any of its mail stays off your campaigns.
+
+Mailgun's lists also hold back the domain's later mail to those addresses. Sharing a domain with transactional mail means a campaign's bounce or spam report stops that person's receipts too, until you remove them at Mailgun.
 
 The package never removes an address from Mailgun's lists. When someone is unblocked, the answer says whether Mailgun still holds them; removing them there is a change you make at Mailgun.

@@ -152,7 +152,7 @@ class AccountList implements ListSource
 'list_sources' => ['accounts' => App\Campaigns\AccountList::class],
 ```
 
-Add `use Mozex\Campaigns\Concerns\HasCampaignSubscriber;` to the `User` model, then bring in the accounts you already have (a dry run first, then with `--force`) and make a token for your agent:
+`banned_at` stands for your own rule; with none, `isEligible()` returns `true`. Add `use Mozex\Campaigns\Concerns\HasCampaignSubscriber;` to the `User` model, then bring in the accounts you already have (a dry run first, then with `--force`) and make a token for your agent:
 
 ```bash
 php artisan campaigns:sync-list accounts
@@ -162,7 +162,7 @@ claude mcp add --transport http campaigns https://your-app.example.com/mcp/campa
   --header "Authorization: Bearer <token>"
 ```
 
-Other MCP clients take the same address and header. Run `php artisan storage:link` (email images go on the `public` disk by default, so `APP_URL` must be https), a worker for the `campaigns` queue and the scheduler, then set `CAMPAIGNS_ENABLED=true` and ask your agent to send you a test.
+Other MCP clients take the same address and header. Run `php artisan storage:link` (email images go on the `public` disk by default, so `APP_URL` must be https), a worker for the `campaigns` queue and the scheduler, then set `CAMPAIGNS_ENABLED=true` and ask your agent to copy the starter template into one of your own and send you a test of it. Once the test arrives, `get_test_sends` shows `delivered_at` when Mailgun's delivery event has reached your app, which proves the webhooks work.
 
 The [installation guide](https://github.com/mozex/laravel-campaigns/blob/main/docs/getting-started/installation.md) walks through every required step in order, for any provider, host and CDN, and [Optional Extras](https://github.com/mozex/laravel-campaigns/blob/main/docs/getting-started/optional-extras.md) covers what you can add after: Gmail's spam rate, your plan's volume, OAuth sign-in for chat apps and the rest.
 

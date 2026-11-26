@@ -4,16 +4,19 @@ declare(strict_types=1);
 
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\Sequence;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Exceptions;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use Mozex\Campaigns\Actions\CreateCampaignAction;
 use Mozex\Campaigns\Actions\CreateTemplateAction;
+use Mozex\Campaigns\Actions\RecordFeedbackAction;
 use Mozex\Campaigns\Actions\SaveAudienceAction;
 use Mozex\Campaigns\Audiences\AudienceDefinition;
 use Mozex\Campaigns\Content\ContentRules;
 use Mozex\Campaigns\Content\EmailSource;
 use Mozex\Campaigns\Enums\CampaignStatus;
+use Mozex\Campaigns\Enums\FeedbackType;
 use Mozex\Campaigns\Enums\Rights;
 use Mozex\Campaigns\Jobs\SendTestJob;
 use Mozex\Campaigns\Mcp\Tools\CreateCampaignTool;
@@ -33,6 +36,7 @@ use Mozex\Campaigns\Models\Revision;
 use Mozex\Campaigns\Models\SavedAudience;
 use Mozex\Campaigns\Models\TestSend;
 use Mozex\Campaigns\Reports\CampaignSummary;
+use Mozex\Campaigns\Sending\Feedback;
 use Mozex\Campaigns\Tests\Fixtures\MembersInCountry;
 use Mozex\Campaigns\Tests\Fixtures\RecentContacts;
 use Mozex\Campaigns\Tests\Fixtures\WordyAudience;
@@ -434,6 +438,7 @@ describe('tests and previews', function (): void {
 
         agent()->tool(SendTestTool::class, ['campaign' => 'march', 'addresses' => ['someone@else.com']])->assertHasErrors(['Test emails go only to the addresses in campaigns.test_addresses']);
         agent()->tool(SendTestTool::class, ['template' => 'nope'])->assertHasErrors(['There is no template with the key "nope".']);
+        agent()->tool(SendTestTool::class, ['template' => 'starter'])->assertHasErrors(['"starter" is a starter template, which only create_template copies (its from): copy it into a template of your own, then use that template\'s key.']);
         agent(Rights::Read)->tool(GetTestSendsTool::class, ['tests' => ['not-a-uuid']])->assertHasErrors(['tests.0']);
 
         config(['campaigns.enabled' => false]);
@@ -441,6 +446,23 @@ describe('tests and previews', function (): void {
 
         expect(TestSend::query()->count())->toBe(2);
     })->with('databases');
+
+    it('says when the provider reported a test delivered, which proves its feedback reaches the app', function (): void {
+        $this->travelTo(Carbon::parse('2026-11-26 10:00:00', 'UTC'));
+        config(['campaigns.enabled' => true, 'campaigns.test_addresses' => ['me@example.com', 'team@example.com']]);
+        app(CreateCampaignAction::class)->execute('march', 'March', EmailSource::contents([campaignEmail()]));
+        $uuids = array_column(structuredContent(agent()->tool(SendTestTool::class, ['campaign' => 'march', 'addresses' => ['me@example.com', 'team@example.com']])->assertOk())['tests'], 'uuid');
+        $read = fn (): array => array_column(structuredContent(agent(Rights::Read)->tool(GetTestSendsTool::class, ['tests' => $uuids])->assertOk())['tests'], 'delivered_at');
+
+        expect($read())->toBe([null, null]);
+
+        foreach ([['opened', FeedbackType::Opened, 'campaigns'], ['first', FeedbackType::Delivered, 'fake'], ['again', FeedbackType::Delivered, 'fake']] as [$id, $type, $driver]) {
+            $this->travel(1)->minutes();
+            app(RecordFeedbackAction::class)->execute(new Feedback(providerEventId: $id, type: $type, occurredAt: now(), testSendUuid: $uuids[0]), $driver);
+        }
+
+        expect($read())->toBe(['2026-11-26T10:02:00+00:00', null]);
+    });
 
     it('links to a template\'s or a campaign\'s preview, its current email or an earlier one', function (string $driver): void {
         useDatabase($driver);

@@ -8,6 +8,7 @@ use Mozex\Campaigns\Contracts\CampaignDriver;
 use Mozex\Campaigns\Contracts\ListSource;
 use Mozex\Campaigns\Enums\UploadPurpose;
 use Mozex\Campaigns\Imports\ImportedContact;
+use Mozex\Campaigns\Templates\StarterTemplates;
 use RuntimeException;
 
 class CampaignsException extends RuntimeException
@@ -330,6 +331,11 @@ class CampaignsException extends RuntimeException
 
     public static function unknownTemplate(string $key): self
     {
+        // Starters' keys are reserved, so no template can hold one.
+        if (StarterTemplates::has($key)) {
+            return new self("\"{$key}\" is a starter template, which only create_template copies (its from): copy it into a template of your own, then use that template's key.");
+        }
+
         return new self('There is no template with the key "'.mb_strimwidth($key, 0, 130, '...').'".');
     }
 

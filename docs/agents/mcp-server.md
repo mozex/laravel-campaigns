@@ -58,7 +58,7 @@ Tools marked "asks" carry the `anthropic/requiresUserInteraction` flag, so Claud
 | `list_audiences`, `save_audience` | R, W | your named audiences and saved ones; save a set of filters under a name |
 | `preview_audience` | R | how many a campaign would reach, who was dropped and why, and the breakdowns |
 | `send_test` | W, asks | the email to the app's test addresses |
-| `get_test_sends` | R | whether each test went |
+| `get_test_sends` | R | whether each test went, and when the service reported it delivered |
 
 **Sending and watching**
 

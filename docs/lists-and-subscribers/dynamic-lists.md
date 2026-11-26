@@ -51,6 +51,7 @@ class AccountList implements ListSource
 ```
 
 - `query()` returns every record for the sync command to walk, with whatever `fields()` and `isEligible()` read eager-loaded. Leave eligibility out of it: a record's own changes are checked with `isEligible()` alone. Select whole rows.
+- `banned_at`, `locale` and `country_code` stand for columns of your own. On a model without them, `isEligible()` returns `true` and `fields()` leaves them out.
 - `isEligible()` is your own rule, such as a ban. A record that stops being eligible leaves the list and comes back when it's eligible again. Neither is a consent change.
 - `fields()` returns the subscriber's details: `email` (required), and any of `name`, `first_name`, `locale`, `timezone`, `country` and `custom_fields`. Only the keys you return are kept in step, so leave out what the record doesn't hold. `custom_fields` merges into what the subscriber already has.
 

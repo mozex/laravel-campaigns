@@ -16,12 +16,14 @@ use Laravel\Mcp\Server\Tools\Annotations\IsIdempotent;
 use Laravel\Mcp\Server\Tools\Annotations\IsOpenWorld;
 use Laravel\Mcp\Server\Tools\Annotations\IsReadOnly;
 use Mozex\Campaigns\Actions\SendTestAction;
+use Mozex\Campaigns\Enums\FeedbackType;
+use Mozex\Campaigns\Models\ProviderEvent;
 use Mozex\Campaigns\Models\TestSend;
 use Mozex\Campaigns\Support\ShownText;
 
 #[Name('get_test_sends')]
 #[Title('Get test emails')]
-#[Description('Whether the test emails send_test queued went out: sent_at once the provider took one, failed_at and failure when it couldn\'t be sent. A test still waiting has neither; the queue sends it within moments.')]
+#[Description('Whether the test emails send_test queued went out: sent_at once the provider took one, failed_at and failure when it couldn\'t be sent, delivered_at once the provider\'s delivery event reached the app. A test still waiting has neither sent_at nor failed_at; the queue sends it within moments.')]
 #[IsReadOnly]
 #[IsIdempotent]
 #[IsOpenWorld(false)]
@@ -46,6 +48,7 @@ class GetTestSendsTool extends CampaignsTool
                 'sent_at' => $schema->string()->nullable()->required(),
                 'failed_at' => $schema->string()->nullable()->required(),
                 'failure' => $schema->string()->nullable()->required(),
+                'delivered_at' => $schema->string()->nullable()->required()->description('When the provider reported it delivered, through its webhook or event: proof that the provider\'s feedback reaches the app. Null until that event arrives, and always for a driver that reads nothing back, such as SMTP.'),
                 'unsubscribed_at' => $schema->string()->nullable()->required()->description('When its unsubscribe link was used, which changed nothing else.'),
             ]))->description('The tests found, in the order asked; an unknown uuid is left out.'),
         ];
@@ -63,6 +66,7 @@ class GetTestSendsTool extends CampaignsTool
         $uuids = $input['tests'];
 
         $tests = TestSend::query()->with('campaign:id,key')->whereIn('uuid', $uuids)->get()->keyBy('uuid');
+        $delivered = static::delivered($tests->all());
 
         return Response::structured([
             'tests' => collect($uuids)
@@ -77,10 +81,44 @@ class GetTestSendsTool extends CampaignsTool
                     'sent_at' => $test->sent_at?->toIso8601String(),
                     'failed_at' => $test->failed_at?->toIso8601String(),
                     'failure' => ShownText::of($test->failure),
+                    'delivered_at' => $delivered[$test->id] ?? null,
                     'unsubscribed_at' => $test->unsubscribed_at?->toIso8601String(),
                 ])
                 ->values()
                 ->all(),
         ]);
+    }
+
+    /**
+     * The first delivery each test's own driver reported, by test id, read
+     * in one query: the package's own opens and clicks are another driver's.
+     *
+     * @param  array<array-key, TestSend>  $tests
+     * @return array<int, string>
+     */
+    protected static function delivered(array $tests): array
+    {
+        $delivered = [];
+        $drivers = [];
+
+        foreach ($tests as $test) {
+            $drivers[$test->id] = $test->driver;
+        }
+
+        $events = ProviderEvent::query()
+            ->whereIn('test_send_id', array_keys($drivers))
+            ->where('type', FeedbackType::Delivered)
+            ->orderBy('occurred_at')
+            ->get(['test_send_id', 'driver', 'occurred_at']);
+
+        foreach ($events as $event) {
+            $id = (int) $event->test_send_id;
+
+            if (! isset($delivered[$id]) && $event->driver === ($drivers[$id] ?? null)) {
+                $delivered[$id] = $event->occurred_at->toIso8601String();
+            }
+        }
+
+        return $delivered;
     }
 }

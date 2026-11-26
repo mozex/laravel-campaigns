@@ -13,6 +13,7 @@ use Illuminate\Contracts\Mail\Mailer as MailerContract;
 use Illuminate\Http\Request;
 use Illuminate\Mail\Mailer;
 use Illuminate\Mail\Transport\SesV2Transport;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Sleep;
@@ -351,7 +352,10 @@ class SesDriver implements CampaignDriver, ChecksSetup, ReadsMetrics, ReadsSuppr
      * points summed by UTC day; a day it leaves out counts 0. SES counts no
      * forwarded mail and no unsubscribes, so those are null.
      *
-     * @throws CampaignsException when VDM is off (campaigns.drivers.ses.vdm)
+     * @throws CampaignsException when VDM is off (campaigns.drivers.ses.vdm),
+     *                            or when no metric has a single point
+     *                            (an identity of its own that sent nothing,
+     *                            or a domain sending under its parent's)
      */
     public function domainMetrics(string $domain, CarbonInterface $from, CarbonInterface $to): DomainMetrics
     {
@@ -390,9 +394,17 @@ class SesDriver implements CampaignDriver, ChecksSetup, ReadsMetrics, ReadsSuppr
             $days[$day->toDateString()] = ['sent' => 0, 'forwarded' => null, 'hard_bounces' => 0, 'complaints' => 0, 'unsubscribes' => null];
         }
 
-        $results = $result['Results'] ?? null;
+        $results = is_array($result['Results'] ?? null) ? $result['Results'] : [];
 
-        foreach (is_array($results) ? $results : [] as $series) {
+        // A domain sending under its parent's identity may get no points of
+        // its own (AWS doesn't say which identity VDM files mail under), and
+        // one that sent nothing gets none. Read as "none happened", that
+        // would show a busy domain as clean.
+        if (Arr::first($results, fn (mixed $series): bool => is_array($series) && is_array($series['Timestamps'] ?? null) && $series['Timestamps'] !== []) === null) {
+            throw CampaignsException::providerUnreadable("Amazon SES has no counts for {$domain} in that time. The package asks VDM for that domain's own identity, so a domain sending under its parent domain's identity may have none: verify {$domain} as an identity of its own in SES to read them. A domain that sent nothing through SES in that time has none either.");
+        }
+
+        foreach ($results as $series) {
             $count = is_array($series) ? (static::METRICS[strtoupper((string) ($series['Id'] ?? ''))] ?? null) : null;
 
             if ($count === null || ! is_array($series['Timestamps'] ?? null) || ! is_array($series['Values'] ?? null)) {

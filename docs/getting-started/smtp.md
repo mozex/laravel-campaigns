@@ -21,7 +21,13 @@ The `smtp` driver sends through any SMTP server: a relay in production, or a mai
 
 ```dotenv
 CAMPAIGNS_DRIVER=smtp
+CAMPAIGNS_SMTP_HOST=smtp.your-relay.example
+CAMPAIGNS_SMTP_PORT=587
+CAMPAIGNS_SMTP_USERNAME=your-username
+CAMPAIGNS_SMTP_PASSWORD=your-password
 ```
+
+The `CAMPAIGNS_SMTP_*` names are your app's own, read only by this mailer. It takes Laravel's other `smtp` options as any smtp mailer does: without a `scheme`, port 465 uses TLS from the start and other ports switch to TLS when the server offers it.
 
 Any other transport is refused, except the log and array mailers outside production. When the mailer sets no `timeout`, the package gives it 10 seconds for each read of the server's reply, so a server that stops answering doesn't hold the send job until its own 60-second limit. The `X-Tag` and `X-Metadata-*` headers Laravel's mailables add are left out, since an SMTP server would deliver them as they are.
 
@@ -60,14 +66,13 @@ A mail catcher keeps every email so you can read it as a mailbox would. [Mailpit
 docker run -d --name mailpit -p 1025:1025 -p 8025:8025 axllent/mailpit
 ```
 
-```php
-'campaigns' => [
-    'transport' => 'smtp',
-    'host' => '127.0.0.1',
-    'port' => 1025,
-],
+Keep the mailer above and point it there, with no username or password:
+
+```dotenv
+CAMPAIGNS_SMTP_HOST=127.0.0.1
+CAMPAIGNS_SMTP_PORT=1025
 ```
 
-Mailpit shows the emails at `http://127.0.0.1:8025`. Laravel Herd Pro's mail service works the same way: point the mailer at the port its settings show (2525 by default) and give it a `username`, such as your app's name, which Herd files the emails under.
+Mailpit shows the emails at `http://127.0.0.1:8025`. Laravel Herd Pro's mail service works the same way: use the SMTP port its mail settings show, and set `CAMPAIGNS_SMTP_USERNAME` to a name such as your app's, which Herd files the emails under.
 
-Serve the app over https and point `CAMPAIGNS_URL` (or `APP_URL`) at that address, `https://your-app.test` with `herd secure`, say. An email's images must be on https, and its unsubscribe and web version links start with `CAMPAIGNS_URL`, so they open in your browser. So do its [open pixel and tracked links](../campaigns/tracking.md): open an email in Mailpit and its open is recorded, click a link and the click is, each applied about a minute later.
+Point `CAMPAIGNS_URL` (or `APP_URL`) at the address you serve the app on. An email's unsubscribe and web version links start with it, so they open in your browser, and so do its [open pixel and tracked links](../campaigns/tracking.md): open an email in Mailpit and its open is recorded, click a link and the click is, each applied about a minute later. Images must be on https, which on the default `public` disk means serving the app over https (`https://your-app.test` with Herd's `herd secure`, say); over plain http, such as `php artisan serve`, everything else works.

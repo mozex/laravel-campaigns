@@ -363,6 +363,7 @@ it('answers every tool within its output schema, through a template\'s checks an
     workQueued(SendTestJob::class);
     $test = collect(fakeDriver()->sent())->firstOrFail(fn (OutgoingMessage $email): bool => $email->isTest);
     $this->post((string) $test->unsubscribeUrl, ['List-Unsubscribe' => 'One-Click'])->assertOk();
+    app(RecordFeedbackAction::class)->execute(new Feedback(providerEventId: 'test-delivered', type: FeedbackType::Delivered, occurredAt: now(), testSendUuid: $test->uuid, code: 250), 'fake');
     answered(GetTestSendsTool::class, ['tests' => array_column($tests['tests'], 'uuid')]);
 
     // One campaign sending: started, frozen, sent, delivered, opened,

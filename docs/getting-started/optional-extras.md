@@ -25,11 +25,11 @@ With the reading key in place, `CAMPAIGNS_MAILGUN_MONTHLY_INCLUDED` tells the pa
 
 ## Amazon SES's daily counts
 
-SES gives daily counts per domain only through Virtual Deliverability Manager. Turn it on in SES and set `CAMPAIGNS_SES_VDM=true` ([Amazon SES](./ses.md#suppressions-and-daily-counts)). SES's sending quota shows in the overview either way.
+SES gives daily counts per domain only through Virtual Deliverability Manager. Turn it on in SES and set `CAMPAIGNS_SES_VDM=true` ([Amazon SES](./ses.md#suppressions-and-daily-counts), which also says why the sending domain should be an identity of its own for them). SES's sending quota shows in the overview either way.
 
 ## Gmail's spam rate
 
-Gmail tells no sender who marked its mail as spam, so no driver hears about those reports. It publishes only a daily rate per domain in Google Postmaster Tools, and asks bulk senders to keep it below 0.3%. With a Google service account key in `CAMPAIGNS_POSTMASTER_CREDENTIALS`, the server reads that rate for the sending domain and shows it in `get_overview` and in every start, resume and speed-up answer, so an agent in any client sees it before it asks you to send more. [Gmail's spam rate](../campaigns/feedback.md#gmails-spam-rate) has the four setup steps and what the reading shows.
+Gmail tells no sender who marked its mail as spam, so no driver hears about those reports. It publishes only a daily rate per domain in Google Postmaster Tools, and asks bulk senders to keep it under 0.1% and never let it reach 0.3%. With a Google service account key in `CAMPAIGNS_POSTMASTER_CREDENTIALS`, the server reads that rate for the sending domain and shows it in `get_overview` and in every start, resume and speed-up answer, so an agent in any client sees it before it asks you to send more. When the sending domain also carries your other mail, the rate and Google's checks cover all of it. [Gmail's spam rate](../campaigns/feedback.md#gmails-spam-rate) has the four setup steps and what the reading shows.
 
 ## The alert address
 
@@ -37,7 +37,7 @@ Gmail tells no sender who marked its mail as spam, so no driver hears about thos
 CAMPAIGNS_ALERT_ADDRESS=ops@example.com
 ```
 
-The package mails it when the stop-loss pauses a campaign or a whole sending domain, when a campaign gets its first spam report, and when a campaign's queue stalls (at most once every six hours), through your app's default mailer rather than the campaigns mailer, since the sending domain may be what just failed. [Events](../reference/events.md#the-alert-mail) has the details, and the events behind it if you'd rather send a message to a chat channel.
+The package mails it when the stop-loss pauses a campaign or a whole sending domain, when a campaign gets its first spam report, and when a campaign's queue stalls (at most once every six hours), through your app's default mailer rather than the campaigns mailer, since the sending domain may be what just failed. When your default mailer goes through the same domain or provider account, a failure there stops the alert too: listen to the events instead and send a message to a chat channel. [Events](../reference/events.md#the-alert-mail) has the details and the events behind it.
 
 ## The spam score check
 

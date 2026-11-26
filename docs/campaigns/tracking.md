@@ -62,7 +62,7 @@ Keep `/campaigns/o/` and `/campaigns/l/` out of every caching rule and every bot
 
 ## Your domain's reputation
 
-Every tracked link now points at your app's host, so mailbox providers judge your links by that domain. Send from a subdomain aligned with your From address (`news.example.com` for `hello@news.example.com`), point `CAMPAIGNS_URL` at a host on the same domain, and keep it off blocklists.
+Every tracked link now points at your app's host, so mailbox providers judge your links by that domain. Point `CAMPAIGNS_URL` at a host on the same domain as your From address (your app at `example.com` for `hello@news.example.com`, say), and keep it off blocklists. A subdomain kept for campaigns, as [Installation](../getting-started/installation.md#choose-the-sending-domain) suggests, keeps a bad week from reaching your other mail.
 
 ## The size limit
 
