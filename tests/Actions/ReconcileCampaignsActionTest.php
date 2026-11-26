@@ -384,13 +384,15 @@ describe('the replay', function (): void {
         $campaign = sendingCampaign(1);
         app(PumpCampaignsAction::class)->execute();
         $message = $campaign->messages()->sole();
-        $test = TestSend::factory()->create(['sent_at' => now()]);
+        $test = TestSend::factory()->create(['sent_at' => now(), 'provider_message_id' => 'test-at-the-service']);
         $sentAt = now()->copy();
         $this->travel(2)->hours();
 
+        // Found by its uuid, or by the service's message id alone.
         recordingDriver()->log(
             loggedEvent($message, FeedbackType::Delivered, $sentAt->copy()->addMinute()),
             new Feedback(providerEventId: 'test-delivered', type: FeedbackType::Delivered, occurredAt: $sentAt->copy()->addMinute(), testSendUuid: $test->uuid),
+            new Feedback(providerEventId: 'test-failed', type: FeedbackType::Failed, occurredAt: $sentAt->copy()->addMinutes(2), providerMessageId: '<test-at-the-service>'),
         );
 
         expect(reconcile()->replayed)->toBe(1)

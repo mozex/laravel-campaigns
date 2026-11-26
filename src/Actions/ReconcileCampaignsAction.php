@@ -21,6 +21,7 @@ use Mozex\Campaigns\Jobs\SendMessageJob;
 use Mozex\Campaigns\Models\Campaign;
 use Mozex\Campaigns\Models\CampaignMessage;
 use Mozex\Campaigns\Models\ProviderEvent;
+use Mozex\Campaigns\Models\TestSend;
 use Mozex\Campaigns\Sending\Drivers\DriverManager;
 use Mozex\Campaigns\Sending\Feedback;
 use Mozex\Campaigns\Sending\ReconcileResult;
@@ -373,10 +374,11 @@ class ReconcileCampaignsAction
     /**
      * Records the events of a batch no webhook brought: the ones already
      * stored are found with one query, so a replay of a domain whose
-     * webhooks work costs a read per hundred events. A test email's events
-     * are left out: they change nothing, and only a webhook's delivery may
-     * show in get_test_sends, where it proves the webhooks work. Returns
-     * the time of the batch's last event.
+     * webhooks work costs a read per hundred events. A test email's events,
+     * found by its uuid or by the service's message id as RecordFeedbackAction
+     * finds them, are left out: they change nothing, and only a webhook's
+     * delivery may show in get_test_sends, where it proves the webhooks
+     * work. Returns the time of the batch's last event.
      *
      * @param  non-empty-list<Feedback>  $batch
      */
@@ -388,8 +390,15 @@ class ReconcileCampaignsAction
             ->pluck('provider_event_id')
             ->flip();
 
+        $providerId = fn (Feedback $feedback): string => trim((string) $feedback->providerMessageId, "<> \t");
+        $tests = TestSend::query()
+            ->whereIn('provider_message_id', array_values(array_filter(array_map(fn (Feedback $feedback): string => $feedback->messageUuid === null ? $providerId($feedback) : '', $batch))))
+            ->where('driver', $driver)
+            ->pluck('provider_message_id')
+            ->flip();
+
         foreach ($batch as $feedback) {
-            if ($feedback->testSendUuid !== null && $feedback->messageUuid === null) {
+            if ($feedback->messageUuid === null && ($feedback->testSendUuid !== null || $tests->has($providerId($feedback)))) {
                 continue;
             }
 
